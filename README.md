@@ -301,6 +301,11 @@ the tests, and a replay of the real journal, drive it. See `docs/architecture.md
 | [docs/macOS.md](docs/macOS.md) | Card slot, sleep, permissions, launchd, signing. |
 | [docs/pitfalls.md](docs/pitfalls.md) | Traps already fallen into, and open issues. |
 
+## Support
+
+MySidepulse is free and carries no ads. If it saves you trouble, you can leave a tip on
+[Ko-fi](https://ko-fi.com/bambidotexe).
+
 ## Notes
 
 - Personal build: English and French, no licensing.
