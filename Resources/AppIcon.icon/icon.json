@@ -1,0 +1,42 @@
+{
+  "fill" : {
+    "automatic-gradient" : "srgb:0.16863,0.17647,0.21569,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "2_glow_flat_alt 2.svg",
+          "name" : "2_glow_flat_alt 2"
+        },
+        {
+          "glass" : false,
+          "image-name" : "2_glow.png",
+          "name" : "2_glow"
+        },
+        {
+          "image-name" : "1_slot.svg",
+          "name" : "1_slot"
+        },
+        {
+          "image-name" : "0_background.png",
+          "name" : "0_background"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

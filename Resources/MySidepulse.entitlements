@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <!-- Not sandboxed: the app writes to the LED strip, which mounts as a removable volume, and reads the
+       Claude Code journal under Application Support. -->
+  <key>com.apple.security.app-sandbox</key><false/>
+
+  <!-- The Hardened Runtime refuses to send an Apple Event without this, whatever the user has allowed in
+       Automation. TerminalTabProber asks the terminal which tab is visible, so a glance at an alert only
+       clears that tab's session; without the entitlement that question fails with errAEEventNotPermitted
+       and every tab looks visible. -->
+  <key>com.apple.security.automation.apple-events</key><true/>
+</dict></plist>

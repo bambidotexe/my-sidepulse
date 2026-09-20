@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:my-sidepulse}",
+      "name": "Debug MySidepulseApp",
+      "target": "MySidepulseApp",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug MySidepulseApp"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:my-sidepulse}",
+      "name": "Release MySidepulseApp",
+      "target": "MySidepulseApp",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release MySidepulseApp"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:my-sidepulse}",
+      "name": "Debug mysidepulse",
+      "target": "mysidepulse",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug mysidepulse"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:my-sidepulse}",
+      "name": "Release mysidepulse",
+      "target": "mysidepulse",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release mysidepulse"
+    }
+  ]
+}

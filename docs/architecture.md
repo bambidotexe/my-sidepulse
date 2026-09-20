@@ -1,0 +1,326 @@
+# Architecture
+
+How MySidepulse is built. For what it does, see [functional.md](functional.md);
+for the strip's protocol, [device.md](device.md); for the operating-system
+boundary, [macOS.md](macOS.md).
+
+## Targets
+
+SwiftPM only (`Package.swift`, swift-tools 5.10, macOS 26, spelled
+`.macOS("26.0")` because tools 5.10 has no symbol for it). No Xcode project, no
+third-party dependency, no firmware in this repository.
+
+| Target | Kind | Imports | Role |
+|---|---|---|---|
+| `MySidepulseCore` | library | Foundation only | Every rule: session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
+| `MySidepulsePlatform` | library | Foundation, Darwin, MachO | Headless, testable I/O: journal append and tail, process inspection, LED file writer, keepalive, ntfy client, control socket, doctor, the hook installer, and the update's I/O: the GitHub check, the download held against GitHub's digest, the stager (disk image, copy, signature), the installer and the detached helper process. |
+| `MySidepulseApp` | executable | AppKit, SwiftUI, IOKit, DiskArbitration, ServiceManagement | The menu-bar app: `Engine`, device/power/attention monitors, launch agent, settings window. |
+| `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code runs. |
+| `MySidepulseCoreTests`, `MySidepulsePlatformTests` | tests | XCTest | |
+
+Dependencies point one way: Core ← Platform ← App and CLI. `PurityTests` fails
+the build if any file in `Sources/MySidepulseCore` imports anything but
+Foundation.
+
+Both executables ship in one bundle, `MySidepulse.app/Contents/MacOS/`:
+`MySidepulseApp` (the GUI) and `mysidepulse` (the CLI).
+
+## The three layers
+
+```
+Claude Code ─hook─▶ mysidepulse hook ─append─▶ journal.jsonl
+                                                     │
+                                               JournalTailer ─┐
+zsh hooks / mysidepulse run ─── control socket ───────────────┤
+PowerMonitor · DeviceMonitor · AttentionMonitor ──────────────┤
+                                                              ▼
+                                                        Engine.sync()
+                                                              │
+              SessionStore + JobStore ◀───────────────────────┘
+                 │                 │
+                 ▼                 ▼
+              Arbiter            Alert ─▶ Notifier ─▶ ntfy
+                 ▼
+            DisplayState ─▶ LedProgram ─▶ LedWriter ─▶ LEDS.LED
+```
+
+**Status layer (Core).** `SessionStore` folds journal events into per-session
+state and owns every time-based rule through `tick(now:userPresent:)`.
+`JobStore` does the same for terminal jobs. `Arbiter.decide` reduces mode,
+power, sessions and jobs to one `DisplayState`. None of it reads a clock: `now`
+is always passed in, which is what lets the tests and the journal replay drive
+it.
+
+**Device layer (Platform + App).** `DeviceMonitor` finds strips, `LedProgram`
+turns a `DisplayState` into program text, `LedWriter` writes it, `Keepalive`
+keeps the reader powered. `LedWriter` is the only code that writes `LEDS.LED` — including the blackout
+on the way out, which every quit goes through (`device.md` *Writing*).
+
+**Notification layer.** `SessionStore.tick` returns the `Alert`s that are due;
+`Engine.deliver` turns each into one ntfy POST through `Notifier`. `Engine` is
+the only caller of `Notifier.send`. Publishing is fire-and-forget; nothing
+subscribes.
+
+**Language layer (Core).** Every user-facing string lives in a `Strings*.swift`
+table, one per surface, each string a single accessor that switches over
+`Language` so the two versions sit side by side and neither can be added alone.
+`Loc` is the ambient switch the tables read, guarded by a lock because the
+settings window reads it on the main queue while the notifier writes a push from
+its own. `Loc.language` is set exactly once, in `MySidepulseApp/main.swift`,
+from `Locale.preferredLanguages.first`; Core holds the rule that turns that tag
+into a `Language` but never asks the system itself. `MySidepulseCLI` never sets
+it, so the CLI keeps the default, English — which is also how `Doctor` and
+`HookInstaller`, called by both, print English in a terminal and French in the
+window from the same code: the language is read where the sentence is built, not
+where the type is created.
+
+## Engine
+
+`Engine` (`Sources/MySidepulseApp/Engine.swift`) owns all mutable state — the
+two stores, power, the device set, the mode, the config — strictly on the main
+queue. Every input funnels into one method:
+
+```
+sync():
+  alerts   = store.tick(now, userPresent)      // holds, settle, expiry, due pushes
+  jobs.tick(now)
+  checkAbandonedTurns(now)                     // registry + transcript rescues
+  deliver(alerts)                              // → notify queue
+  decision = Arbiter.decide(...)
+  pre-paint acknowledgement if the user is typing in the host app
+  apply a Playground preview over the decision (paint only)
+  for each device: writer.write(LedProgram.program(...))
+  attention.setPolling(decision.isAlertable)
+  scheduleNextDeadline(now)
+```
+
+Inputs that call `sync()`: journal events (`handle`), process exits, power
+changes, device arrival, acknowledgement, mode / brightness / preview changes,
+job begin / end, wake from sleep, and the deadline timer.
+
+**One timer.** There is no periodic tick. After every `sync()` the engine arms a
+single `DispatchSourceTimer` for the earliest of `SessionStore.nextDeadline`,
+`JobStore.nextDeadline`, the glance end and the preview end. It is scheduled
+with `wallDeadline`, so time spent asleep counts.
+
+**Startup** (`Engine.start`, called from `AppDelegate`):
+
+1. Replay `journal.1.jsonl`, then start the tailer on `journal.jsonl`, which
+   drains the file synchronously. Events older than the last boot
+   (`BootTime.bootDate`) are ignored.
+2. On the next main-queue turn — after the drained events have been applied —
+   drop sessions whose pid is dead or no longer a Claude process
+   (`pruneDead`), scrub push deadlines already past the late-drop window
+   (`dropStaleNotifications`), arm the process watchers, rotate the journal if
+   due, and `sync()`.
+3. Only then does `AppDelegate` start `DeviceMonitor`, so the first write to a
+   strip already reflects the replayed state.
+
+The ordering in steps 1–3 rests on main-queue FIFO: the tailer's drain delivers
+through `DispatchQueue.main.async`, and the blocks that follow are enqueued
+after it.
+
+## Who watches what
+
+| Source | Mechanism | Feeds |
+|---|---|---|
+| Claude Code | 15 hooks → `mysidepulse hook` → one line appended to the journal | `JournalTailer` → `Engine.handle` |
+| Journal | kqueue on the file (`DispatchSourceFileSystemObject`: write, extend, rename, delete); follows rotation, retries a failed reopen every 0.5 s | `SessionStore.apply` |
+| Claude processes | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
+| Claude's own registry | `<config>/sessions/<pid>.json`, read only for quiet `working` turns and open waits (`ClaudeProcessRegistry`) | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered` |
+| Transcript | last 256 KB of the session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
+| Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
+| Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
+| Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
+| User attention | `NSWorkspace` app activation; `HIDIdleTime` polled every 0.5 s only while an alert is displayed; screen-lock state | acknowledgement, presence |
+| Front terminal tab | `osascript` asking Terminal or iTerm2, 0.5 s timeout, 2 s cache | tab-scoped acknowledgement |
+
+Nothing polls Claude Code. The registry and transcript are read on the
+engine's own deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`),
+never on a free-running timer.
+
+## Threading
+
+| Queue | Owner | Work |
+|---|---|---|
+| main | `Engine`, monitors, UI | All state. DiskArbitration callbacks, the deadline timer, the input poll and the rescan timers are all scheduled here. |
+| `mysidepulse.tailer` | `JournalTailer` | File reads and line decoding; hops to main to deliver. |
+| `mysidepulse.ledwriter.io` | `LedWriter` | The blocking `open`/`write` on the strip. One queue for all devices. |
+| `mysidepulse.ledwriter.state` | `LedWriter` | Dedupe, pending, stall bookkeeping and the write watchdog. |
+| `mysidepulse.keepalive` | `Keepalive` | The 60 s timer and touch accounting; reads the device list with `main.sync`. |
+| `mysidepulse.deviceprobe` (utility) | `DeviceMonitor` | Every `stat`/`fileExists` on a volume. |
+| `mysidepulse.notify` (utility) | `Engine` | The `~/.claude/sessions` scan and building each request. |
+| `mysidepulse.ttyprobe` (userInitiated) | `TerminalTabProber` | The `osascript` subprocess. |
+| `mysidepulse.control` | `ControlServer` | Accept, read, reply; calls the handler, which does `main.sync` into `Engine.controlResponse`. |
+| URLSession delegate queue | `Notifier`, `UpdateChecker` | POST completion, with retries scheduled on a global utility queue; the update check's and download's callbacks, which `UpdateController` hops to main. The unpacking of an update runs on a global user-initiated queue. |
+| global utility | several | `LedWriter` stall/recover callbacks, keepalive kill timers, the Health page's doctor run. |
+
+The rule behind the table: nothing that can block on the strip or the network
+runs on main. Device stats, LED writes and keepalive touches are each off-main,
+and the touch is a separate process. Two places do `main.sync` from another
+queue — the control handler and the keepalive device list — so a blocked main
+queue stops the CLI from answering and the card from being touched. That is
+what `doctor`'s "app" check detects.
+
+`LedWriter` never calls out while holding its state queue; stall and recover
+callbacks are dispatched to a global queue first.
+
+## Control plane
+
+A Unix-domain stream socket at
+`~/Library/Application Support/MySidepulse/control.sock`, mode `0600`. One JSON
+object per line in each direction (`ControlRequest` → `ControlResponse`,
+`Sources/MySidepulsePlatform/Control.swift`). Requests are capped at 1 MB and must
+arrive within 3 s; the client waits 2 s (1 s for job calls).
+
+| `cmd` | Payload | Effect |
+|---|---|---|
+| `status` | — | Snapshot: mode, display, sessions, devices, battery, launch-agent state, last hook event age, jobs, masked notification status. |
+| `led` | `mode` = `auto`, `off`, `toggle`, `#RRGGBB` or an effect name | Sets the mode. `toggle` is resolved in the app. |
+| `autostart` | `mode` = `on`, `off` or absent | Installs or removes the launch agent; replies with its state. |
+| `job-begin`, `job-end` | `job` | Drives `JobStore`. |
+| `notify` | `notify` or absent | Reads or changes notification settings; can send a test. |
+
+`ControlResponse` has a field for the raw ntfy topic, filled only by the
+`notify` command when the caller read it deliberately or just set it. `status`
+carries the masked form only.
+
+A second `ControlServer` on a live socket refuses to start; a stale socket file
+is reclaimed; a failed bind is retried every `K.controlRetrySeconds` (30 s).
+
+All fields added to the request and response types are optional, so an older
+CLI and a newer app (or the reverse) still decode each other.
+
+## Persistence
+
+Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
+
+| File | Writer | Content |
+|---|---|---|
+| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. |
+| `journal.1.jsonl` | the app, by rename | The previous journal. Rotation at 20 MB, or at 5 MB when no session is active. |
+| `config.json` | the app only, mode `0600`, atomic | `AppConfig`, below. |
+| `control.sock` | the app | The control socket. |
+
+`AppConfig` keys:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `ledMode` | string | `"auto"` | `auto`, `off`, `#rrggbb` or an effect name. |
+| `brightness` | `{volume name: 1…255}` | `{}` | Per-strip brightness; absent means 255. |
+| `autoRestartWanted` | bool? | absent | absent: never asked, register the agent. `true`: keep it registered. `false`: the user turned it off; stay off. |
+| `notifyEnabled` | bool? | absent | Pushes on or off. |
+| `notifyTopic` | string? | absent | The ntfy topic. A secret. |
+| `notifyServer` | string? | absent → `https://ntfy.sh` | The ntfy server. |
+
+Loading falls back to defaults when the file is missing or does not decode.
+Because `Decodable` is synthesised, a non-optional key that is missing fails the
+whole decode — so every key added after the first release is optional.
+
+The one `UserDefaults` key is `showInMenuBar` (default `true`).
+`MenuBarController` observes it, so the settings toggle and a `defaults write`
+both take effect at once.
+
+The journal is the app's only memory of sessions. Its lines keep more than the
+state machine reads — `prompt_id`, `agent_type`, `reason`, `error_type`,
+`is_interrupt`, `stop_hook_active`, `last_message_tail`, `host_app_pid`,
+`permission_mode`, `raw_prefix` are recorded and never consumed by the app.
+They are the forensic record: the timing constants in `Constants.swift` are
+calibrated from it, and `RealJournalReplayTests` replays a real journal named by
+`MYSIDEPULSE_REPLAY_JOURNAL`.
+
+`updates/` in the same support directory is the update's workshop:
+`MySidepulse-<v>.dmg`, `staged/MySidepulse.app` and `install.sh`, all three
+removed when a fetch starts, is cancelled, and at launch
+(`UpdateInstaller.sweep`); `previous/MySidepulse.app`, the install helper's
+alone, which it deletes once the new version is seen running; `install.log`;
+and `result`, one line (`UpdateResult`), which the launch that reads it renames
+to `result.read` for the helper to see; the next launch, or the helper, removes
+that.
+
+Not persisted: jobs and their acknowledgements, the Playground preview, the
+battery glance, stalled-device state.
+
+Outside the app's own directory, `HookInstaller` — behind both
+`install-hooks` / `uninstall-hooks` and the settings window's Hooks rows —
+edits `~/.claude/settings.json` (after copying it to
+`settings.json.backup-mysidepulse`) and the app's block in `~/.zshrc`; both
+paths are resolved first, so a symlinked dotfile stays a symlink. The launch
+agent lives at `~/Library/LaunchAgents/io.mysidepulse.agent.plist`.
+
+## The hook path
+
+`mysidepulse hook` runs inside every Claude Code turn, so it is built to be
+harmless: it drains stdin to EOF (keeping at most 8 MB), walks its ancestry
+with `sysctl` (no subprocess), trims the payload to a bounded `JournalEvent`,
+appends one line, and returns 0 on every path — including unreadable input,
+which becomes a `ParseError` line. `MYSIDEPULSE_DISABLE=1` makes it return at
+once. Tool inputs, tool outputs and prompts never reach the journal.
+
+Lines stay under 4096 bytes through three shrink passes (`Trim.cappedLine`), so
+concurrent hook processes appending with `O_APPEND` cannot interleave.
+
+## Build and signing
+
+`make app` runs `scripts/make-app.sh`: a release build, the bundle assembled by
+hand, and an `Info.plist` written inline. It sources `scripts/signing.env`
+(`TEAM_ID`, `NOTARY_PROFILE`, `APP_NAME`, `BUNDLE_ID`, `GITHUB_REPO`,
+`DMG_ACCENT`, and `SIGN_IDENTITY` — looked up in the keychain by team
+identifier rather than written out, because the certificate's common name is
+Apple's to spell, not ours; empty when no such certificate is in the
+keychain). It then signs innermost first — `Contents/MacOS/mysidepulse`, then
+`Contents/MacOS/MySidepulseApp`, then the bundle — because the outer bundle
+seals what is inside it, so a nested binary re-signed afterwards would break
+that seal. A real identity additionally signs with `--options runtime
+--timestamp` (the Hardened Runtime and a trusted timestamp, both of which
+notarization refuses a build without) and with `Resources/MySidepulse.entitlements`
+(`com.apple.security.app-sandbox` false — the app writes to the LED strip and
+reads the Claude Code journal, neither of which a sandbox would allow —
+and `com.apple.security.automation.apple-events` true, without which the
+Hardened Runtime refuses `TerminalTabProber`'s Apple Event whatever the user
+has granted under Automation). `SIGN_IDENTITY="-"` in the environment signs
+ad-hoc instead, for a throwaway build that cannot be notarized; ad-hoc signing
+gets neither the runtime flags nor the entitlements file.
+
+`scripts/release.sh` is the shippable build, in the order Apple's checks need:
+`make-app.sh` → verify the signature (Developer ID Application for the team,
+Hardened Runtime, no `get-task-allow`, the Apple Events entitlement present) →
+zip and notarize the app against `NOTARY_PROFILE` → staple the app →
+`scripts/make-dmg.sh` → sign and notarize the disk image → staple it → check
+`spctl` accepts both. It publishes nothing; attaching the disk image to a
+GitHub release is a separate, deliberate `gh release create`. The app is
+notarized on its own so that the copy dragged out of the image carries its
+own stapled ticket and needs no network to be trusted. Refuses at once if the
+team's Developer ID Application certificate or the `NOTARY_PROFILE` keychain
+profile is missing; both are one-time setup by the Wooflab team's Account
+Holder (only that role can create the certificate), the latter with
+`xcrun notarytool store-credentials wooflab-notary --key <AuthKey.p8> --key-id
+<id> --issuer <issuer>` against an App Store Connect API key.
+
+`scripts/make-dmg.sh` wraps an already-signed app in the release disk image;
+it signs and notarizes nothing itself. The window layout
+(`scripts/dmg-settings.py`) is written into the image's `.DS_Store` by
+`dmgbuild`, run from a virtualenv the script creates on demand at
+`build/dmgvenv` — the Finder/AppleScript way of laying out a disk image needs
+an Automation grant and fails silently without one. `scripts/dmg-background.swift`
+renders the backdrop at 1x and 2x into one Retina TIFF; `scripts/dmg-volume-icon.swift`
+takes the volume's icon from how macOS itself renders the app bundle
+(`NSWorkspace`), because the bundled `AppIcon.icns` is a flat stand-in and the
+real icon exists only in `Assets.car`.
+
+`make install` copies the bundle to `/Applications`, launches it once so it
+registers its launch agent, runs `install-hooks`, then hands the process to
+launchd with `launchctl kickstart -k` and runs `doctor`.
+
+The version is the `VERSION` variable in `scripts/make-app.sh`.
+
+The icon's source is `Resources/AppIcon.icon`, an Icon Composer bundle, beside
+the layer art it was assembled from (`Resources/icon-layers/`, described in
+`Resources/ICON-NOTES.md`). `make-app.sh` ships it twice: `actool` compiles the
+bundle into `Contents/Resources/Assets.car`, which macOS renders with Liquid
+Glass, and `Contents/Resources/AppIcon.icns` is rasterised with `sips` from
+`Resources/previews/mysidepulse-glass-preview-1024.png` as the flat form for
+whatever reads `CFBundleIconFile` instead. `Info.plist` names both: `CFBundleIconName`
+points at `Assets.car`, `CFBundleIconFile` at the `.icns`. Nothing is cached;
+both are rebuilt on every run. `actool` ships with full Xcode rather than the
+Command Line Tools, and without it the build warns and ships the `.icns` alone.
