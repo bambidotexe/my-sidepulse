@@ -3,7 +3,8 @@ import SwiftUI
 import MySidepulseCore
 import MySidepulsePlatform
 
-/// The app itself: whether it comes back on its own, where it shows, its version, and the way out.
+/// The app itself: whether it comes back on its own, where it shows, its version, the tip jar,
+/// and the way out.
 struct GeneralPage: View {
     @ObservedObject var model: SettingsModel
     @AppStorage(MenuBarController.visiblePrefKey) private var showInMenuBar = true
@@ -24,6 +25,14 @@ struct GeneralPage: View {
             }
 
             UpdatesGroup()
+
+            // One row, so the hint carries the whole group: the button alone does not say that the
+            // app is free, and it opens a web page rather than doing something in the app.
+            SettingsGroup(title: t.supportTitle, hint: t.supportHint) {
+                ButtonRow {
+                    Button(t.supportButton) { NSWorkspace.shared.open(SupportLink.koFi) }
+                }
+            }
 
             SettingsGroup(title: t.quitTitle) {
                 ButtonRow {

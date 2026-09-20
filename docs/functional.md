@@ -365,6 +365,7 @@ opens on General, already at that page's height and centred.
 | General | Startup | Open at login and reopen after a crash | on (the launch agent, §12) |
 | General | Startup | Show in menu bar | on |
 | General | Updates | `MySidepulse <version>` and one button (below); the app also checks on its own, and Update opens the update window | |
+| General | Support | `Buy Me a Coffee` under a hint; it opens the Ko-fi page in the browser | |
 | General | Quit | `Quit MySidepulse` | |
 | General | Uninstall | `Uninstall MySidepulse` under a hint, with a warning that always stands there | |
 | Strip | Right now | the live strip, and a `Showing` row saying what it shows and why | |
@@ -612,6 +613,15 @@ macOS a reason to ask for the Automation permission again. Checks, the fetch,
 the unpacking and the hand-over are logged with an `update` prefix; the helper
 keeps its own account in
 `updates/install.log`.
+
+### Supporting the app
+
+Between Updates and Quit, General carries a **Support** group: one hint saying the
+app is free and that a tip can be left on Ko-fi, and one **Buy Me a Coffee** button
+that opens `https://ko-fi.com/bambidotexe` in the default browser. The app stores
+nothing about it and reads nothing back, and the group shows whatever the state of
+anything else. Its address is `SupportLink.koFi` in Core, the same page for every
+app of this author.
 
 ### Quitting
 
