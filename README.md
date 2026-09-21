@@ -190,7 +190,7 @@ back to *auto*. Sessions are still followed and your phone is still told.
 
 ## Settings
 
-A six-page window, opened from the menu-bar item (⌘,) or by opening the app again, which is the way in when
+A seven-page window, opened from the menu-bar item (⌘,) or by opening the app again, which is the way in when
 the icon is hidden. Every change applies as you make it.
 
 | Page | What is on it |
@@ -200,6 +200,7 @@ the icon is hidden. Every change applies as you make it.
 | **Notifications** | the phone switch · the ntfy server · the topic, with its QR code · a test button |
 | **Playground** | nine states and six effects to try on the real strip |
 | **Health** | the doctor's checks, live · every session and command right now · *Copy Report* |
+| **Tip** | everything is free and stays free · a one-time tip on Ko-fi |
 | **System** | set up or remove the Claude Code hooks and the terminal hook, each with one button |
 
 The app speaks **English and French**, following the language your Mac is set to. The command line is always

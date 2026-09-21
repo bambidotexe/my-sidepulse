@@ -106,6 +106,13 @@ public struct SettingsStrings {
         }
     }
 
+    public var pageTip: String {
+        switch language {
+        case .en: "Tip"
+        case .fr: "Don"
+        }
+    }
+
     public var pageSystem: String {
         switch language {
         case .en: "System"
@@ -119,5 +126,6 @@ public struct SettingsStrings {
     public var notifications: NotificationsPageStrings { NotificationsPageStrings(language) }
     public var playground: PlaygroundPageStrings { PlaygroundPageStrings(language) }
     public var health: HealthPageStrings { HealthPageStrings(language) }
+    public var tip: TipPageStrings { TipPageStrings(language) }
     public var system: SystemPageStrings { SystemPageStrings(language) }
 }

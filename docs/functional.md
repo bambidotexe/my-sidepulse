@@ -352,8 +352,9 @@ bundle mid-install, never having seen the marker.
 Every title, label and sentence in this section is quoted in English. Each one
 also exists in French, in `Sources/MySidepulseCore/Strings*.swift` (§15).
 
-**Six pages, picked from a toolbar** that draws each page's symbol above its
-title: *General*, *Strip*, *Notifications*, *Playground*, *Health*, *System*.
+**Seven pages, picked from a toolbar** that draws each page's symbol above its
+title: *General*, *Strip*, *Notifications*, *Playground*, *Health*, *Tip*,
+*System*.
 The window's title is the shown page's. The window is **640 pt** wide and **as
 tall as the shown page**: it resizes around its top-left corner, animated, on a
 page switch and whenever a page gains or loses a line, and never grows past the
@@ -365,7 +366,6 @@ opens on General, already at that page's height and centred.
 | General | Startup | Open at login and reopen after a crash | on (the launch agent, §12) |
 | General | Startup | Show in menu bar | on |
 | General | Updates | `MySidepulse <version>` and one button (below); the app also checks on its own, and Update opens the update window | |
-| General | Support | `Buy Me a Coffee` under a hint; it opens the Ko-fi page in the browser | |
 | General | Quit | `Quit MySidepulse` | |
 | General | Uninstall | `Uninstall MySidepulse` under a hint, with a warning that always stands there | |
 | Strip | Right now | the live strip, and a `Showing` row saying what it shows and why | |
@@ -616,12 +616,23 @@ keeps its own account in
 
 ### Supporting the app
 
-Between Updates and Quit, General carries a **Support** group: one hint saying the
-app is free and that a tip can be left on Ko-fi, and one **Buy Me a Coffee** button
-that opens `https://ko-fi.com/bambidotexe` in the default browser. The app stores
-nothing about it and reads nothing back, and the group shows whatever the state of
-anything else. Its address is `SupportLink.koFi` in Core, the same page for every
-app of this author.
+**Tip** is a page of its own, between Health and System, and it holds two cards.
+The first has no title: the app's icon beside the sentence saying every feature is
+free to everyone and always will be, and that a coffee is how the project is
+supported. The second is **One-time tip**: the Ko-fi cup on a wash of its own red,
+*A cup of coffee* with a line saying what it is, and a button naming the smallest
+tip the page takes (`SupportLink.smallestTip`, 5 €). Under the card, one hint says
+the browser opens and that any larger amount is typed on the page itself.
+
+The button opens `https://ko-fi.com/bambidotexe` in the default browser and nothing
+else moves: the app stores nothing about it, reads nothing back, pays nothing
+itself, and shows the page whatever the state of anything else. The address and the
+amount are `SupportLink` in Core, the same page for every app of this author.
+
+These two cards hold pictures and sentences rather than controls, which no other
+page does, and the first has no title at all. The owner asked for that look; every
+other page keeps the rule that a row is a control and its label and that nothing
+explanatory goes inside a card.
 
 ### Quitting
 

@@ -11,7 +11,7 @@ import MySidepulseCore
 /// of control. General comes first. What the app needs from outside itself (Claude Code's hooks,
 /// the terminal hook) comes last, as "System".
 enum SettingsPageID: String, CaseIterable, Sendable {
-    case general, strip, notifications, playground, health, system
+    case general, strip, notifications, playground, health, tip, system
 
     /// The toolbar item's label, and the window's title while the page is shown. Title Case.
     var title: String {
@@ -22,6 +22,7 @@ enum SettingsPageID: String, CaseIterable, Sendable {
         case .notifications: return t.pageNotifications
         case .playground: return t.pagePlayground
         case .health: return t.pageHealth
+        case .tip: return t.pageTip
         case .system: return t.pageSystem
         }
     }
@@ -35,6 +36,7 @@ enum SettingsPageID: String, CaseIterable, Sendable {
         case .notifications: "bell.badge"
         case .playground: "paintpalette"
         case .health: "stethoscope"
+        case .tip: "mug"
         case .system: "checkmark.shield"
         }
     }
@@ -90,6 +92,7 @@ struct SettingsRootView: View {
         case .notifications: NotificationsPage(model: model)
         case .playground: PlaygroundPage(model: model)
         case .health: HealthPage(model: model)
+        case .tip: TipPage()
         case .system: SystemPage(model: model)
         }
     }

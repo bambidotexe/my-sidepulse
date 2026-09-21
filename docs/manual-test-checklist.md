@@ -24,7 +24,8 @@ expect. `swift test` covers the rules; this file covers what they cannot reach.
 | [ ] | Health | Seven rows, each a green word, the tooltip the doctor's detail. **Check Again** greys out while it runs. Right now: last hook event, battery, one row per Claude session and per command. **Copy Report** puts the checks and the state on the clipboard with the topic masked to six characters |
 | [ ] | System, press **Remove Hooks** | `Claude Code hooks` turns orange **Disabled**, an orange warning says to press Set Up Hooks, and the button is Set Up Hooks. Press it: green **Enabled**, the warning is gone, the note stays. `mysidepulse doctor` agrees both times |
 | [ ] | General, turn **Show in menu bar** off, close the window, open the app from Applications | The menu-bar icon is gone, the window comes back, the Dock icon is there while it is open and gone once it closes |
-| [ ] | General › **Support**, press **Buy Me a Coffee** | The Ko-fi page opens in the default browser at `https://ko-fi.com/bambidotexe`. Nothing else moves: the window stays open, the strip does not change, and the `app` log stays silent |
+| [ ] | **Tip** | The toolbar shows a mug; the first card has no title and carries the app icon beside the sentence; **One-time tip** shows the Ko-fi cup on its red wash, *A cup of coffee*, its grey line, and **Tip €5**, with the hint under the card |
+| [ ] | Press **Tip €5** | The Ko-fi page opens in the default browser at `https://ko-fi.com/bambidotexe`. Nothing else moves: the window stays open, the strip does not change, and the `app` log stays silent |
 | [ ] | General › **Quit MySidepulse** | The strip goes dark, the app leaves the Dock and the menu bar, and `pgrep MySidepulseApp` finds nothing. Open the app again: it comes back with Settings |
 | [ ] | General › **Uninstall** | A grey hint, and under it an orange warning that always stands there: it is the hazard of the Trash, not a state to fix |
 | [ ] | Press **Désinstaller MySidepulse**, confirm | The strip goes dark, an alert says MySidepulse is in the Trash, and the app exits |
@@ -47,7 +48,7 @@ of itself.
 | | Do this | Expect |
 |---|---|---|
 | [ ] | Launch with `-AppleLanguages "(fr)"` and open the menu-bar menu | `LED : Auto`, `LED : Éteintes`, `Ouvrir à la connexion`, `Réglages…`, `Quitter MySidepulse`, and the three status lines in French |
-| [ ] | Walk the six pages in French | The toolbar reads **Général, Ruban, Notifications, Bac à sable, Diagnostic, Système**. Every sentence is French, no sentence wraps to a third line, and no row's label runs into its control. French runs about 20 % longer than English, so this is where it shows |
+| [ ] | Walk the seven pages in French | The toolbar reads **Général, Ruban, Notifications, Bac à sable, Diagnostic, Don, Système**. Every sentence is French, no sentence wraps to a third line, and no row's label runs into its control. French runs about 20 % longer than English, so this is where it shows |
 | [ ] | Strip › **Affiche** in French | The three that matter: `Claude travaille`, `Claude a besoin de vous : une question, une permission ou un plan`, `Claude a terminé. S'efface quand vous regardez le terminal` |
 | [ ] | Health in French, hover each row | Nine French detail sentences, none with a long dash. **Copier le rapport** still copies a report whose scaffolding is English |
 | [ ] | With French running, let a push fire with nobody at the Mac | The phone says `Terminé`, `Vous pose une question`, `Demande une permission`, `Plan prêt` or `Échec du tour`, and the notification still carries its icon (the tag is untranslated) |
