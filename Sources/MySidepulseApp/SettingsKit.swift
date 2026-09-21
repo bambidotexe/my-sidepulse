@@ -358,7 +358,7 @@ struct StatusMark {
         case info
         /// Something to fix, or something that did not work: orange triangle.
         case warning
-        /// Refused or wrong: red cross.
+        /// Refused or wrong, and in the way of what the app is for: red stop sign.
         case failure
         /// Still happening: a spinner where the symbol goes.
         case busy
@@ -378,7 +378,7 @@ struct StatusMark {
         case .good: "checkmark.circle.fill"
         case .info: "info.circle.fill"
         case .warning: "exclamationmark.triangle.fill"
-        case .failure: "xmark.circle.fill"
+        case .failure: "xmark.octagon.fill"
         case .busy: nil
         }
     }

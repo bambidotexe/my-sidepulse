@@ -416,8 +416,8 @@ Every title, label and sentence in this section is quoted in English. Each one
 also exists in French, in `Sources/MySidepulseCore/Strings*.swift` (§15).
 
 **Seven pages, picked from a toolbar** that draws each page's symbol above its
-title: *General*, *Strip*, *Notifications*, *Playground*, *Health*, *Tip*,
-*System*.
+title: *General*, *Strip*, *Notifications*, *Playground*, *System*, *Health*,
+*Tip*.
 The window's title is the shown page's. The window is **640 pt** wide and **as
 tall as the shown page**: it resizes around its top-left corner, animated, on a
 page switch and whenever a page gains or loses a line, and never grows past the
@@ -441,17 +441,19 @@ opens on General, already at that page's height and centred.
 | Notifications | Test | `Send a Test Notification`, and its result | |
 | Playground | On the strip | the live strip, what is playing, `Keep It` and `Stop` | |
 | Playground | States, Effects | nine state tiles and six effect tiles | |
-| Health | Checks | seven of the `doctor` checks, `Check Again` | |
-| Health | Right now | last hook event, battery, one row per session and per command | |
-| Health | Report | `Copy Report` | |
 | System | Claude Code | `Claude Code hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*) | |
 | System | Terminal | `Terminal hook`, `Set Up Terminal Hook` or `Remove Terminal Hook` (§7) | |
+| System | Notifications | `Notifications permission`, and `Allow Notifications` while it is not granted | |
 | System | Welcome | `Show Onboarding Again`, which opens the wizard at page one (above) | |
+| Health | Overview | `MySidepulse` and the page summed up; `Check Again` | |
+| Health | Permissions, Claude Code, Strip, Phone, Terminal, App | every state that bears on the app working (below) | |
+| Health | Report | `Copy Report` | |
 
 Every change is written as it is made; there is no Apply. While the window is
-open every row that reports the engine is re-read every **2 s**; the two hook
-rows are re-read when the window opens, when System is shown and after each of
-its buttons.
+open every row that reports the engine, and the notification permission, is
+re-read every **2 s**; the two hook rows are re-read when the window opens, when
+System or Health is shown and after each of System's buttons; the doctor and the
+process readings of the Health page when it is shown and on `Check Again`.
 
 ### How every page is built
 
@@ -468,10 +470,16 @@ and at the trailing edge a symbol and one word — or a short sentence, which
 wraps — both in the state's colour. Five marks, each keeping its symbol and its
 colour on every page: a **green checkmark** for what is as it should be, a
 **blue info mark** for what is worth knowing, an **orange triangle** for what is
-to be fixed or did not work, a **red cross** for what was refused or is wrong,
-and a **spinner** for what is still happening. The words are a fixed
-vocabulary: Enabled / Disabled, Available / Missing, Valid / Invalid, Failed,
-Sent, Downloaded, Stalled, Checking, Downloading.
+to be fixed or did not work without stopping MySidepulse, a **red stop sign**
+for what was refused or is wrong and stops it, and a **spinner** for what is
+still happening. The words are a fixed
+vocabulary: Enabled / Disabled, Granted / Denied, Available / Missing, Valid /
+Invalid, Failed, Sent, Downloaded, Stalled, Checking, Downloading. **One colour
+rule holds on every page**: something MySidepulse needs set up (the hooks, the
+terminal hook, the notification permission) reads green while it is there and,
+missing, red when the wizard marks it required (only the Claude Code hooks) and
+orange otherwise; a switch of the app's own that the user turned off reads
+blue.
 
 **The copy has four rules.** Every text is the default size — body, bold for a
 group's title, monospaced for what is code — and nothing is smaller. A keyboard
@@ -530,24 +538,41 @@ under the tiles is the selected tile's sentence. Battery glance adds a battery
 level slider, A colour adds a colour picker. `Keep It`, offered for an effect
 or a colour, makes it the mode (§3).
 
-**Health** shows seven of `doctor`'s nine checks as rows, each check's detail as
-the row's tooltip: MySidepulse app (Available / Missing), Open at login and
-crash restart (Enabled / Disabled), Claude Code hooks (Enabled / Disabled), Hook
-command (Valid / Invalid, the installed command as the tooltip), Journal
-(Available / Failed), SidePulse strip (Available / Stalled / Missing), Phone
-notifications (Enabled, Disabled in green when off, Invalid). The `hook
-command` check is that tooltip and the `last event` check is Right now's first
-row. `Check Again` runs the doctor off the main queue; it also runs when the
-page is shown. `Copy Report` puts the checks and the state on the clipboard with
-the topic masked.
+**Health** answers, at a glance, whether MySidepulse is doing its job. It
+reports and changes nothing: each row is a state, in the colour of the rule
+above, its detail (the doctor's sentence, a path, a date) as its tooltip, and
+under each group, while a row is orange or red, a warning saying where it is put
+right. The version and updates are not here: they are General's.
 
-**System** holds the two hooks. `Claude Code hooks` is **Enabled** in green,
-**Disabled** in orange with a warning to press Set Up Hooks, or **Invalid** in
-red when `~/.claude/settings.json` cannot be read; the note says open sessions
-pick new hooks up on their own. `Terminal hook` is **Enabled** in green or
-**Disabled** in blue, because it is optional; the note says to open a new
-terminal window after setting it up. A set-up or removal that fails shows the
-installer's message as a warning under its group.
+| Group | Rows |
+|---|---|
+| Overview | `MySidepulse`: **Everything works** in green, **N things to look at** in orange (the orange rows), or **Not working: N problems** in red (the red rows; red wins); **Checking** with a spinner until the doctor has answered and while `Check Again` runs, for at least half a second (`K.healthMinimumBusy`). Then `Check Again` |
+| Permissions | Notifications permission: Granted, or Denied in orange |
+| Claude Code | Claude Code hooks: Enabled, or Disabled / Invalid in red · Hook command (once the hooks are there): Valid, or Invalid in red when they run a copy of MySidepulse that is gone, the command as the tooltip · Journal: Available, or Failed in red when the hook cannot append · Last hook event, in blue (`12 s ago`, `5 min ago`, or `None yet`) · one blue row per Claude session, `Session <id>`: what it is doing in the user's words and since when, its directory as the tooltip, or `Claude sessions` **None** |
+| Strip | each strip, `<name>, <n> LEDs`: Available, or Stalled in orange, its mount path as the tooltip; with none, `SidePulse strip` **Missing** in orange · What the strip shows: Auto, Off, Colour or Effect, in blue, the colour or the effect as the tooltip · Showing: the `StatusCopy` sentence, in blue · Battery, in blue |
+| Phone | Phone notifications: Enabled; Disabled in blue (the user's switch); Invalid in orange when the topic or the server cannot be posted to, the masked topic and the server as the tooltip |
+| Terminal | Terminal hook: Enabled, or Disabled in orange · one blue row per command, what it runs: Running, Succeeded or Failed, `seen` once acknowledged, and since when; or `Terminal commands` **None** |
+| App | Open at login and reopen after a crash: Enabled; Disabled in orange (a crash would leave the strip frozen); Enabled in orange with the General page's warning while this process is not the one launchd supervises · The mysidepulse command: Available, or Failed in orange when a command cannot reach the app over its socket · Running for, Memory used, in blue · Crashes in the last 7 days (`K.healthCrashWindow`, read from `~/Library/Logs/DiagnosticReports`): None, or a count in orange with the last one's date as the tooltip · Installed in: Applications; another folder in blue; the disk image or a temporary copy in orange |
+| Report | `Copy Report`: every row of the page as text, with the app's version and macOS's first and the topic masked |
+
+The doctor's checks run off the main queue, through the real socket, when the
+page is shown and on `Check Again`; everything else on the page is the engine's
+status and the notification permission, re-read every 2 s while the window is
+open, and the hook files.
+
+**System** holds what MySidepulse needs from outside itself, each beside the
+button that gives it. `Claude Code hooks` is **Enabled** in green, **Disabled**
+in red with a warning to press Set Up Hooks, or **Invalid** in red when
+`~/.claude/settings.json` cannot be read; the note says open sessions pick new
+hooks up on their own. `Terminal hook` is **Enabled** in green or **Disabled**
+in orange with a warning to press Set Up Terminal Hook; the note says to open a
+new terminal window after setting it up. A set-up or removal that fails shows
+the installer's message as a warning under its group. `Notifications
+permission` is **Granted** in green, or **Denied** in orange with `Allow
+Notifications` (the same ask as the wizard's row, and the only other button
+that may ask) and a warning saying where to turn them on in System Settings
+once macOS has stopped asking; the hint says they only announce a newer
+version.
 
 ### Updates
 
@@ -680,7 +705,7 @@ keeps its own account in
 
 ### Supporting the app
 
-**Tip** is a page of its own, between Health and System, and it holds two cards.
+**Tip** is a page of its own, the last, after Health, and it holds two cards.
 The first has no title: the app's icon beside the sentence saying every feature is
 free to everyone and always will be, and that a coffee is how the project is
 supported. The second is **One-time tip**: the Ko-fi cup on a wash of its own red,
@@ -917,7 +942,7 @@ setting and nothing is persisted: change the system language, or launch with
 `-AppleLanguages "(fr)"`, and the next start follows.
 
 **What is translated.** The menu-bar menu (§9), the main menu the window puts up,
-all six Settings pages and every sentence on them (§10), the `Showing`
+all seven Settings pages and every sentence on them (§10), the `Showing`
 sentences, the doctor's detail sentences and the hook-install outcomes as the
 window shows them, and the phone push bodies (§6).
 
@@ -927,7 +952,7 @@ window shows them, and the phone push bodies (§6).
 |---|---|
 | Every word `mysidepulse` prints in a terminal (§11) | The CLI is English by rule, not by omission. The same code produces the doctor's details for both, and the language is read where the sentence is built, so the window is French while the terminal stays English. |
 | The doctor's nine check names (`app`, `hooks installed`, `device`, …) | Identifiers the CLI prints and the Health page matches on, not prose. |
-| The Health page's `Copy Report` text | A diagnostic dump to paste into a bug report, built like the CLI's output. |
+| The Health page's `Copy Report` scaffolding: the `[OK]`, `[INFO]`, `[WARN]`, `[FAIL]` tags | A diagnostic dump to paste into a bug report, built like the CLI's output; its rows are the page's own words. |
 | The push `Title` header (`Claude Code`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
 | The block in `~/.zshrc` and the shell snippet | Shell code, read by zsh. |
 | `MySidepulse`, `SidePulse`, `Claude Code`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |

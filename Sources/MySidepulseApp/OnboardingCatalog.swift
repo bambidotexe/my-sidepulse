@@ -230,10 +230,11 @@ enum OnboardingCatalog {
         }
     }
 
-    /// The one place in MySidepulse that asks for notification authorization, reached only from
-    /// this row's button. The result is the state at the moment of the call, never the user's
-    /// answer, so nothing branches on it: the cache is re-read instead.
-    private static func requestNotifications(_ done: @escaping () -> Void) {
+    /// The one place in MySidepulse that asks for notification authorization, reached only from a
+    /// button: this row's, and Allow Notifications on the System page. The result is the state at the
+    /// moment of the call, never the user's answer, so nothing branches on it: the cache is re-read
+    /// instead.
+    static func requestNotifications(_ done: @escaping () -> Void) {
         guard let center else { done(); return }
         center.requestAuthorization(options: [.alert]) { _, _ in
             Task { @MainActor in refreshNotifications(done) }

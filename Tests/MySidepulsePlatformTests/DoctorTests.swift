@@ -90,44 +90,6 @@ final class DoctorTests: XCTestCase {
         XCTAssertEqual(english, french)
     }
 
-    /// What the Health page draws its mark from. Reading the detail sentence
-    /// instead would have worked in one language only.
-    func testTheDeviceAndNotificationChecksCarryTheirStateNotJustASentence() {
-        let saved = Loc.language
-        defer { Loc.language = saved }
-        for language in Language.allCases {
-            Loc.language = language
-
-            var absent = probes()
-            absent.appResponse = { ControlResponse(ok: true, mode: "auto", devices: [],
-                                                  loginItem: "enabled") }
-            XCTAssertEqual(nuance(of: "device", Doctor.run(absent)), .absent, "\(language)")
-
-            var stalled = probes()
-            stalled.appResponse = {
-                ControlResponse(ok: true, mode: "auto",
-                                devices: [DeviceStatus(name: "SidePulse", path: "/Volumes/SidePulse",
-                                                       leds: 8, stalled: true)],
-                                loginItem: "enabled")
-            }
-            XCTAssertEqual(nuance(of: "device", Doctor.run(stalled)), .stalled, "\(language)")
-            XCTAssertEqual(nuance(of: "device", Doctor.run(probes())), Doctor.Check.Nuance.none,
-                           "\(language)")
-
-            var off = probes()
-            off.appResponse = {
-                ControlResponse(ok: true, mode: "auto", loginItem: "enabled",
-                                notify: NotifyStatus(enabled: false, server: K.notifyServerDefault,
-                                                     topicMasked: "(none)", topicUsable: false))
-            }
-            XCTAssertEqual(nuance(of: "notifications", Doctor.run(off)), .disabled, "\(language)")
-        }
-    }
-
-    private func nuance(of name: String, _ report: Doctor.Report) -> Doctor.Check.Nuance? {
-        report.checks.first { $0.name == name }?.nuance
-    }
-
     func testNotificationsOffAreReportedNotFailed() {
         var p = probes()
         p.appResponse = { ControlResponse(ok: true, mode: "auto", loginItem: "enabled",

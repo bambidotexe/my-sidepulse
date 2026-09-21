@@ -91,7 +91,8 @@ final class LocalizationTests: XCTestCase {
             withLanguage(language) {
                 let words = Loc.settings.words
                 for word in [words.available, words.missing, words.stalled, words.enabled,
-                             words.disabled, words.valid, words.invalid, words.failed] {
+                             words.disabled, words.valid, words.invalid, words.failed,
+                             words.granted, words.denied] {
                     XCTAssertFalse(word.isEmpty)
                     XCTAssertFalse(word.contains(" "), "\(language): \(word) is more than a word")
                     XCTAssertFalse(word.hasSuffix("."), "\(language): \(word)")
@@ -117,6 +118,10 @@ final class LocalizationTests: XCTestCase {
                 let system = Loc.settings.system
                 XCTAssertTrue(system.withoutHooksWarning.contains(system.setUpHooksButton),
                               "\(language): \(system.withoutHooksWarning)")
+                XCTAssertTrue(system.withoutTerminalHookWarning.contains(system.setUpTerminalHookButton),
+                              "\(language): \(system.withoutTerminalHookWarning)")
+                XCTAssertTrue(system.notificationsWarning.contains(system.allowNotificationsButton),
+                              "\(language): \(system.notificationsWarning)")
             }
         }
     }

@@ -2,8 +2,10 @@ import SwiftUI
 import MySidepulseCore
 import MySidepulsePlatform
 
-/// What MySidepulse needs from other people's files: Claude Code's settings, and ~/.zshrc.
-/// Both are read back from disk, so what a row says is what is actually there.
+/// What MySidepulse needs from outside itself, each beside the button that gives it: Claude Code's
+/// hooks, the terminal hook in ~/.zshrc, and the notification permission. The hooks are read back from
+/// disk and the permission from macOS, so what a row says is what is actually there. Each row's colour is
+/// `HealthRules.grant`'s, as on the Health page.
 struct SystemPage: View {
     @ObservedObject var model: SettingsModel
 
@@ -26,16 +28,28 @@ struct SystemPage: View {
 
             SettingsGroup(title: t.terminalTitle,
                           hint: t.terminalHint(seconds: Int(K.shellShowAfterDefaultSeconds)),
-                          warnings: model.zshHookError.map { [$0] } ?? [],
+                          warnings: terminalWarnings,
                           notes: [t.terminalNote]) {
                 StatusRow(t.terminalHookLabel,
-                          mark: model.zshHookSetUp ? .good(Loc.settings.words.enabled)
-                                                   : .info(Loc.settings.words.disabled))
+                          mark: StatusMark(HealthRules.grant(held: model.zshHookSetUp, required: false),
+                                           model.zshHookSetUp ? Loc.settings.words.enabled
+                                                              : Loc.settings.words.disabled))
                 ButtonRow {
                     if model.zshHookSetUp {
                         Button(t.removeTerminalHookButton) { model.removeZshHook() }
                     } else {
                         Button(t.setUpTerminalHookButton) { model.setUpZshHook() }
+                    }
+                }
+            }
+
+            SettingsGroup(title: t.notificationsTitle,
+                          hint: Loc.onboarding.notificationsWhy,
+                          warnings: model.notificationsGranted == false ? [t.notificationsWarning] : []) {
+                StatusRow(t.notificationsPermissionLabel, mark: notificationsMark)
+                if model.notificationsGranted == false {
+                    ButtonRow {
+                        Button(t.allowNotificationsButton) { model.allowNotifications() }
                     }
                 }
             }
@@ -47,17 +61,36 @@ struct SystemPage: View {
                 }
             }
         }
-        .onAppear { model.refreshHooks() }
     }
 
-    /// nil is not "off": the file is there and could not be read, which no button can fix.
+    /// nil is not "off": the file is there and could not be read, which no button can fix. The hooks are
+    /// the one thing the strip cannot show Claude without, so missing is red.
     private var claudeMark: StatusMark {
         let words = Loc.settings.words
         switch model.claudeHooksSetUp {
         case true?: return .good(words.enabled)
-        case false?: return .warning(words.disabled)
+        case false?: return StatusMark(HealthRules.grant(held: false, required: true), words.disabled)
         case nil: return .failure(words.invalid)
         }
+    }
+
+    /// Nothing until macOS has answered once: a row that read Denied for the first half second would be
+    /// a lie.
+    private var notificationsMark: StatusMark? {
+        let words = Loc.settings.words
+        return model.notificationsGranted.map { granted in
+            StatusMark(HealthRules.grant(held: granted, required: false),
+                       granted ? words.granted : words.denied)
+        }
+    }
+
+    /// While the hook is missing, what it costs and the button that sets it up; a set-up or a removal
+    /// that failed says why.
+    private var terminalWarnings: [String] {
+        var warnings: [String] = []
+        if !model.zshHookSetUp { warnings.append(Loc.settings.system.withoutTerminalHookWarning) }
+        if let error = model.zshHookError { warnings.append(error) }
+        return warnings
     }
 
     private var claudeWarnings: [String] {

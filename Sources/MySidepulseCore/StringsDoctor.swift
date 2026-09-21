@@ -129,8 +129,8 @@ public struct DoctorStrings {
     }
 
     /// `STALLED` shouts because it is the one detail worth spotting in a wall
-    /// of report text. The Health page does not read it back: the check
-    /// carries a `nuance` for that.
+    /// of report text. Nothing reads it back: the Health page takes the strip's
+    /// state from the engine.
     public func deviceDetail(name: String, path: String, leds: Int, stalled: Bool) -> String {
         switch language {
         case .en: "\(name) at \(path) (\(language.leds(leds))\(stalled ? ", STALLED" : ""))"

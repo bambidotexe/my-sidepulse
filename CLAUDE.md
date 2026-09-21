@@ -181,12 +181,13 @@ are `docs/functional.md`.
 | finding the strip, the eject guard | `App/DeviceMonitor.swift`, `Platform/LedDevice.swift`, `Core/EjectGuard.swift` | §2, `macOS.md` |
 | writing to the strip, keepalive | `Platform/LedWriter.swift`, `Keepalive.swift` | `device.md`, §2 |
 | the menu | `App/MenuBarController.swift` | §9 |
-| the onboarding wizard: a page, a row, what a row's button does, who is in front | **Invoke the `macos-building-onboarding` skill first**: it holds the window's whole contract and every trap it hit. `App/OnboardingWindowController.swift` (the window, the pages, `GrantRow`), `App/OnboardingCatalog.swift` (`GrantItem`, `FocusReturnWatch`, the five rows, `OnboardingMetrics`), `App/ControlActionHandler.swift`; the words are `Core/StringsOnboarding.swift`. The flag is `AppConfig.onboardingDone`, written through `Engine.markOnboardingDone`; `AppDelegate` opens it and cross-wires `othersNeedUsActive` with `SettingsWindow` and `UpdateController`. **A permission is asked from a row's button and nowhere else** | §10 *The onboarding wizard*, §12, `macOS.md` *Permissions*, `pitfalls.md`, the checklist's §4 |
-| a settings page, its look or its copy | **Invoke the `macos-building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the six page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
+| the onboarding wizard: a page, a row, what a row's button does, who is in front | **Invoke the `macos-building-onboarding` skill first**: it holds the window's whole contract and every trap it hit. `App/OnboardingWindowController.swift` (the window, the pages, `GrantRow`), `App/OnboardingCatalog.swift` (`GrantItem`, `FocusReturnWatch`, the five rows, `OnboardingMetrics`), `App/ControlActionHandler.swift`; the words are `Core/StringsOnboarding.swift`. The flag is `AppConfig.onboardingDone`, written through `Engine.markOnboardingDone`; `AppDelegate` opens it and cross-wires `othersNeedUsActive` with `SettingsWindow` and `UpdateController`. **A permission is asked from a button and nowhere else**: a row's, or System's Allow Notifications | §10 *The onboarding wizard*, §12, `macOS.md` *Permissions*, `pitfalls.md`, the checklist's §4 |
+| a settings page, its look or its copy | **Invoke the `macos-building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the seven page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
 | a CLI command | `CLI/CLIMain.swift` (and its usage text), `Platform/Control.swift` (new fields optional), `Engine.controlResponse` | §11, `architecture.md` *Control plane* |
 | updates: the check, its schedule, the notification | `Core/UpdateCheck.swift` (versions, what a reply means — `UpdateCheckTests`), `Core/UpdateSchedule.swift`, `Core/UpdatePanel.swift` (the Updates group), the `update…` numbers in `Core/Constants.swift`; `Platform/UpdateChecker.swift` (the request — `UpdateCheckerTests`); `App/UpdateController.swift` (the one owner), `App/UpdateNotifier.swift`, the Updates group of `App/SettingsGeneralPage.swift` | §10 *Updates*, §12, §13, `macOS.md` *Updates* |
 | updates: the window, the fetch, making it ready, Install and Relaunch | `Core/UpdateSession.swift`, `Core/StagedUpdateCheck.swift`, `Core/UpdateInstallScript.swift` (the helper's text, its plan, its result — run under a real `/bin/sh` by `UpdateInstallScriptTests`); `Platform/UpdateChecker.swift` (`UpdateDownload`), `UpdateStager.swift`, `CodeSignature.swift`, `UpdateInstaller.swift`, `DetachedProcess.swift`; `App/UpdateWindow.swift`, `UpdateController.installAndRelaunch`; the words in `Core/StringsUpdateWindow.swift` and `Core/StringsUpdate.swift` | the same, plus `pitfalls.md` (the six update entries) and the checklist's §3. **Read those entries before touching the order of an install** |
-| a doctor check | `Platform/Doctor.swift` for what it probes and its `name` (an identifier, never translated), `Core/StringsDoctor.swift` for its detail sentence — `DoctorTests` (every detail is a sentence with no long dash, in both languages); the Health page maps each check's name to a row and a word in `App/SettingsHealthPage.swift` + `Core/StringsHealthPage.swift`. A check the page must tell two states apart by gets a `Check.nuance`, never a sentence the page reads back | §11, §10 *What the pages say*, §15 |
+| a doctor check | `Platform/Doctor.swift` for what it probes and its `name` (an identifier, never translated), `Core/StringsDoctor.swift` for its detail sentence — `DoctorTests` (every detail is a sentence with no long dash, in both languages). The Health page reads a check by its name in `SettingsModel.healthFacts`, takes its `ok` and its sentence (the tooltip), and never reads the sentence back | §11, §10 *What the pages say*, §15 |
+| the Health page: a row, its colour, its fix sentence | **Invoke the `macos-building-settings-pages` skill first** (*The Health page*). `Core/HealthReport.swift` (`HealthFacts` → the groups and rows), `Core/HealthRules.swift` (the colour rules, shared with the System page's rows), `Core/Health.swift` (the level, row, group, summary), `Core/StringsHealthPage.swift`; `App/SettingsModel.swift` (`healthFacts`, `readHealth`, `checkAgain`), `App/SettingsHealthPage.swift` (draws only), `App/SettingsWindow.swift` (reads a page when it is shown); the readers `Platform/CrashReports.swift`, `ProcessStats.swift`, `InstallLocation.swift` — `HealthTests`, `CrashReportsTests` | §10 *What the pages say* |
 | **any sentence the user reads**, in either language | `Core/Strings*.swift` (one table per surface; a string is one accessor switching over `Language`, so the two languages are added together or not at all), `Core/Localization.swift` (the language rule and the ambient switch) — `LocalizationTests`, which also reads the tables off disk to check the text rules in both languages | §15, and the section that shows the sentence |
 | a new language | `Core/Localization.swift` (`Language`) — every table then fails to compile until it answers for it, which is the point | §15 |
 | a constant | `Core/Constants.swift`, with its evidence in the comment | the section that states it, and §13 |
@@ -210,8 +211,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (319, one opt-in skip) runs in about two seconds;
-  `MySidepulsePlatformTests` (132) takes about 24 s, because it spawns real
+  `MySidepulseCoreTests` (338, one opt-in skip) runs in about two seconds;
+  `MySidepulsePlatformTests` (133) takes about 24 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -290,6 +291,8 @@ Full version in `docs/architecture.md`.
   `UpdateInstallScript` (the rest of the update's rules, and the text of the
   helper that finishes an install) ·
   `StatusCopy` (which sentence and tone a display state gets) ·
+  `Health` + `HealthRules` + `HealthReport` (the Health page's rows and the
+  colour rule every page's grants follow) ·
   `Localization` (`Language`, the rule that reads a system language tag, and
   `Loc`, the ambient switch) + `Strings*` (every user-facing string, English and
   French side by side, one table per surface).
@@ -302,7 +305,8 @@ Full version in `docs/architecture.md`.
   dedupe, 2 s watchdog) · `LedDevice` (identity = `st_dev`, `st_ino`) ·
   `Keepalive` · `Notifier` + `ClaudeSessions` (the only ntfy client) ·
   `Control` + `ControlServer` + `ControlClient` (Unix socket, JSON lines) ·
-  `Doctor` · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
+  `Doctor` · `CrashReports` + `ProcessStats` + `InstallLocation` (what the
+  Health page reads about the app itself) · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
   both hooks, for the CLI and the settings window alike) · `UpdateChecker` +
   `UpdateDownload` (the only code that talks to GitHub) · `UpdateStager` +
   `CodeSignature` (the disk image, the copy, its signature) · `UpdateInstaller`
@@ -318,7 +322,7 @@ Full version in `docs/architecture.md`.
   and the session the two windows observe, Install and Relaunch) +
   `UpdateNotifier` + `UpdateWindow` · the
   settings window (`SettingsKit` the kit, `SettingsWindow` the toolbar window
-  whose height follows the page, six `Settings*Page`, `SettingsModel`,
+  whose height follows the page, seven `Settings*Page`, `SettingsModel`,
   `StripPreviewView`).
 - **`Sources/MySidepulseCLI`** — `CLIMain` (dispatch and usage), `RunCommand`
   (`run`, `job`, `notify`).
@@ -366,8 +370,9 @@ The app target has no automated tests. Its verification is the strip,
 - **No user-facing string is written at its point of use.** It goes in a
   `Core/Strings*.swift` table, where one accessor answers for every language, so
   a string cannot exist in English alone. Nothing reads a translated sentence
-  back to decide anything: a check that needs a fact carries the fact (see
-  `Doctor.Check.nuance`). The CLI's output is English by rule, which costs
+  back to decide anything: a page that needs a fact reads the fact (the
+  Health page takes the strip and the phone from the engine's status, never
+  from the doctor's sentences). The CLI's output is English by rule, which costs
   nothing to keep because the language is read where a sentence is built.
 - **The ntfy topic is a password.** `config.json` is `0600`; `doctor`, `status`,
   the Health report and the log carry only a masked prefix. Never put a live
@@ -422,7 +427,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (319 + 132, one opt-in skip) at
+`swift build` is clean and `swift test` is green (338 + 133, one opt-in skip) at
 this commit. The live journal replays.
 
 Walked end to end on the owner's Mac: a drag install from the disk image, which

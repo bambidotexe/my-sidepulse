@@ -21,25 +21,13 @@ public enum Doctor {
 
     /// `detail` is a sentence the settings window shows as a row's tooltip and
     /// puts in the Health report, so it carries no long dash (`DoctorTests`).
-    /// It is also translated, which is why `nuance` exists: a page that needs
-    /// to tell two states of one check apart reads that, never the sentence.
+    /// It is also translated, so nothing reads it back to decide anything: the
+    /// Health page takes the strip and the phone from the engine's status, and
+    /// from this only `ok` and the sentence.
     public struct Check: Equatable {
         public let ok: Bool
         public let name: String
         public let detail: String
-        public let nuance: Nuance
-
-        /// What a check found beyond pass or fail, for the checks where one
-        /// `ok` covers two states the window shows differently.
-        public enum Nuance: Equatable {
-            case none
-            /// A strip is mounted but a write to it has not returned.
-            case stalled
-            /// Nothing is mounted, so there was nothing to check.
-            case absent
-            /// Switched off on purpose, which is not a fault.
-            case disabled
-        }
     }
 
     public struct Report {
@@ -50,9 +38,8 @@ public enum Doctor {
         public var lines: [String] {
             checks.map { "\($0.ok ? "[OK]  " : "[FAIL]") \($0.name) — \($0.detail)" }
         }
-        mutating func check(_ ok: Bool, _ name: String, _ detail: String,
-                            _ nuance: Check.Nuance = .none) {
-            checks.append(Check(ok: ok, name: name, detail: detail, nuance: nuance))
+        mutating func check(_ ok: Bool, _ name: String, _ detail: String) {
+            checks.append(Check(ok: ok, name: name, detail: detail))
             if !ok { failures += 1 }
         }
     }
@@ -113,8 +100,7 @@ public enum Doctor {
             ? t.noVolumeMounted
             : devices.map { t.deviceDetail(name: $0.name, path: $0.path,
                                            leds: $0.leds, stalled: $0.stalled) }
-                .joined(separator: "; "),
-                devices.isEmpty ? .absent : (devices.contains { $0.stalled } ? .stalled : .none))
+                .joined(separator: "; "))
         // Deliberately off is not broken, so the failure here is narrow: the
         // user asked for notifications and they cannot be sent. Reachable only
         // by hand-editing config.json, since enabling through the CLI mints a
@@ -124,7 +110,7 @@ public enum Doctor {
         case nil:
             r.check(true, "notifications", t.unknownAppUnreachable)
         case let status? where !status.enabled:
-            r.check(true, "notifications", t.notificationsOff, .disabled)
+            r.check(true, "notifications", t.notificationsOff)
         case let status?:
             // The app validates its own config and reports a flag, so doctor
             // never needs the raw topic to say whether it works.

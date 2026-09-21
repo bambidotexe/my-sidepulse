@@ -9,9 +9,10 @@ import MySidepulseCore
 ///
 /// One case per page. A page is a SUBJECT the user thinks in (the strip, the phone), never a kind
 /// of control. General comes first. What the app needs from outside itself (Claude Code's hooks,
-/// the terminal hook) comes second to last, as "System", and the tip jar last.
+/// the terminal hook, the notification permission) comes as "System", then whether all of it works,
+/// as "Health", and the tip jar last.
 enum SettingsPageID: String, CaseIterable, Sendable {
-    case general, strip, notifications, playground, health, system, tip
+    case general, strip, notifications, playground, system, health, tip
 
     /// The toolbar item's label, and the window's title while the page is shown. Title Case.
     var title: String {
@@ -21,8 +22,8 @@ enum SettingsPageID: String, CaseIterable, Sendable {
         case .strip: return t.pageStrip
         case .notifications: return t.pageNotifications
         case .playground: return t.pagePlayground
-        case .health: return t.pageHealth
         case .system: return t.pageSystem
+        case .health: return t.pageHealth
         case .tip: return t.pageTip
         }
     }
@@ -35,8 +36,8 @@ enum SettingsPageID: String, CaseIterable, Sendable {
         case .strip: "light.strip.2"
         case .notifications: "bell.badge"
         case .playground: "paintpalette"
-        case .health: "stethoscope"
         case .system: "checkmark.shield"
+        case .health: "stethoscope"
         case .tip: "mug"
         }
     }
@@ -91,8 +92,8 @@ struct SettingsRootView: View {
         case .strip: StripPage(model: model)
         case .notifications: NotificationsPage(model: model)
         case .playground: PlaygroundPage(model: model)
-        case .health: HealthPage(model: model)
         case .system: SystemPage(model: model)
+        case .health: HealthPage(model: model)
         case .tip: TipPage()
         }
     }
@@ -180,6 +181,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         model.windowVisible = true
+        pageShown(selection.page)
     }
 
     // MARK: Height
@@ -284,6 +286,19 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         guard let page = SettingsPageID(rawValue: sender.itemIdentifier.rawValue) else { return }
         selection.page = page
         window.title = page.title
+        pageShown(page)
+    }
+
+    /// What a page reads when it comes into view, which the window does rather than the page: a view's
+    /// `onAppear` does not fire again when this window, built once, is shown again on the same page.
+    /// The hook files change when a button here is pressed and are read then too; the Health page's
+    /// doctor and process readings are taken now and on Check Again, never on a timer.
+    private func pageShown(_ page: SettingsPageID) {
+        switch page {
+        case .system: model.refreshHooks()
+        case .health: model.readHealth()
+        default: break
+        }
     }
 
     // MARK: Going away

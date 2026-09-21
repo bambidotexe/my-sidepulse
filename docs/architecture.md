@@ -135,6 +135,7 @@ after it.
 | User attention | `NSWorkspace` app activation; `HIDIdleTime` polled every 0.5 s only while an alert is displayed; screen-lock state | acknowledgement, presence |
 | Front terminal tab | `osascript` asking Terminal or iTerm2, 0.5 s timeout, 2 s cache | tab-scoped acknowledgement |
 | The onboarding's five rows | a 2 s `Timer` while the wizard is up, plus `didBecomeKey`; nothing tells an app that a grant was made in System Settings | each row's own trailing control (`OnboardingCatalog`, `GrantRow`) |
+| The Settings window | a 2 s `Timer` while it is open (`SettingsModel.windowVisible`): the engine's status and the notification permission. The hook files when the window opens, when System or Health is shown and after a hook button. The doctor, the crash reports, the process's age and memory and where the bundle is (`CrashReports`, `ProcessStats`, `InstallLocation`) when Health is shown and on Check Again, never on a timer | the pages; Health's rows are `HealthReport.groups(for: SettingsModel.healthFacts)`, built in Core |
 
 Nothing polls Claude Code. The registry and transcript are read on the
 engine's own deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`),

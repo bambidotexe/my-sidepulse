@@ -54,7 +54,11 @@ final class SettingsModel: ObservableObject {
             guard windowVisible else { return }
             refresh()
             refreshHooks()
-            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
+            refreshNotificationsGrant()
+            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+                self?.refresh()
+                self?.refreshNotificationsGrant()
+            }
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
         }
@@ -108,6 +112,8 @@ final class SettingsModel: ObservableObject {
 
     /// nil until first read, and when settings.json exists but cannot be read.
     @Published private(set) var claudeHooksSetUp: Bool?
+    /// Whether the hook files have been read once, which tells "cannot be read" from "not read yet".
+    @Published private(set) var hooksRead = false
     @Published private(set) var zshHookSetUp = false
     /// What went wrong in the last Claude Code hook action, cleared when one works.
     @Published private(set) var claudeHooksError: String?
@@ -120,6 +126,7 @@ final class SettingsModel: ObservableObject {
     func refreshHooks() {
         claudeHooksSetUp = HookInstaller.claudeHooksInstalled().map { $0 == HookConfig.events.count }
         zshHookSetUp = HookInstaller.zshrcHasSnippet()
+        hooksRead = true
     }
 
     func setUpClaudeHooks() {
@@ -209,13 +216,93 @@ final class SettingsModel: ObservableObject {
         return response
     }
 
+    // MARK: permissions
+
+    /// The notification authorization, nil until it has been read once. Read on the 2 s tick while the
+    /// window is open, like every system state the window shows, and published only when it moves.
+    @Published private(set) var notificationsGranted: Bool?
+
+    func refreshNotificationsGrant() {
+        // The model is main-queue only, like the catalog; the answer lands on the main queue too.
+        MainActor.assumeIsolated {
+            OnboardingCatalog.refreshNotifications { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let granted = OnboardingCatalog.notificationsGranted
+                    if granted != self.notificationsGranted { self.notificationsGranted = granted }
+                }
+            }
+        }
+    }
+
+    /// The System page's Allow Notifications: the same ask as the wizard's row, and nothing else. Once
+    /// the user has refused, macOS shows nothing and this changes nothing; the warning beside the button
+    /// says where to go instead.
+    func allowNotifications() {
+        MainActor.assumeIsolated {
+            OnboardingCatalog.requestNotifications { [weak self] in self?.refreshNotificationsGrant() }
+        }
+    }
+
     // MARK: health
+
+    /// What only the Health page shows about the process itself, read when the page is shown and on Check
+    /// Again, never on the tick.
+    struct ProcessReadings: Equatable {
+        var runningSeconds: TimeInterval?
+        var memoryBytes: UInt64?
+        var recentCrashes: [Date] = []
+        var location: AppLocation?
+        var bundlePath = ""
+    }
+
+    @Published private(set) var processReadings = ProcessReadings()
+    /// From a press of Check Again until the doctor has answered, and for at least `K.healthMinimumBusy`.
+    @Published private(set) var isChecking = false
+
+    /// Called by the window when the Health page is shown: the doctor, the hook files and the process,
+    /// read now. The engine's rows follow the 2 s tick on their own.
+    func readHealth() {
+        refreshHooks()
+        readProcess()
+        runDoctor()
+    }
+
+    /// Check Again: everything the page shows, read now, with the overview on *Checking* until the doctor
+    /// has answered and long enough to be seen.
+    func checkAgain() {
+        guard !isChecking else { return }
+        isChecking = true
+        let started = Date()
+        refresh()
+        refreshNotificationsGrant()
+        refreshHooks()
+        readProcess()
+        runDoctor { [weak self] in
+            let left = max(0, K.healthMinimumBusy - Date().timeIntervalSince(started))
+            DispatchQueue.main.asyncAfter(deadline: .now() + left) { self?.isChecking = false }
+        }
+    }
+
+    private func readProcess() {
+        let now = Date()
+        let process = Bundle.main.executableURL?.lastPathComponent ?? "MySidepulseApp"
+        let fresh = ProcessReadings(
+            runningSeconds: ProcessStats.launchDate.map { now.timeIntervalSince($0) },
+            memoryBytes: ProcessStats.memoryFootprint,
+            recentCrashes: CrashReports.recent(process: process,
+                                               since: now.addingTimeInterval(-K.healthCrashWindow)),
+            location: InstallLocation.current(),
+            bundlePath: Bundle.main.bundleURL.path)
+        if fresh != processReadings { processReadings = fresh }
+    }
 
     /// The real doctor, through the real socket, off the main queue: the
     /// probes deadlock into their timeout if run on main (the control server
-    /// answers via a main.sync hop).
-    func runDoctor() {
-        guard !doctorRunning else { return }
+    /// answers via a main.sync hop). `done` runs on the main queue once it
+    /// has answered, or at once if a run is already going.
+    func runDoctor(_ done: (() -> Void)? = nil) {
+        guard !doctorRunning else { done?(); return }
         doctorRunning = true
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let report = Doctor.run(Doctor.liveProbes())
@@ -223,8 +310,70 @@ final class SettingsModel: ObservableObject {
                 guard let self else { return }
                 self.doctorRunning = false
                 self.doctor = DoctorRun(checks: report.checks, failures: report.failures, at: Date())
+                done?()
             }
         }
+    }
+
+    /// Everything the Health page reports, as the plain values `HealthReport` turns into rows.
+    var healthFacts: HealthFacts {
+        var facts = HealthFacts()
+        facts.notificationsGranted = notificationsGranted
+
+        if hooksRead {
+            facts.claudeHooks = switch claudeHooksSetUp {
+            case true?: .setUp
+            case false?: .missing
+            case nil: .unreadable
+            }
+            facts.terminalHookSetUp = zshHookSetUp
+        }
+        let checks = doctor?.checks ?? []
+        func check(_ name: String) -> HealthFacts.Check? {
+            checks.first { $0.name == name }.map { HealthFacts.Check(ok: $0.ok, detail: $0.detail) }
+        }
+        facts.hooksCheck = check("hooks installed")
+        facts.hookBinary = check("hook binary")
+        facts.hookCommand = check("hook command")?.detail
+        facts.journal = check("journal")
+        facts.control = check("app")
+
+        if let status {
+            facts.lastHookEventSeconds = status.lastEventAgeSeconds
+            facts.sessions = (status.sessions ?? []).map {
+                HealthFacts.Session(id: $0.id, phase: .init(state: $0.state, reason: $0.reason),
+                                    ageSeconds: $0.ageSeconds, cwd: $0.cwd)
+            }
+            facts.jobs = (status.jobs ?? []).map {
+                HealthFacts.Job(id: $0.id, label: $0.label, phase: .init(state: $0.state),
+                                acknowledged: $0.acknowledged, ageSeconds: $0.ageSeconds)
+            }
+            facts.devices = (status.devices ?? []).map {
+                HealthFacts.Device(name: $0.name, leds: $0.leds, path: $0.path, stalled: $0.stalled)
+            }
+            facts.battery = status.battery.map { PowerState(percent: $0.percent, plugged: $0.plugged) }
+            facts.phone = status.notify.map { notify in
+                guard notify.enabled else { return .disabled }
+                let detail = Loc.doctor.notificationsOn(topicMasked: notify.topicMasked, server: notify.server)
+                return notify.topicUsable ? .enabled(detail: detail) : .unusable(detail: detail)
+            }
+            facts.launchAgent = status.loginItem.map { item in
+                switch item {
+                case "enabled": .enabled
+                case "disabled": .disabled
+                default: .notSupervised
+                }
+            }
+            facts.mode = mode
+            facts.display = displayState
+        }
+
+        facts.runningSeconds = processReadings.runningSeconds
+        facts.memoryBytes = processReadings.memoryBytes
+        facts.recentCrashes = processReadings.recentCrashes
+        facts.location = processReadings.location
+        facts.bundlePath = processReadings.bundlePath
+        return facts
     }
 
     // MARK: playground

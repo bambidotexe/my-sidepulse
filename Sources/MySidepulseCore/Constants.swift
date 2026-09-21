@@ -299,3 +299,14 @@ public enum K {
     /// this runs for as long as the machine stays locked.
     public static let ejectRemountRetrySeconds: TimeInterval = 5
 }
+
+extension K {
+    /// How far back the Health page counts crash reports. A week covers the gap between two weekly update
+    /// checks, and a crash older than that has either been fixed by a release or been seen again since.
+    public static let healthCrashWindow: TimeInterval = 7 * 24 * 60 * 60
+
+    /// The shortest time the Health page's overview reads *Checking* after Check Again. The doctor answers
+    /// in a few milliseconds, and a mark that changes back before it can be seen reads as a button that did
+    /// nothing; half a second is seen and does not keep anyone waiting.
+    public static let healthMinimumBusy: TimeInterval = 0.5
+}

@@ -108,6 +108,52 @@ public struct SystemPageStrings {
         }
     }
 
+    /// Names the button the user must press, so it has to read exactly as the
+    /// button does in the same language.
+    public var withoutTerminalHookWarning: String {
+        switch language {
+        case .en: "Without it, commands you run in a terminal never show on the strip. Press "
+            + "\(setUpTerminalHookButton)."
+        case .fr: "Sans lui, les commandes lancées dans un terminal ne s'affichent jamais sur le "
+            + "ruban. Cliquez sur \(setUpTerminalHookButton)."
+        }
+    }
+
+    // MARK: Notifications
+
+    public var notificationsTitle: String {
+        switch language {
+        case .en: "Notifications"
+        case .fr: "Notifications"
+        }
+    }
+
+    public var notificationsPermissionLabel: String {
+        switch language {
+        case .en: "Notifications permission"
+        case .fr: "Autorisation des notifications"
+        }
+    }
+
+    public var allowNotificationsButton: String {
+        switch language {
+        case .en: "Allow Notifications"
+        case .fr: "Autoriser les notifications"
+        }
+    }
+
+    /// Names the button the user must press, so it has to read exactly as the
+    /// button does in the same language. Once refused, macOS asks nothing more
+    /// and the button does nothing visible, hence the second sentence.
+    public var notificationsWarning: String {
+        switch language {
+        case .en: "Press \(allowNotificationsButton). If nothing appears, turn on notifications for "
+            + "MySidepulse in System Settings › Notifications."
+        case .fr: "Cliquez sur \(allowNotificationsButton). Si rien n'apparaît, activez les "
+            + "notifications de MySidepulse dans Réglages Système › Notifications."
+        }
+    }
+
     public var settingsUnreadableWarning: String {
         switch language {
         case .en: "Claude Code's settings file could not be read. Check that "

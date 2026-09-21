@@ -111,12 +111,13 @@ neither.
 
 User notifications are the one permission the app asks for through an API
 rather than through first use, and **`UNUserNotificationCenter.requestAuthorization`
-is called in exactly one place: the onboarding's `Notifications` row**
-(`OnboardingCatalog.requestNotifications`). Nothing else in the app may call it.
+is called in exactly one function, `OnboardingCatalog.requestNotifications`,
+reached from two buttons only**: the onboarding's `Notifications` row and
+Settings › System's `Allow Notifications`. Nothing else in the app may call it.
 A request API returns the state at the moment of the call and prompts as a side
 effect, so using one to read a grant behind the wizard's 2 s poll would be a
-prompt every two seconds; `UpdateNotifier` and the wizard's rows both read with
-`getNotificationSettings`. A refusal macOS has recorded is permanent, which is
+prompt every two seconds; `UpdateNotifier`, the wizard's rows and the Settings
+window's 2 s tick all read with `getNotificationSettings`. A refusal macOS has recorded is permanent, which is
 why no prompt may ever arrive unasked.
 
 Granting Automation is not enough on its own: the entitlements file also

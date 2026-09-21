@@ -63,9 +63,24 @@ public struct StatusWords {
         case .fr: "Échec"
         }
     }
+
+    /// A macOS permission. The wizard's row says the same word once it is there.
+    public var granted: String {
+        switch language {
+        case .en: "Granted"
+        case .fr: "Accordé"
+        }
+    }
+
+    public var denied: String {
+        switch language {
+        case .en: "Denied"
+        case .fr: "Refusé"
+        }
+    }
 }
 
-/// Everything the Settings window shows: the toolbar's six titles, the shared
+/// Everything the Settings window shows: the toolbar's seven titles, the shared
 /// status vocabulary, and one table per page.
 public struct SettingsStrings {
     private let language: Language
@@ -102,7 +117,7 @@ public struct SettingsStrings {
     public var pageHealth: String {
         switch language {
         case .en: "Health"
-        case .fr: "Diagnostic"
+        case .fr: "Santé"
         }
     }
 

@@ -3,155 +3,85 @@ import SwiftUI
 import MySidepulseCore
 import MySidepulsePlatform
 
-/// The doctor's checks and the live state, in the window instead of a terminal.
+/// Whether MySidepulse is doing its job, at a glance: one overview row that sums the page up, then every
+/// state that bears on it, grouped by subject, each a `StatusRow` in the colour of its level. It reports
+/// and changes nothing: a state is put right on the page that owns it, and each orange or red row says
+/// where in a warning under its group.
+///
+/// What goes here, what does not (the version and updates stay on General), and which colour a state
+/// takes are the `macos-building-settings-pages` skill's *The Health page*. The rows themselves are built
+/// in `HealthReport` (Core), where they are tested; this view only draws them. The window reads the
+/// doctor, the hook files and the process when the page is shown (`SettingsModel.readHealth`), never the
+/// view.
 struct HealthPage: View {
     @ObservedObject var model: SettingsModel
 
-    /// One doctor check, translated: the name the user knows it by, the mark it earned, and the
-    /// raw detail kept for the tooltip.
-    private struct Row: Identifiable {
-        let id: String
-        let label: String
-        let mark: StatusMark
-        let detail: String
-    }
-
     var body: some View {
         let t = Loc.settings.health
+        let groups = HealthReport.groups(for: model.healthFacts)
+        let summary = HealthSummary(groups: groups)
         SettingsPage {
-            SettingsGroup(title: t.checksTitle, hint: t.checksHint) {
-                ForEach(rows) { row in
-                    StatusRow(row.label, mark: row.mark).help(row.detail)
-                }
+            SettingsGroup(title: t.overviewTitle) {
+                // The doctor has not answered yet the first time the page is shown: its rows are not
+                // there, so the overview would sum up half a page.
+                StatusRow("MySidepulse",
+                          mark: model.isChecking || model.doctor == nil
+                            ? .busy(t.checking)
+                            : StatusMark(summary.level, HealthReport.summaryWord(summary)))
                 ButtonRow {
-                    Button(t.checkAgainButton) { model.runDoctor() }
-                        .disabled(model.doctorRunning)
+                    Button(t.checkAgainButton) { model.checkAgain() }
+                        .disabled(model.isChecking)
                 }
             }
 
-            SettingsGroup(title: t.rightNowTitle) {
-                StatusRow(t.lastHookEventLabel,
-                          mark: model.status?.lastEventAgeSeconds
-                              .map { .info(t.lastEventAgo(seconds: $0)) } ?? .info(t.noneYet))
-                if let battery = model.status?.battery {
-                    StatusRow(t.batteryLabel,
-                              mark: .info(t.batteryMark(percent: battery.percent,
-                                                        plugged: battery.plugged)))
-                }
-                if sessions.isEmpty {
-                    StatusRow(t.claudeSessionsLabel, mark: .info(t.none))
-                } else {
-                    ForEach(sessions, id: \.id) { session in
-                        StatusRow(t.sessionLabel(idPrefix: String(session.id.prefix(8))),
-                                  mark: .info(t.sessionMark(state: session.state,
-                                                            reason: session.reason,
-                                                            ageSeconds: session.ageSeconds)))
-                            .help(session.cwd ?? t.unknownDirectory)
+            ForEach(groups) { group in
+                SettingsGroup(title: group.title, hint: group.hint, warnings: group.warnings) {
+                    ForEach(group.rows) { row in
+                        HealthRowView(row: row)
                     }
-                }
-                // A session has no name of its own, so its row says "Session"; a command's
-                // row is the command itself.
-                ForEach(jobs, id: \.id) { job in
-                    StatusRow(job.label ?? job.id,
-                              mark: .info(t.jobMark(state: job.state,
-                                                    acknowledged: job.acknowledged,
-                                                    ageSeconds: job.ageSeconds)))
                 }
             }
 
             SettingsGroup(title: t.reportTitle, hint: t.reportHint) {
                 ButtonRow {
-                    Button(t.copyReportButton) { copyReport() }
+                    Button(t.copyReportButton) { copyReport(groups) }
                 }
             }
         }
-        .onAppear { model.runDoctor() }
     }
 
-    private var sessions: [SessionStatus] { model.status?.sessions ?? [] }
-
-    private var jobs: [JobStatus] { model.status?.jobs ?? [] }
-
-    // MARK: the checks
-
-    /// The doctor's names are its own; these are the user's. A check with no entry here is one the
-    /// window reports elsewhere, or a path nobody reads, so it is dropped.
-    private var rows: [Row] {
-        let t = Loc.settings.health
-        let words = Loc.settings.words
-        let checks = model.doctor?.checks ?? []
-        // The "hook binary" row is about the command "hook command" names, so the tooltip is that
-        // check's detail: knowing WHICH path is stale is the whole of the bug report.
-        let hookCommandDetail = checks.first(where: { $0.name == "hook command" })?.detail
-        return checks.compactMap { check -> Row? in
-            switch check.name {
-            case "app":
-                return Row(id: check.name, label: t.appLabel,
-                           mark: check.ok ? .good(words.available) : .failure(words.missing),
-                           detail: check.detail)
-            case "auto-start & restart":
-                return Row(id: check.name, label: t.autoStartLabel,
-                           mark: check.ok ? .good(words.enabled) : .warning(words.disabled),
-                           detail: check.detail)
-            case "hooks installed":
-                return Row(id: check.name, label: t.claudeCodeHooksLabel,
-                           mark: check.ok ? .good(words.enabled) : .warning(words.disabled),
-                           detail: check.detail)
-            case "hook binary":
-                return Row(id: check.name, label: t.hookCommandLabel,
-                           mark: check.ok ? .good(words.valid) : .failure(words.invalid),
-                           detail: hookCommandDetail ?? check.detail)
-            case "journal":
-                return Row(id: check.name, label: t.journalLabel,
-                           mark: check.ok ? .good(words.available) : .failure(words.failed),
-                           detail: check.detail)
-            case "device":
-                return Row(id: check.name, label: t.sidePulseStripLabel, mark: deviceMark(check),
-                           detail: check.detail)
-            case "notifications":
-                return Row(id: check.name, label: t.phoneNotificationsLabel,
-                           mark: notificationsMark(check), detail: check.detail)
-            default:
-                return nil
-            }
-        }
-    }
-
-    /// Reads the check's `nuance`, never its sentence: the sentence is prose and
-    /// is translated, so matching on it would break in every language but one.
-    private func deviceMark(_ check: Doctor.Check) -> StatusMark {
-        let words = Loc.settings.words
-        guard check.ok else { return .failure(words.failed) }
-        switch check.nuance {
-        case .stalled: return .warning(words.stalled)
-        case .absent: return .warning(words.missing)
-        default: return .good(words.available)
-        }
-    }
-
-    private func notificationsMark(_ check: Doctor.Check) -> StatusMark {
-        let words = Loc.settings.words
-        guard check.ok else { return .failure(words.invalid) }
-        return check.nuance == .disabled ? .good(words.disabled) : .good(words.enabled)
-    }
-
-    private func copyReport() {
-        var lines = model.doctor.map { run in
-            run.checks.map { "\($0.ok ? "[OK]  " : "[FAIL]") \($0.name): \($0.detail)" }
-        } ?? []
-        if let status = model.status {
-            lines.append("")
-            lines.append("strip shows: \(status.display ?? "?")   mode: \(status.mode ?? "?")")
-            for session in status.sessions ?? [] {
-                let reason = session.reason.map { " (\($0))" } ?? ""
-                lines.append("session \(session.id.prefix(8)): \(session.state)\(reason), "
-                             + "\(session.ageSeconds)s ago")
-            }
-            for job in status.jobs ?? [] {
-                lines.append("job \(job.label ?? job.id): \(job.state), \(job.ageSeconds)s ago")
-            }
-        }
+    private func copyReport(_ groups: [HealthGroup]) {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let text = HealthReport.text(appName: "MySidepulse", version: UpdateController.shared.appVersion,
+                                     system: "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
+                                     groups: groups)
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// One row of the page: the kit's `StatusRow`, and what only a bug report needs as its tooltip.
+private struct HealthRowView: View {
+    let row: HealthRow
+
+    var body: some View {
+        if let detail = row.detail, !detail.isEmpty {
+            StatusRow(row.label, mark: StatusMark(row.level, row.word)).help(detail)
+        } else {
+            StatusRow(row.label, mark: StatusMark(row.level, row.word))
+        }
+    }
+}
+
+extension StatusMark {
+    /// The kit's mark for one of the Health page's four levels: blue, green, orange, red. The System
+    /// page's rows take theirs the same way, so a state reads the same on both.
+    init(_ level: HealthLevel, _ text: String) {
+        switch level {
+        case .info: self = .info(text)
+        case .good: self = .good(text)
+        case .warning: self = .warning(text)
+        case .failure: self = .failure(text)
+        }
     }
 }
