@@ -38,6 +38,12 @@ final class SettingsModel: ObservableObject {
 
     weak var engine: Engine?
 
+    /// Opens the Settings window on a page. Set by `AppDelegate`, which owns the window: the
+    /// onboarding's Phone alerts row needs the page carrying the QR code the phone scans.
+    var showSettings: ((SettingsPageID) -> Void)?
+    /// Opens the onboarding wizard again, from the System page's button. Set by `AppDelegate`.
+    var showOnboarding: (() -> Void)?
+
     private var refreshQueued = false
     private var timer: Timer?
 

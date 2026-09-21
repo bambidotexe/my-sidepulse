@@ -162,6 +162,35 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    /// The wizard's headline colours one word, found by searching the headline for it. A
+    /// translation that accented a word its own sentence does not contain would simply lose the
+    /// accent, with nothing to notice it.
+    func testTheOnboardingAccentWordIsInItsOwnHeadline() {
+        for language in Language.allCases {
+            withLanguage(language) {
+                let t = Loc.onboarding
+                XCTAssertFalse(t.heroAccent.isEmpty, "\(language)")
+                XCTAssertTrue(t.heroTitle.range(of: t.heroAccent, options: .caseInsensitive) != nil,
+                              "\(language): \(t.heroAccent) is not in \(t.heroTitle)")
+            }
+        }
+    }
+
+    /// The wizard and the Settings window must not give one thing two names: the user meets the
+    /// same row in both, and a second name sends them looking for something that is not there.
+    func testTheOnboardingRowsAreNamedAsTheSettingsWindowNamesThem() {
+        for language in Language.allCases {
+            withLanguage(language) {
+                XCTAssertEqual(Loc.onboarding.claudeTitle, Loc.settings.system.claudeCodeHooksLabel,
+                               "\(language)")
+                XCTAssertEqual(Loc.onboarding.terminalTitle, Loc.settings.system.terminalHookLabel,
+                               "\(language)")
+                XCTAssertEqual(Loc.onboarding.startupTitle, Loc.settings.general.startupTitle,
+                               "\(language)")
+            }
+        }
+    }
+
     // MARK: reading the tables off disk
 
     private static func stringTableSources() throws -> [URL] {

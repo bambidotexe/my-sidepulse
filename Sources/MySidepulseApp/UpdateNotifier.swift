@@ -11,9 +11,11 @@ private enum UpdateNotification {
 }
 
 /// The one notification the app posts on this Mac: a newer release found by a check nobody asked for.
-/// What Claude Code is doing goes to the strip and, through ntfy, to a phone; never here. Permission is
-/// asked for the first time there is something to say, not at launch, and a user who says no still finds
-/// the release in Settings.
+/// What Claude Code is doing goes to the strip and, through ntfy, to a phone; never here.
+///
+/// **Nothing here asks for permission.** Every permission prompt in MySidepulse follows a click, and the
+/// only click that asks for this one is the onboarding's Notifications row. A check that finds a release
+/// reads the authorization and stays quiet without it; the release shows in Settings all the same.
 ///
 /// `UNUserNotificationCenter.current()` traps in a process with no bundle (a binary run out of
 /// `.build`), so nothing here touches it unless the app runs from one.
@@ -42,8 +44,10 @@ final class UpdateNotifier: NSObject, UNUserNotificationCenterDelegate {
         guard let center else { return }
         let title = Loc.settings.general.versionAvailable(version)
         let body = Loc.updateWindow.notificationBody
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else {
+        // A reader, never an ask: `requestAuthorization` would put a prompt on screen that no click
+        // of the user's asked for, and a refusal macOS then remembers for good.
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized else {
                 Log.app.notice("update: notification not posted: not allowed; the release shows in Settings")
                 return
             }

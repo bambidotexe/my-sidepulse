@@ -224,6 +224,14 @@ final class Engine {
     /// quietly put it back.
     var autoRestartIsOn: Bool { LoginService.isEnabled }
 
+    /// The engine owns the live config, so the wizard's last button comes through here rather than
+    /// writing `config.json` beside it and losing whatever else has changed since it was loaded.
+    func markOnboardingDone() {
+        guard config.onboardingDone != true else { return }
+        config.onboardingDone = true
+        config.save()
+    }
+
     func setAutoRestart(_ wanted: Bool) {
         do {
             if wanted { try LoginService.install() } else { try LoginService.remove() }

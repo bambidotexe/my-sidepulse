@@ -8,7 +8,7 @@ expect. `swift test` covers the rules; this file covers what they cannot reach.
 
 | | Do this | Expect |
 |---|---|---|
-| [ ] | Open Settings (⌘, from the menu-bar item, or open the app again) and click through the six toolbar items | **General, Strip, Notifications, Playground, Health, System**, each a symbol above its title, the shown one drawn as a glass pill, and the window's title following it. The window opens on General at its size and centred, with no jump. On every switch its bottom edge moves, animated, and its top-left corner does not |
+| [ ] | Open Settings (⌘, from the menu-bar item, or open the app again) and click through the seven toolbar items | **General, Strip, Notifications, Playground, Health, System, Tip**, each a symbol above its title, the shown one drawn as a glass pill, and the window's title following it. The window opens on General at its size and centred, with no jump. On every switch its bottom edge moves, animated, and its top-left corner does not |
 | [ ] | Read any page | Every group is a bold title, a card of rows, and under the card a grey hint, then orange warnings, then blue notes, never text inside a card. Nothing is smaller than the body text, there is no radio button and no pop-up menu, and no sentence carries a long dash |
 | [ ] | General | The app icon alone at the top, 144 pt. Startup: two switches, a grey hint, one blue note naming the Applications folder and Spotlight. No hint under Updates or under Quit |
 | [ ] | General › Updates, press **Check for Updates** | `MySidepulse <version>` on the left of the row; then a spinner and **Checking**; then an orange **No release published yet**. The button stays Check for Updates. Log (`app`): one `update check (asked): no release published` line |
@@ -22,6 +22,7 @@ expect. `swift test` covers the rules; this file covers what they cannot reach.
 | [ ] | Playground, click **Battery glance**, then **A colour** | A Battery level slider row appears; moving it and letting go repaints the fill on the strip. Then a colour row with a hex and a picker |
 | [ ] | Playground, leave the page mid-preview | The strip is back to its real state at once |
 | [ ] | Health | Seven rows, each a green word, the tooltip the doctor's detail. **Check Again** greys out while it runs. Right now: last hook event, battery, one row per Claude session and per command. **Copy Report** puts the checks and the state on the clipboard with the topic masked to six characters |
+| [ ] | System › Welcome, press **Show Onboarding Again** | The wizard opens at page one, in front, with every row re-read. Settings stays open behind it; closing the wizard leaves the app active and Settings where it was |
 | [ ] | System, press **Remove Hooks** | `Claude Code hooks` turns orange **Disabled**, an orange warning says to press Set Up Hooks, and the button is Set Up Hooks. Press it: green **Enabled**, the warning is gone, the note stays. `mysidepulse doctor` agrees both times |
 | [ ] | General, turn **Show in menu bar** off, close the window, open the app from Applications | The menu-bar icon is gone, the window comes back, the Dock icon is there while it is open and gone once it closes |
 | [ ] | **Tip** | The toolbar shows a mug; the first card has no title and carries the app icon beside the sentence; **One-time tip** shows the Ko-fi cup on its red wash, *A cup of coffee*, its grey line, and **Tip €5**, with the hint under the card |
@@ -77,3 +78,30 @@ started with `MYSIDEPULSE_UPDATE_FEED=file:///…/latest.json` in its environmen
 | [ ] | Quit the new version within two seconds of its relaunch (Settings › General › **Quit MySidepulse**) | It stays quit and stays updated: `install.log` still ends with `version … is running`, and reopening it shows the new version |
 | [ ] | An image whose `MySidepulseApp` has been replaced by `exit 1` before signing | The previous version comes back by itself and the strip lights again, its window says **Version … was not installed. The new version did not start, so the previous one was put back.** with **Close**, Settings › General carries the same reason as an orange mark once opened, and `install.log` has `did not start; putting the previous one back` |
 | [ ] | The app run from a read-only folder | After the fetch the window offers **Open Disk Image** and the sentence about dragging MySidepulse to Applications |
+
+## 4. The onboarding wizard
+
+None of this has an automated test. Start from a Mac where the wizard has not
+been walked: `mysidepulse` quit, `onboardingDone` removed from
+`~/Library/Application Support/MySidepulse/config.json`, then open the app. Use
+Settings > System > **Show Onboarding Again** for the rest.
+
+| | Do this | Expect |
+|---|---|---|
+| [ ] | Open the app with `onboardingDone` absent | The wizard opens by itself, in front, 540 pt wide, titled MySidepulse, with a close button and no minimise and no resize handle. **No Dock icon appears**, and no Settings window opens |
+| [ ] | `make install` over that same Mac, with the flag set | No wizard, and no Settings window. The same for a launch the update helper makes |
+| [ ] | Page one | The app icon at the top, the headline with **Claude** in the app's working red, two grey lines under it, three red capsules reading Working, Finished, Needs you, and **Continue** at the bottom right, pressed by Return |
+| [ ] | Continue to **Setting up** | The window grows downward: the title bar does not move. Five rows, separated by hairlines, `Claude Code hooks` carrying an orange triangle. The button reads **Skip** while the hooks are not set up and **Continue** once they are, and nothing else on the page moves when it changes |
+| [ ] | Press **Set Up…** on `Claude Code hooks` | The button greys out with a small spinner beside it, then the row reads **Set up** with a **Remove** button. Only that row changed: the header, the intro and the four other rows did not move or flicker. `mysidepulse doctor` agrees |
+| [ ] | Press **Turn On** on `Startup` | The row reads **Enabled**. `launchctl list \| grep sidepulse` finds the job |
+| [ ] | Press **Allow…** on `Notifications` | **Only** the macOS permission dialog. System Settings does **not** open beside it. Allow it: the row reads **Granted** |
+| [ ] | Press **Allow…** again after having refused once | Nothing visible happens, and System Settings still does not open. That is the cost of the rule: only a click asks, and macOS has already recorded the refusal |
+| [ ] | From the dialog, go to System Settings, grant the permission there, and leave the pane open | The row ticks over on its own within about 2 s, with the wizard still behind the pane. Close the System Settings window: the wizard comes back in front of what it was in front of |
+| [ ] | Grant it, then leave System Settings open and click another app instead | The wizard does not move |
+| [ ] | Press **Turn On** on `Phone alerts` | Settings opens on **Notifications**, with the topic revealed and its QR code, in front of the wizard. The wizard stays where it is. Close Settings: the app stays active and the wizard is still there |
+| [ ] | Click another app's window while the wizard is up | It goes behind and **stays** there. Switch to another Space and back: still in front of exactly what it was |
+| [ ] | `open -b io.mysidepulse.app` with the wizard up | The wizard comes forward, not Settings. With Settings also open, activating the app brings Settings forward, not the wizard |
+| [ ] | Continue to **All set**, then close the window with its close button instead of **Finish** | `onboardingDone` is still absent from `config.json`, and the next launch opens the wizard again |
+| [ ] | Walk it again and press **Finish** | The window closes, the front goes back to whoever had it and keystrokes reach that app, `config.json` has `"onboardingDone": true`, and the next launch opens nothing |
+| [ ] | Reach the last page having granted nothing, finish, quit, and launch again twice | **No permission prompt appears by itself**, at launch or while the window sits open. Every prompt in the whole walk followed a click of yours |
+| [ ] | Run it in French (`-AppleLanguages '(fr)'`) | Every sentence is French, **Claude** is still the accented word, and each row's title reads exactly as the Settings window's own row for the same thing (`Hooks Claude Code`, `Hook de terminal`, `Démarrage`). No row's title or explanation is cut off |

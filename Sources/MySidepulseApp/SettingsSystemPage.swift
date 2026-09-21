@@ -39,6 +39,13 @@ struct SystemPage: View {
                     }
                 }
             }
+
+            SettingsGroup(title: Loc.onboarding.showAgainTitle,
+                          hint: Loc.onboarding.showAgainHint) {
+                ButtonRow {
+                    Button(Loc.onboarding.showAgainButton) { model.showOnboarding?() }
+                }
+            }
         }
         .onAppear { model.refreshHooks() }
     }

@@ -53,6 +53,7 @@ public enum Loc {
     public static var status: StatusStrings { StatusStrings(language) }
     public static var alerts: AlertStrings { AlertStrings(language) }
     public static var settings: SettingsStrings { SettingsStrings(language) }
+    public static var onboarding: OnboardingStrings { OnboardingStrings(language) }
     public static var doctor: DoctorStrings { DoctorStrings(language) }
     public static var hookInstall: HookInstallStrings { HookInstallStrings(language) }
     public static var update: UpdateStrings { UpdateStrings(language) }

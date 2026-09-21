@@ -170,6 +170,7 @@ are `docs/functional.md`.
 | finding the strip, the eject guard | `App/DeviceMonitor.swift`, `Platform/LedDevice.swift`, `Core/EjectGuard.swift` | §2, `macOS.md` |
 | writing to the strip, keepalive | `Platform/LedWriter.swift`, `Keepalive.swift` | `device.md`, §2 |
 | the menu | `App/MenuBarController.swift` | §9 |
+| the onboarding wizard: a page, a row, what a row's button does, who is in front | **Invoke the `building-onboarding` skill first**: it holds the window's whole contract and every trap it hit. `App/OnboardingWindowController.swift` (the window, the pages, `GrantRow`), `App/OnboardingCatalog.swift` (`GrantItem`, `FocusReturnWatch`, the five rows, `OnboardingMetrics`), `App/ControlActionHandler.swift`; the words are `Core/StringsOnboarding.swift`. The flag is `AppConfig.onboardingDone`, written through `Engine.markOnboardingDone`; `AppDelegate` opens it and cross-wires `othersNeedUsActive` with `SettingsWindow` and `UpdateController`. **A permission is asked from a row's button and nowhere else** | §10 *The onboarding wizard*, §12, `macOS.md` *Permissions*, `pitfalls.md`, the checklist's §4 |
 | a settings page, its look or its copy | **Invoke the `building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the six page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
 | a CLI command | `CLI/CLIMain.swift` (and its usage text), `Platform/Control.swift` (new fields optional), `Engine.controlResponse` | §11, `architecture.md` *Control plane* |
 | updates: the check, its schedule, the notification | `Core/UpdateCheck.swift` (versions, what a reply means — `UpdateCheckTests`), `Core/UpdateSchedule.swift`, `Core/UpdatePanel.swift` (the Updates group), the `update…` numbers in `Core/Constants.swift`; `Platform/UpdateChecker.swift` (the request — `UpdateCheckerTests`); `App/UpdateController.swift` (the one owner), `App/UpdateNotifier.swift`, the Updates group of `App/SettingsGeneralPage.swift` | §10 *Updates*, §12, §13, `macOS.md` *Updates* |
@@ -198,8 +199,8 @@ make release     # skill: publish-release. The same, plus tag, push, GitHub rele
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (317, one opt-in skip) runs in about two seconds;
-  `MySidepulsePlatformTests` (131) takes about 24 s, because it spawns real
+  `MySidepulseCoreTests` (319, one opt-in skip) runs in about two seconds;
+  `MySidepulsePlatformTests` (132) takes about 24 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -410,7 +411,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (317 + 131, one opt-in skip) at
+`swift build` is clean and `swift test` is green (319 + 132, one opt-in skip) at
 this commit. The live journal replays.
 
 Walked end to end on the owner's Mac: a drag install from the disk image, which
@@ -441,6 +442,9 @@ Known limitations, in plain words — the authority is *Open issues* in
 - Every update check answers `No release published yet` (a press says so, the
   automatic one says nothing) until the GitHub repository is public and carries
   a release with a version tag and the `.dmg` that `make dmg` builds.
+- The onboarding wizard has never been walked on hardware. Its rules have no
+  automated test at all beyond the strings; `docs/manual-test-checklist.md` §4
+  is the whole of its verification, and nothing in it has been ticked.
 - The update has never been seen end to end in this app. Its rules are
   unit-tested, the helper has installed and rolled back a stand-in app for
   real, `launchctl kickstart` has been measured on a job that had exited, and

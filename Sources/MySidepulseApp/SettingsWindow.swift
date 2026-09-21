@@ -146,6 +146,20 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     var isUp: Bool { window.isVisible }
 
+    /// Whether another window of the app still needs it active once this one goes away: the
+    /// onboarding wizard, which the System page and a first launch open. Injected, never inferred
+    /// from `NSApp.windows`.
+    var othersNeedUsActive: @MainActor () -> Bool = { false }
+
+    /// Opens the window on a named page. The onboarding's Phone alerts row lands the user on
+    /// Notifications, where the QR code their phone scans is.
+    func show(page: SettingsPageID) {
+        selection.page = page
+        window.title = page.title
+        window.toolbar?.selectedItemIdentifier = identifier(for: page)
+        show()
+    }
+
     func show() {
         // Sized BEFORE it is centred, never after: a hosting controller does not size the window until
         // its view lays out, and centring a zero-width window puts its origin mid-screen.
@@ -287,9 +301,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     func windowDidMiniaturize(_ notification: Notification) { handBackActivation() }
 
-    /// Unless the update window is up: it needs the app active to stay in front.
+    /// Unless another window of the app is up: the update window needs the app active to stay in
+    /// front, and so does the onboarding wizard, which has no Dock icon to be fetched back from.
     private func handBackActivation() {
-        if !UpdateController.shared.windowIsUp { NSApp.deactivate() }
+        if !UpdateController.shared.windowIsUp, !othersNeedUsActive() { NSApp.deactivate() }
     }
 
     // MARK: The Dock

@@ -109,6 +109,16 @@ neither.
 | `NSRemovableVolumesUsageDescription` | first access to the strip's volume, if macOS asks at all | `LEDS.LED` and `keepalive` cannot be written; the strip stays as the device left it |
 | `NSAppleEventsUsageDescription` | first tab probe of Terminal or iTerm2 | AppleScript errors `-1743` / `-1744` are remembered for the process, a warning is logged once, and acknowledgement falls back to the whole terminal app |
 
+User notifications are the one permission the app asks for through an API
+rather than through first use, and **`UNUserNotificationCenter.requestAuthorization`
+is called in exactly one place: the onboarding's `Notifications` row**
+(`OnboardingCatalog.requestNotifications`). Nothing else in the app may call it.
+A request API returns the state at the moment of the call and prompts as a side
+effect, so using one to read a grant behind the wizard's 2 s poll would be a
+prompt every two seconds; `UpdateNotifier` and the wizard's rows both read with
+`getNotificationSettings`. A refusal macOS has recorded is permanent, which is
+why no prompt may ever arrive unasked.
+
 Granting Automation is not enough on its own: the entitlements file also
 carries `com.apple.security.automation.apple-events` true. The Hardened
 Runtime refuses to send an Apple Event without that entitlement whatever the
@@ -117,8 +127,8 @@ question to Terminal or iTerm2 would fail with `errAEEventNotPermitted` and
 every tab would look visible. `scripts/release.sh` asserts the entitlement is
 present in the built app rather than trusting it.
 
-Not used: Accessibility, Full Disk Access, Input Monitoring, user notifications,
-location, camera, microphone.
+Not used: Accessibility, Full Disk Access, Input Monitoring, location, camera,
+microphone.
 
 Network: outbound HTTPS (or HTTP) to the configured ntfy server, only when
 notifications are on; HTTPS to `api.github.com` for the update check, shortly

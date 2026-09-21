@@ -317,7 +317,70 @@ bounded by `K.quitBlackoutSeconds` (1.5 s): a card that has stopped answering
 never answers, and the app quits anyway. The exit is a clean one, so the launch
 agent leaves MySidepulse stopped; the next login starts it again (§10).
 
-## 10. Settings window
+## 10. Onboarding, and the Settings window
+
+### The onboarding wizard
+
+The first window a user ever sees. **540 pt wide, titled and closable, nothing
+else**: the normal window level, the default collection behaviour, no
+miniaturise button and no resize. It comes up in front because it is the last
+window to open, and from then on it takes its turn like any other window: a
+permission prompt and System Settings both open over it and stay there. Unlike
+the Settings window it does **not** give the app a Dock icon; the main menu is
+there all the same, so ⌘W and ⌘C work.
+
+**It opens by itself on a launch that is a person's and has not been walked to
+its end**, and on no other: a launch the installer or the update helper asked
+for is silent, by the same marker that keeps the Settings window shut (above).
+The last page's button is what records it as done, so a window closed before
+that brings the wizard back at the next launch. **Settings › System › Welcome ›
+`Show Onboarding Again`** opens it at any time, from page one, with every row
+re-read.
+
+**Three pages, one button at the bottom right of each.**
+
+1. The app icon, *Know when Claude is working, finished, or needs you.* with
+   **Claude** in the app's own working red, two lines saying what the strip does
+   and that the same alerts reach a phone, and three capsules: *Working*,
+   *Finished*, *Needs you*. `Continue`.
+2. **Setting up**: one grey paragraph, then five rows, then the button.
+3. **All set**: slide the card into the slot, the app lives in the menu bar,
+   everything here can be changed again in Settings. `Finish`.
+
+Each row is a title, one grey line saying what it gets the user, and a trailing
+control. The title is **exactly what System Settings calls the switch, or
+exactly what the Settings window already calls the same thing**; a row the app
+cannot work without carries an orange triangle after its title.
+
+| Row | Required | Done when | The button does |
+|---|---|---|---|
+| `Claude Code hooks` | yes | all 15 events are in Claude Code's settings | adds them, after a backup (§4 *Source*); once set up, `Remove` |
+| `Startup` | no | the launch agent is registered | registers it (§12 *Handing over to launchd*) |
+| `Terminal hook` | no | the block is in `~/.zshrc` | adds it (§7); once set up, `Remove` |
+| `Notifications` | no | macOS has granted them | asks macOS, and nothing else |
+| `Phone alerts` | no | the phone switch is on | turns it on and opens Settings › Notifications, where the QR code the phone scans is (§6) |
+
+The page's button reads **`Skip`** until every required row is done and
+**`Continue`** from then on. While a row's flow runs, that row keeps its button,
+disabled, with a small spinner beside it.
+
+**Every permission prompt in MySidepulse follows a click, and there is no
+exception.** The `Notifications` row is the only thing in the app that asks; an
+automatic update check that finds a release reads the authorization and stays
+quiet without it, and the release shows in Settings all the same. Nothing tells
+an app that a grant was made in System Settings, so while the window is up each
+row is re-read every **2 s**, and a row that moves redraws its own trailing
+control; the page itself is built only when the step changes.
+
+**Who is in front.** A button that hands over to System Settings or to a system
+prompt changes nothing: the wizard stays where it is, under what it opened. It
+comes back to the front when the app it sent the user to **quits**, for up to
+five minutes after the press, and when the app is activated for any other reason
+while the wizard is the app's only window. Opening MySidepulse again while the
+wizard is up brings the wizard forward, not Settings: with no Dock icon that is
+the way to fetch it back.
+
+### The Settings window
 
 Opened from the menu-bar item (`Settings…`, ⌘,) and by opening the app again —
 Finder, Spotlight, the Dock — which is the way back in when the menu-bar item
@@ -383,6 +446,7 @@ opens on General, already at that page's height and centred.
 | Health | Report | `Copy Report` | |
 | System | Claude Code | `Claude Code hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*) | |
 | System | Terminal | `Terminal hook`, `Set Up Terminal Hook` or `Remove Terminal Hook` (§7) | |
+| System | Welcome | `Show Onboarding Again`, which opens the wizard at page one (above) | |
 
 Every change is written as it is made; there is no Apply. While the window is
 open every row that reports the engine is re-read every **2 s**; the two hook
@@ -717,7 +781,8 @@ server or topic).
 ## 12. Settings, permissions, failure modes
 
 **Defaults:** mode `auto`; brightness 255; launch agent registered on first
-launch; notifications off; server `https://ntfy.sh`; menu-bar item shown.
+launch; notifications off; server `https://ntfy.sh`; menu-bar item shown; the
+onboarding wizard not yet walked, so a first launch opens it (§10).
 Storage is described in [architecture.md](architecture.md#persistence).
 
 ### Handing over to launchd
@@ -761,7 +826,7 @@ opens the window saying how the install ended.
 | Removable volumes | writing `LEDS.LED` and `keepalive` | the strip stays as the device left it |
 | Automation (Terminal, iTerm2) | asking which tab is in front | acknowledgement covers the whole terminal app instead of one tab; logged once |
 | Network | ntfy; GitHub, for the update check (at launch, weekly, and on a press) and for the download a click on Update asks for | pushes fail and are logged; the version row under Updates says why a press could not check |
-| Notifications | announcing a newer release found by an automatic check, and nothing else; asked for the first time there is one | no notification; the release shows in Settings all the same |
+| Notifications | announcing a newer release found by an automatic check, and nothing else; **asked only by the onboarding's `Notifications` row**, never by the app on its own (§10) | no notification; the release shows in Settings all the same |
 
 No Accessibility or Full Disk Access permission is used.
 

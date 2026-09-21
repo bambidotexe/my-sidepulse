@@ -201,7 +201,7 @@ the icon is hidden. Every change applies as you make it.
 | **Playground** | nine states and six effects to try on the real strip |
 | **Health** | the doctor's checks, live · every session and command right now · *Copy Report* |
 | **Tip** | everything is free and stays free · a one-time tip on Ko-fi |
-| **System** | set up or remove the Claude Code hooks and the terminal hook, each with one button |
+| **System** | set up or remove the Claude Code hooks and the terminal hook, each with one button · show the welcome wizard again |
 
 The app speaks **English and French**, following the language your Mac is set to. The command line is always
 in English.
@@ -211,8 +211,10 @@ in English.
 Download the disk image from [the latest release](https://github.com/bambidotexe/my-sidepulse/releases/latest),
 open it and drag **MySidepulse** to Applications, then open it once. It is signed with a Developer ID and
 notarized by Apple, so it opens without a warning. That first launch registers it to open at login and to
-restart after a crash, and hands the running copy to launchd. Subscribe the Claude Code hooks from
-Settings › System, and MySidepulse starts following your sessions.
+restart after a crash, and hands the running copy to launchd. A short welcome wizard then walks you through
+everything MySidepulse needs: the Claude Code hooks, the terminal hook, notifications on this Mac and alerts
+on your phone. Set up the hooks there and MySidepulse starts following your sessions. Every permission it
+ever asks for follows a click of yours, and nothing is asked before you press for it.
 
 From this repository instead:
 

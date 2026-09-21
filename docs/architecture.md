@@ -14,7 +14,7 @@ third-party dependency, no firmware in this repository.
 |---|---|---|---|
 | `MySidepulseCore` | library | Foundation only | Every rule: session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
 | `MySidepulsePlatform` | library | Foundation, Darwin, MachO | Headless, testable I/O: journal append and tail, process inspection, LED file writer, keepalive, ntfy client, control socket, doctor, the hook installer, and the update's I/O: the GitHub check, the download held against GitHub's digest, the stager (disk image, copy, signature), the installer and the detached helper process. |
-| `MySidepulseApp` | executable | AppKit, SwiftUI, IOKit, DiskArbitration, ServiceManagement | The menu-bar app: `Engine`, device/power/attention monitors, launch agent, settings window. |
+| `MySidepulseApp` | executable | AppKit, SwiftUI, IOKit, DiskArbitration, ServiceManagement, UserNotifications | The menu-bar app: `Engine`, device/power/attention monitors, launch agent, the settings window and the onboarding wizard. |
 | `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code runs. |
 | `MySidepulseCoreTests`, `MySidepulsePlatformTests` | tests | XCTest | |
 
@@ -134,6 +134,7 @@ after it.
 | Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
 | User attention | `NSWorkspace` app activation; `HIDIdleTime` polled every 0.5 s only while an alert is displayed; screen-lock state | acknowledgement, presence |
 | Front terminal tab | `osascript` asking Terminal or iTerm2, 0.5 s timeout, 2 s cache | tab-scoped acknowledgement |
+| The onboarding's five rows | a 2 s `Timer` while the wizard is up, plus `didBecomeKey`; nothing tells an app that a grant was made in System Settings | each row's own trailing control (`OnboardingCatalog`, `GrantRow`) |
 
 Nothing polls Claude Code. The registry and transcript are read on the
 engine's own deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`),
@@ -212,6 +213,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 | `notifyEnabled` | bool? | absent | Pushes on or off. |
 | `notifyTopic` | string? | absent | The ntfy topic. A secret. |
 | `notifyServer` | string? | absent → `https://ntfy.sh` | The ntfy server. |
+| `onboardingDone` | bool? | absent | `true` once the wizard's last button has been pressed. Absent and `false` both open it at the next launch (functional.md §10). |
 
 Loading falls back to defaults when the file is missing or does not decode.
 Because `Decodable` is synthesised, a non-optional key that is missing fails the

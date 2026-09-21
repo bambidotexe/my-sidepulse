@@ -22,6 +22,11 @@ struct AppConfig: Codable {
     var autoRestartWanted: Bool?
     var notifyTopic: String?
     var notifyServer: String?
+    /// Whether the onboarding wizard has been walked to its last button. Nil and false both mean
+    /// it has not, so a window closed before the end brings it back at the next launch.
+    ///
+    /// Optional for the same reason as every key above it.
+    var onboardingDone: Bool?
 
     var notifyIsLive: Bool { notifyEnabled == true && notifyTopic?.isEmpty == false }
     var notifyServerOrDefault: String { notifyServer ?? K.notifyServerDefault }

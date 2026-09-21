@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controlServer: ControlServer?
     private let settingsModel = SettingsModel()
     private var settingsWindow: SettingsWindow?
+    private var onboarding: OnboardingWindowController?
     /// When this launch began, if the installer asked for a quiet one. An open request that arrives
     /// within `QuietLaunch.reopenGrace` of it is that install's, not a person's (`QuietLaunch`).
     private var quietLaunchAt: Date?
@@ -88,6 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar.openSettings = { [weak self] in self?.showSettings() }
         menuBar.setup()
         settingsModel.engine = engine
+        settingsModel.showSettings = { [weak self] page in self?.showSettings(page: page) }
+        settingsModel.showOnboarding = { [weak self] in self?.showOnboarding() }
         // The menu still rebuilds lazily via NSMenuDelegate; the settings
         // window coalesces these into at most one refresh per runloop turn.
         engine.onStateChanged = { [weak self] in self?.settingsModel.stateChanged() }
@@ -136,8 +139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Last: a launch that follows an Install and Relaunch opens Settings on the new version.
         UpdateController.shared.onShowSettings = { [weak self] in self?.showSettings() }
-        UpdateController.shared.othersNeedUsActive = { [weak self] in self?.settingsWindow?.isUp == true }
+        UpdateController.shared.othersNeedUsActive = { [weak self] in
+            self?.settingsWindow?.isUp == true || self?.onboarding?.window?.isVisible == true
+        }
         UpdateController.shared.start()
+
+        // The wizard, on a launch that is a person's and has not been walked to its end. A launch
+        // nobody asked for shows nothing: `make install` and the update helper both say so through
+        // the quiet-launch marker, and a reinstall over a configured Mac must stay silent.
+        if config.onboardingDone != true, quietLaunchAt == nil { showOnboarding() }
     }
 
     /// Every quit comes through here — the menu bar item, ⌘Q, the Settings
@@ -163,6 +173,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.quietLaunchAt = nil
             return true
         }
+        // While the wizard is up it is what the user is looking for: it has no Dock icon, so
+        // opening the app again is how they fetch it back from behind whatever they left in front.
+        if let wizard = onboarding?.window, wizard.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            wizard.makeKeyAndOrderFront(nil)
+            return true
+        }
         if !flag { showSettings() }
         return true
     }
@@ -172,15 +189,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Built once and re-shown: the window keeps its page, its position and its model across
     /// closes. Every caller is already on main; `SettingsWindow` is main-actor isolated and says so.
     func showSettings() {
-        MainActor.assumeIsolated {
-            if settingsWindow == nil {
-                settingsWindow = SettingsWindow(model: settingsModel)
+        MainActor.assumeIsolated { ensureSettingsWindow().show() }
+    }
+
+    /// The same window, opened on a named page.
+    func showSettings(page: SettingsPageID) {
+        MainActor.assumeIsolated { ensureSettingsWindow().show(page: page) }
+    }
+
+    /// Built on the first show and kept: the window keeps its page, its position and its model.
+    @MainActor private func ensureSettingsWindow() -> SettingsWindow {
+        if settingsWindow == nil {
+            let window = SettingsWindow(model: settingsModel)
+            window.othersNeedUsActive = { [weak self] in
+                self?.onboarding?.window?.isVisible == true
             }
-            settingsWindow?.show()
+            settingsWindow = window
         }
+        return settingsWindow!
     }
 
     @objc private func showSettingsAction(_ sender: Any?) { showSettings() }
+
+    // MARK: onboarding
+
+    /// A fresh controller every time: the pages re-read every row and start from page one. The
+    /// wizard is an ordinary accessory window, so activating the app here is the one thing that
+    /// puts it in front, and it is in front only because it is the last window to open.
+    @MainActor func showOnboarding() {
+        onboarding?.close()
+        let wizard = OnboardingWindowController(model: settingsModel) { [weak self] in
+            self?.engine?.markOnboardingDone()
+        }
+        wizard.othersNeedUsActive = { [weak self] in
+            self?.settingsWindow?.isUp == true || UpdateController.shared.windowIsUp
+        }
+        onboarding = wizard
+        wizard.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     /// An LSUIElement app has no main menu by default, which silently breaks
     /// Cmd-C/V in the settings window's text fields and Cmd-W on the window.

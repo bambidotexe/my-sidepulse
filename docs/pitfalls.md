@@ -98,6 +98,18 @@ Contents: [The card slot and macOS](#the-card-slot-and-macos) ·
 - **Instead.** `AppDelegate` builds a minimal App / Edit / Window menu; `SettingsWindow` checks the policy after setting it and retries up to three times, 0.25 s apart.
 - **Rule.** Keep the minimal menu. Verify activation-policy changes; do not assume them.
 
+### A permission prompt nobody clicked for costs the grant permanently
+- **Symptom.** The user meets a macOS dialog out of nowhere, refuses it, and the app can never ask again.
+- **Why.** macOS remembers an explicit refusal for good: the request API then returns the denial and shows nothing. `UpdateNotifier` used to call `requestAuthorization` the first time an automatic check found a release, which is a prompt with no explanation beside it and nothing the user did to invite it. A request API also *returns* the current state, which makes it tempting as the reader, and behind the wizard's 2 s poll that is a prompt every two seconds.
+- **Instead.** `UNUserNotificationCenter.requestAuthorization` is called in one place, the onboarding's `Notifications` row. Everything that needs to know reads `getNotificationSettings`. The owner overruled the old §12 rule on 2026-09-21.
+- **Rule.** Every permission prompt follows a click, with no exception. Preflight and check APIs read; request APIs ask, and only from a control's action.
+
+### Bringing the wizard forward when a grant button reports back covers the pane it just opened
+- **Symptom.** A row's button opens System Settings, and the wizard lands on top of the instructions it just gave.
+- **Why.** The flow reports back immediately, while System Settings is still coming up. `NSApp.activate(ignoringOtherApps:)` there wins the race. The same goes for raising the window's `level` or giving it a `collectionBehavior`, both of which put it over System Settings permanently and, for `.moveToActiveSpace`, behind the user's terminal after a Space switch.
+- **Instead.** The wizard is an ordinary window and does nothing when a flow hands over. It comes back only when the app it sent the user to **quits** (`GrantItem.mayOpen` + `FocusReturnWatch`, honoured for 300 s) or when a modal of the app's own is answered (`returnsFocus`). `didBecomeActive` alone cannot carry it: an accessory app is not activated when the user closes System Settings, so the rows poll every 2 s as well.
+- **Rule.** `.claude/skills/building-onboarding/SKILL.md` holds the four activation cases. Read the table before touching who is in front.
+
 ### Splitting an Icon Composer stack into one group per layer renders it black
 - **Symptom.** The compiled icon is a bare dark tile with an empty slot: the glow and the LEDs are gone, though every layer is present and `actool` reports no error.
 - **Why.** A group is the unit Icon Composer applies glass, shadow and translucency to, and the groups composite against each other, not just against the canvas. Three groups each carrying the single group's original `shadow` and `translucency` bury the two upper layers under the slot's own treatment.
