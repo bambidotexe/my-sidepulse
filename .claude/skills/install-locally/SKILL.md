@@ -19,9 +19,8 @@ That is the whole action. It takes a few minutes, most of it Apple's notary serv
 
 ## What it does, and why each part is not optional
 
-1. **Checks the version rule** (`scripts/version.sh`): the tree is always one patch ahead of the newest
-   release on GitHub. So the copy on this Mac is always newer than anything published, and is never offered
-   an update that would replace it with something older.
+1. **Builds exactly the tree's version** (`scripts/version.sh`): no GitHub check, no requirement to be
+   ahead of what is published. A local install always carries the same version as the code in the tree.
 2. **Builds the real thing** (`scripts/release.sh`) — signed with the Wooflab team's Developer ID under the
    Hardened Runtime, notarized by Apple, stapled, wrapped in the disk image. Not a shortcut, not an ad-hoc
    build. What lands in `/Applications` is byte-for-byte what a stranger would download.
@@ -108,8 +107,8 @@ launchctl print "gui/$(id -u)/io.mysidepulse.agent" | grep -E 'pid|state'
 
 The authority is `Developer ID Application: Wooflab (85F6AC5QZF)` and the flags include `runtime`. `doctor`
 exits 0 with every check `[OK]`; a `[FAIL]` on "auto-start & restart" means the agent is not registered, and
-one on a hook means `install-hooks` did not run or a rename left it stale. The version is whatever
-`scripts/version.sh`'s rule gave, one patch above the newest GitHub release.
+one on a hook means `install-hooks` did not run or a rename left it stale. The version is whatever the
+tree holds, per `scripts/version.sh`.
 
 ## The one thing the install cannot do for itself
 
