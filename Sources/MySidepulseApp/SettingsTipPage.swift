@@ -53,30 +53,32 @@ private struct TipOfferRow: View {
     let button: String
 
     var body: some View {
-        SettingsRowFrame {
-            HStack(alignment: .top, spacing: SettingsMetrics.tipPictureGap) {
-                KoFiMark()
-                    .fill(KoFiMark.red)
-                    .frame(width: SettingsMetrics.tipMarkSide, height: SettingsMetrics.tipMarkSide)
-                    .frame(width: SettingsMetrics.tipTileSide, height: SettingsMetrics.tipTileSide)
-                    .background(
-                        RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius)
-                            .fill(KoFiMark.red.opacity(0.12))
-                    )
-                VStack(alignment: .leading, spacing: SettingsMetrics.cardGap) {
-                    Text(name)
-                        .font(.body)
-                    Text(description)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(button) { NSWorkspace.shared.open(SupportLink.koFi) }
-                        .buttonStyle(.bordered)
-                        .tint(.blue)
-                        .padding(.top, SettingsMetrics.rowSpacing)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // Its own padding, equal on every side, rather than `SettingsRowFrame`'s: that frame is fitted
+        // to a text row and pinches the 88 pt tile top and bottom.
+        HStack(alignment: .top, spacing: SettingsMetrics.tipPictureGap) {
+            KoFiMark()
+                .fill(KoFiMark.red)
+                .frame(width: SettingsMetrics.tipMarkSide, height: SettingsMetrics.tipMarkSide)
+                .frame(width: SettingsMetrics.tipTileSide, height: SettingsMetrics.tipTileSide)
+                .background(
+                    RoundedRectangle(cornerRadius: SettingsMetrics.tipTileRadius)
+                        .fill(KoFiMark.red.opacity(0.12))
+                )
+            VStack(alignment: .leading, spacing: SettingsMetrics.cardGap) {
+                Text(name)
+                    .font(.body)
+                Text(description)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(button) { NSWorkspace.shared.open(SupportLink.koFi) }
+                    .buttonStyle(.bordered)
+                    .tint(.blue)
+                    .padding(.top, SettingsMetrics.rowSpacing)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(SettingsMetrics.tipOfferPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
