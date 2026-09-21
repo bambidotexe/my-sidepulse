@@ -56,7 +56,7 @@ The version bump in step 6 is left in the working tree so the owner sees it. Com
 repository's commit title style:
 
 ```
-Version <next> — <what changed>
+build(version): the tree moves to <next>
 ```
 
 Then check the release page the script printed, and confirm the installed copy sees it:

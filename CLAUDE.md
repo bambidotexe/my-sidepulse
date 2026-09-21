@@ -137,10 +137,10 @@ that skips one is not done.
    in `MySidepulsePlatformTests`. Replay the live journal (see Commands) for
    anything in `SessionStore`. A change to LED program text is verified **on
    the strip** — the exact-text tests are necessary and are not the proof.
-6. **Commit per task** on `main`: a message that says why, the attribution
+6. **Commit per task** on `main`: conventional commits (`feat|fix|build|docs(scope): …`), the attribution
    trailers from the session's system reminder, files staged by path. A change
    to the app bumps `VERSION` in `scripts/make-app.sh`, and its commit title is
-   `Version X.Y.Z — what changed`.
+   `build(version): the tree moves to X.Y.Z`.
 
 The sync rule in one sentence: **the code and `docs/functional.md` describe the
 same app at every commit, and the newer of a request and a written rule wins
