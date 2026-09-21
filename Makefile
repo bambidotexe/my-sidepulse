@@ -25,10 +25,11 @@ dmg:
 install:
 	sh scripts/install.sh
 
-# The same install, plus a tagged, pushed GitHub release carrying the disk image. Only run when the owner
-# has asked for a release. scripts/publish.sh has the sequence.
+# The same install, plus a tagged, pushed GitHub release carrying the disk image, at the version the given
+# LEVEL bumps to (patch, minor or major — required). Only run when the owner has asked for a release.
+# scripts/publish.sh has the sequence.
 release:
-	sh scripts/publish.sh
+	sh scripts/publish.sh $(LEVEL)
 
 uninstall:
 	-"$(CLI)" uninstall-hooks

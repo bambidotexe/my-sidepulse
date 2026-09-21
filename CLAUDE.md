@@ -214,11 +214,13 @@ make release     # skill: publish-release. The same, plus tag, push, GitHub rele
   outside), installs the hooks and prints `doctor`. It leaves **no `.app` and no `.dmg`
   anywhere under the repository**, on any exit path. **It restarts the owner's
   running monitor**: say when you ran it and when you did not.
-- `make release` (`scripts/publish.sh`) — **the other way.** Everything
-  `install` does, plus the tag, the push, the GitHub release carrying the image,
-  and the version raised again afterwards. Refuses on a dirty tree, an existing
-  tag or a `HEAD` that differs from `origin`, all before it builds anything.
-  Run it only when the owner has asked for a release. `sh scripts/publish.sh
+- `make release LEVEL=<patch|minor|major>` (`scripts/publish.sh <level>`) —
+  **the other way.** Refuses on a dirty tree, then bumps the version by the
+  level given, commits and pushes that bump, refuses if the resulting tag
+  already exists, and only then builds — everything `install` does, plus the
+  tag, the push and the GitHub release carrying the image. Nothing bumps the
+  version again afterward. Run it only when the owner has asked for a release,
+  and ask which level if they have not said. `sh scripts/publish.sh <level>
   --no-install` publishes and leaves `/Applications` alone, which is how the
   update a user gets is tested: the copy here stays on the older version and
   installs the release itself.
@@ -229,8 +231,10 @@ make release     # skill: publish-release. The same, plus tag, push, GitHub rele
   sweeps, `never_indexed` keeps Spotlight off `build/` while a build is going.
 - `scripts/version.sh` — the version rule, and the only thing that writes the
   version: **a local install always builds and installs exactly the tree's own
-  version**. Publishing is the only thing that moves it, and raises the tree to
-  the next patch once it has, so that version is never built again.
+  version**. `scripts/publish.sh <patch|minor|major>` is the only thing that
+  moves it: it bumps by that level, commits and pushes the bump before it
+  builds anything, then releases exactly that version. Nothing bumps it again
+  afterward.
 - `make app` / `make dmg` / `scripts/release.sh` — the steps underneath, useful
   on their own only to debug the pipeline. `make-app.sh` refuses an ad-hoc build
   without `DEBUG_OK=1`, and **an ad-hoc or Debug build is never installed and
