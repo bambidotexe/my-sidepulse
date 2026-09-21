@@ -93,34 +93,24 @@ Contents: [The card slot and macOS](#the-card-slot-and-macos) ·
 - **Rule.** Verified on hardware with the screen locked; keep both spellings.
 
 ### An accessory app has no menu, and its activation policy does not always stick
-- **Symptom.** ⌘C / ⌘V / ⌘W do nothing in the settings window; the Dock icon sometimes fails to appear or disappear.
-- **Why.** An `LSUIElement` app has no main menu, which is what routes those key equivalents. Switching activation policy at runtime is not always honoured on the first call.
-- **Instead.** `AppDelegate` builds a minimal App / Edit / Window menu; `SettingsWindow` checks the policy after setting it and retries up to three times, 0.25 s apart.
-- **Rule.** Keep the minimal menu. Verify activation-policy changes; do not assume them.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **S5**. Here `SettingsWindow` checks the policy after setting it and retries up to three times, 0.25 s apart.
 
 ### A permission prompt nobody clicked for costs the grant permanently
-- **Symptom.** The user meets a macOS dialog out of nowhere, refuses it, and the app can never ask again.
-- **Why.** macOS remembers an explicit refusal for good: the request API then returns the denial and shows nothing. `UpdateNotifier` used to call `requestAuthorization` the first time an automatic check found a release, which is a prompt with no explanation beside it and nothing the user did to invite it. A request API also *returns* the current state, which makes it tempting as the reader, and behind the wizard's 2 s poll that is a prompt every two seconds.
-- **Instead.** `UNUserNotificationCenter.requestAuthorization` is called in one place, the onboarding's `Notifications` row. Everything that needs to know reads `getNotificationSettings`. The owner overruled the old §12 rule on 2026-09-21.
-- **Rule.** Every permission prompt follows a click, with no exception. Preflight and check APIs read; request APIs ask, and only from a control's action.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **O7**. Here `requestAuthorization` is called in one place, the onboarding's `Notifications` row; the owner overruled the old §12 rule on 2026-09-21.
 
 ### Bringing the wizard forward when a grant button reports back covers the pane it just opened
-- **Symptom.** A row's button opens System Settings, and the wizard lands on top of the instructions it just gave.
-- **Why.** The flow reports back immediately, while System Settings is still coming up. `NSApp.activate(ignoringOtherApps:)` there wins the race. The same goes for raising the window's `level` or giving it a `collectionBehavior`, both of which put it over System Settings permanently and, for `.moveToActiveSpace`, behind the user's terminal after a Space switch.
-- **Instead.** The wizard is an ordinary window and does nothing when a flow hands over. It comes back only when the app it sent the user to **quits** (`GrantItem.mayOpen` + `FocusReturnWatch`, honoured for 300 s) or when a modal of the app's own is answered (`returnsFocus`). `didBecomeActive` alone cannot carry it: an accessory app is not activated when the user closes System Settings, so the rows poll every 2 s as well.
-- **Rule.** `.claude/skills/building-onboarding/SKILL.md` holds the four activation cases. Read the table before touching who is in front.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **O1** and **O3**.
 
 ### A stepping button in a stack with an invisible spacer stops being where it is drawn
-- **Symptom.** The wizard's stepping button, at the bottom right of a list page, looking perfectly ordinary, and **unclickable for ever, however many times it is pressed**. It starts the moment a permission is granted.
-- **Why.** The footer was `NSStackView(views: [spacer, primary])` with a width constraint and no height constraint. A bare `NSView` has no intrinsic size, so nothing decided the footer's own height and the enclosing vertical stack handed it every point the page was not using. Granting a permission swaps that row's 26 pt button for an 18 pt "Granted" label, the list shrinks by 36 pt, and the slack goes into the footer: measured in snappy-snap at **460 x 186 instead of 460 x 24**, with the button floating in the middle of it. The button is still inside the footer, so no constraint breaks, `AXFrame` keeps naming a plausible rectangle and `AXPress` still works; only a real click misses.
-- **Instead.** The footer is a plain `NSView` with the button pinned to its trailing edge **and to both its top and bottom**, which fixes the footer's height to the button's, and the slack goes to a view of its own between the list and the footer, with vertical hugging and compression resistance at **priority 1** (`OnboardingWindowController.listPage`).
-- **Rule.** `M` decides sizes, and a stack view left free to decide one will. It shipped here, in snappy-snap and in koffeelid at the same time, because the `building-onboarding` skill's reference file carried the spacer: a trap fixed in a window and not in the reference is a trap that ships again.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **O9**. Here the footer is `OnboardingWindowController.listPage`.
 
 ### Splitting an Icon Composer stack into one group per layer renders it black
-- **Symptom.** The compiled icon is a bare dark tile with an empty slot: the glow and the LEDs are gone, though every layer is present and `actool` reports no error.
-- **Why.** A group is the unit Icon Composer applies glass, shadow and translucency to, and the groups composite against each other, not just against the canvas. Three groups each carrying the single group's original `shadow` and `translucency` bury the two upper layers under the slot's own treatment.
-- **Instead.** `Resources/AppIcon.icon` keeps its layers in one group, as exported.
-- **Rule.** Re-export from Icon Composer to change the stack. Do not restructure `icon.json` by hand, and never take a clean `actool` run as evidence that the icon renders.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **I1**.
 
 ---
 
@@ -324,48 +314,36 @@ rejected by eye within minutes of a build whose tests were green.
 ## Launch, install, signing
 
 ### `SMAppService.agent` pins a LightWeight Code Requirement to the job
-- **Symptom.** Crashes go unrecovered while `SMAppService.status` reports `.enabled`. Logs: `OS_REASON_CODESIGNING | Launch Constraint Violation`, `Unable to get updated LWCR … 0x16`; after deleting the bundle, `copy_bundle_path … Invalid or missing Program` (EX_CONFIG 78).
-- **Why.** launchd checks that requirement on every spawn, and Background Task Management stores the agent against the bundle, so removing the bundle first leaves a record that resolves to nothing. Neither re-registering nor `launchctl bootout` clears it.
-- **Instead.** A plain plist in `~/Library/LaunchAgents`, bootstrapped with `launchctl`. It carries no LWCR and no Background Task Management record to go stale, so it survives any number of reinstalls regardless of how the app is signed.
-- **Rule.** The app's Developer ID signing keeps its code identity stable across rebuilds, which removes the reason an ad-hoc build could never register through `SMAppService.agent` at all; the plist stays anyway, since it needs none of that machinery. Even the plist job gets an LWCR on macOS 26: the first respawn after an install is killed once, launchd logs `Requesting LWCR update on next spawn`, and it recovers after one ~10 s throttle cycle. Harmless; do not fix it.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **L2**.
 
 ### Bootstrapping the agent does not put the running app under it
-- **Symptom.** After a drag install from the disk image, Settings > Startup shows the orange warning and `doctor` says `agent installed, but this process was not started by it: no crash restart`. `launchctl list` shows the job loaded with no pid: `-  0  io.mysidepulse.agent`.
-- **Why.** `install()` bootstraps the job and `RunAtLoad` makes launchd spawn it at once, but that spawn finds the hand-launched instance already up and terminates itself, as a second copy must. `KeepAlive/SuccessfulExit=false` then correctly declines to restart something that exited zero. The live app is a LaunchServices launch, which launchd does not supervise.
-- **Instead.** The app hands over: a detached helper waits for the pid and runs `launchctl kickstart` on the job. `kickstart` cannot be run from inside the app, because the job is what would replace the process running it. `scripts/install.sh` did the same thing from outside with `killall` and `kickstart -k`; a copy dragged out of the disk image has nobody to run those, which is why it has to be the app's own job.
-- **Rule.** A hand-over that fails opens the bundle again. An app that failed to change hands is a warning in Settings; an app that vanished after a double-click is a broken install.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **L3**. Here `doctor` says `agent installed, but this process was not started by it: no crash restart`, and a hand-over that fails opens the bundle again.
 
 ### Killing a KeepAlive job is asking launchd to restart it
-- **Symptom.** A reinstall's `open` reaches an instance that started before the script was finished, from the bundle the script was in the middle of replacing, and which never saw anything the script wrote for it.
-- **Why.** `killall` sends SIGTERM. That is a non-zero exit, and `KeepAlive/SuccessfulExit = false` restarts exactly those. The script and launchd are then racing over the same app.
-- **Instead.** `launchctl bootout gui/<uid>/<label>` unloads the job and takes its process with it, and nothing comes back until the job is bootstrapped again. Never `disable`, which is permanent (below).
-- **Rule.** Anything the app must read at its next launch is written before the app is stopped, not between stopping it and starting it.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **L4**.
 
 ### `launchctl disable` is permanent, and nothing ordinary undoes it
-- **Symptom.** Every `launchctl bootstrap` of the agent fails with `Bootstrap failed: 5: Input/output error`. The app writes a correct plist at every launch and launchd refuses it, so the strip is dead and `doctor` reports the agent missing for ever.
-- **Why.** `disable` is not the opposite of `bootstrap`. It writes an override into `/var/db/com.apple.xpc.launchd/disabled.<uid>.plist`, which survives deleting the plist, reinstalling the app, and a reboot. Only `launchctl enable gui/<uid>/<label>` clears it, or editing that file as root.
-- **Instead.** `bootout` unloads a job and leaves no record. It is the only verb an uninstall or a takeover uses.
-- **Rule.** Never write `launchctl disable` anywhere: not in a script, not in the app, not in a one-off command at a terminal. `UninstallPlanTests` pins the helper against it.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **L5**. `UninstallPlanTests` pins the helper against it.
 
 ### The bundled `.icns` is a flat stand-in, not the icon
-- **Symptom.** A disk image's volume icon looks flat and colourless next to the Liquid Glass icon the Dock and Finder show for the installed app.
-- **Why.** `scripts/make-app.sh` rasterises `Contents/Resources/AppIcon.icns` from a static 1024 px preview PNG, because `.icns` is what `CFBundleIconFile` falls back to for whatever does not read `Assets.car`. The real icon is compiled by `actool` from the Icon Composer document into `Assets.car`, and only the system's own rendering of the bundle reproduces it.
-- **Instead.** `scripts/dmg-volume-icon.swift` asks `NSWorkspace` how macOS itself renders the built app and builds the disk image's volume icon from that, never from the bundled `.icns`.
-- **Rule.** A clean run of `make-app.sh` or `make-dmg.sh` is not evidence the icon looks right; check the rendered bundle or the mounted image by eye.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **I2**.
 
 ### An app started by `open` is nobody's job
-- **Symptom.** The first crash after an install takes the strip and the pushes down until the next login.
-- **Why.** `KeepAlive` supervises only the instance launchd spawned.
-- **Instead.** `make install` launches once (which registers the agent), then kills it and `launchctl kickstart -k`s the job.
-- **Rule.** `doctor` checks supervision, not registration: only `XPC_SERVICE_NAME == io.mysidepulse.agent` proves the running process would be restarted. A plist on disk proves nothing.
+
+This is every app's fact: `docs/shared/macOS.md` § Launch, and `docs/shared/pitfalls.md` **L3**. Here `doctor` checks supervision, not registration: only `XPC_SERVICE_NAME == io.mysidepulse.agent` proves the running process would be restarted.
 
 ### `launchctl bootout` kills the process running as the job
-- **Symptom.** Turning `Open at Login` off killed the app mid-request.
-- **Instead.** When the app is the agent's own process, removing the plist is the whole operation; the job is simply not there next time.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **L6**.
 
 ### `MySidepulse` and `mysidepulse` are one file
-- **Why.** `Contents/MacOS` sits on a case-insensitive volume; the second `cp` silently overwrites the first.
-- **Instead.** The GUI binary is `MySidepulseApp`. Only `CFBundleExecutable` has to match.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **B4**. Here the GUI binary is `MySidepulseApp`.
 
 ### The app's name is an identity in six places
 - **Symptom.** After a rename: two apps drive the strip at once, every hook fails, the ntfy topic is gone, macOS asks for its permissions again, and alerts already seen relight.
@@ -375,36 +353,32 @@ rejected by eye within minutes of a build whose tests were green.
 - **Rule.** A rename is a migration. The user's own `.zshrc`, keyboard shortcuts and `PATH` symlink are outside what an install may touch: list them, do not edit them. (The app writes its own delimited block into `.zshrc` only when the user presses `Set up…` in Settings.) The hardware keeps its name — `SidePulseDot…` / `SidePulsePro…` volume names are how the LED count is read.
 
 ### GitHub answers 404 for "no release" and for "not yours to see" alike
-- **Symptom.** `Check for updates…` says `No release published yet.` for ever, although a release exists.
-- **Why.** The check is anonymous, and to an anonymous caller a private repository does not exist: `/releases/latest` is 404 either way. The same reply also covers a repository whose releases are all drafts or pre-releases.
-- **Instead.** The check works once the repository is public and has a published, non-prerelease release whose tag is a version (`v1.8.0`) and which carries a `.dmg` asset. A token in the app is not the way round it: it would be a second secret to guard, for a personal tool.
-- **Rule.** 403 (rate limit) and every other status are failures and say so; only 404 reads as "nothing there". A failure must never read as `Up to date.`
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U7**.
 
 ### A download task succeeds on a 404
-- **Why.** `URLSession.downloadTask` reports no error for an HTTP error status: it hands over the error page as the downloaded file.
-- **Instead.** `UpdateDownload` checks the status before it moves anything, so an error page is never saved as `MySidepulse-<v>.dmg`; and a saved file is held against the length and the SHA-256 GitHub states for the asset before anything opens it.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U8**.
 
 ### A helper started by the app dies with the app
-- **Symptom.** The app quits for an update and nothing happens: the helper that was to swap the two bundles is gone.
-- **Why.** launchd kills whatever is left in a job's process group when the job's main process exits, and this app runs as a launchd job. Measured with three throwaway jobs: the plain `posix_spawn` child never ran, the one spawned with `POSIX_SPAWN_SETPGROUP` did.
-- **Instead.** `DetachedProcess`: a process group of its own, no inherited descriptors, an environment of the app's making.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U1**.
 
 ### Everything that can refuse an update has to happen before the quit
-- **Why.** Quitting turns the strip off. An updater that quits first and installs after can end with a dark strip, no app, and nothing on screen to say why.
-- **Instead.** The release is fetched, held against GitHub's digest, unpacked, checked (`StagedUpdateCheck`, `CodeSignature`) and the folder tried (`UpdateInstaller.obstacle`) while the app is up, where a failure is a sentence in the window; **Install and Relaunch** is enabled only after all of it. After the quit there are two renames on one volume and a start, each with its way back: a failed second rename undoes the first, and a new version not seen running within 15 s, or gone 2 s after it was seen, is moved out and the previous one moved back and started. The helper touches nothing until the app's pid is gone, and gives up untouched after 20 s: a second copy terminates itself at launch, so the new one may only start once the old one has left.
-- **Rule.** The helper writes `installed` before it starts the app, which reads it as it launches, and overwrites it if it rolls back. The app's tidying never touches `updates/previous/`: only the helper deletes it, once it has seen the new version running.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U2**. Here the helper also starts the new copy through the launch agent when the old one was its job (`macOS.md` § launchd).
 
 ### A new version that is gone two seconds later has crashed, or has been quit
-- **Symptom.** The update is rolled back and the previous version comes back, because the user quit the new one as soon as it appeared: the relaunch shows the update window saying the install worked, with a **Done** button and the menu bar a click away.
-- **Instead.** The launch that reads the outcome renames it to `result.read`. Gone with that mark in place, the version had started and its quit is the user's; gone without it, the helper looks again for as long as it first looked, and only if it is still nowhere is the previous one put back. That second look is also what covers a copy changing hands with launchd, which is gone for exactly that moment. `UpdateController.start()` runs last in `applicationDidFinishLaunching`, so the mark means the launch got that far.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U4**.
 
 ### A helper that gives up while the app may still quit
-- **Why.** Two clocks, the helper's limit and the app's "did not quit" notice, leave a gap in which the app quits with no helper left: the strip dark, nothing installed, nothing running, nothing said.
-- **Instead.** One clock decides. After `K.updateStallNoticeSeconds` the app stops the helper (`SIGTERM`; while the app runs the helper can only be in its wait, having touched nothing) and then says so. The helper's own, longer limit serves only an app too hung to do that.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U5**. Here the clock is `K.updateStallNoticeSeconds`.
 
 ### `ps` lists the path the kernel ran, not the one the app was installed at
-- **Why.** An app reached through a symbolic link (`/tmp` is one) runs under its resolved path, and `ps -axo comm=` lists that one. `kill -0` still answers for a process that has exited and has not been reaped by whoever started it.
-- **Instead.** The helper looks for the executable under the installed path and under `pwd -P` of it: missing a running version would roll back a good install. It counts an exited, unreaped app (state `Z`) as gone, and anything `ps` cannot say as still running, the safe way round.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **U6**.
 
 ### A new `config.json` key can wipe the config
 - **Symptom.** After an update every setting is back to default — including a freshly minted ntfy topic, orphaning the phone.
@@ -412,10 +386,8 @@ rejected by eye within minutes of a build whose tests were green.
 - **Rule.** Every key added after the first release is optional.
 
 ### SwiftPM records the deployment target as the SDK, and Liquid Glass follows it
-- **Symptom.** Built with the macOS 27 SDK and a macOS 15 target, the settings toolbar drew its selected page as a flat tinted rectangle, while SnappySnap's identical window drew the glass pill.
-- **Why.** `swift build` writes the deployment target into the binary's `LC_BUILD_VERSION` as both `minos` and `sdk` (`otool -l` showed `sdk 15.0`), and AppKit gates the Liquid Glass design on that recorded SDK, not on the SDK that compiled the code.
-- **Instead.** The target is macOS 26 in `Package.swift` and `LSMinimumSystemVersion`; tools 5.10 has no `.v26`, so it is spelled `.macOS("26.0")`.
-- **Rule.** Do not lower the target to widen compatibility: the window's chrome goes with it.
+
+This is every app's trap: `docs/shared/pitfalls.md`, **B3**.
 
 ---
 

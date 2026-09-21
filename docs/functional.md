@@ -486,7 +486,7 @@ each tile the animated strip itself, three to a row, the selected one tinted
 and ringed. The hint under a group of tiles describes the selected tile only.
 A number the user sets — brightness, the glance's battery level — is a row with
 a slider at the trailing edge and its value beside it. The rules in full, with
-every spacing number, are the `building-settings-pages` skill.
+every spacing number, are the `macos-building-settings-pages` skill.
 
 ### What the pages say
 

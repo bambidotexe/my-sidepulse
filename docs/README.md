@@ -55,3 +55,10 @@ be pasted into a document, a commit message or an issue.
 
 `_coverage.md` and `_audit.md` are the working files of the 2026-09-19 audit:
 who read what, what was deleted and why.
+
+## The shared documents
+
+`shared/` is a byte-for-byte copy of `~/Projects/macos-app-template/docs/shared/`: the workflow every app
+of the family follows, the conventions, the platform facts, the traps and the walks they all share. **It is
+never edited here**; a change goes in the template and `sh ~/Projects/macos-app-template/scripts/sync-shared-docs.sh`
+replicates it. What is this app's own stays in the documents above.

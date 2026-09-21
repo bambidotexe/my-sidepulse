@@ -42,6 +42,17 @@ is `scripts/release.sh`'s signed, notarized disk image attached to a GitHub
 release. **The check is anonymous, so the repository has to be public for it to
 see anything**: a private one reads exactly like no release at all.
 
+## The family, and the shared documents
+
+This app is one of the macOS apps under `~/Projects` that share one shape; the `macos-map` skill lists
+them and routes a task to the right skill. **`docs/shared/` is a synced copy of
+`~/Projects/macos-app-template/docs/shared/`, and it is never edited here**: a change goes in the template
+and `sh ~/Projects/macos-app-template/scripts/sync-shared-docs.sh` replicates it to every app. A trap, a
+convention or a platform fact that applies to more than this app goes there, not in this app's own
+documents. `docs/shared/workflow.md` is the change workflow every app of the family follows and
+`docs/shared/pitfalls.md` the traps they all share; the sections below are this app's own statement of the
+workflow, with its own file names, and this app's own traps.
+
 ## Read first
 
 | File | What it is |
@@ -170,8 +181,8 @@ are `docs/functional.md`.
 | finding the strip, the eject guard | `App/DeviceMonitor.swift`, `Platform/LedDevice.swift`, `Core/EjectGuard.swift` | §2, `macOS.md` |
 | writing to the strip, keepalive | `Platform/LedWriter.swift`, `Keepalive.swift` | `device.md`, §2 |
 | the menu | `App/MenuBarController.swift` | §9 |
-| the onboarding wizard: a page, a row, what a row's button does, who is in front | **Invoke the `building-onboarding` skill first**: it holds the window's whole contract and every trap it hit. `App/OnboardingWindowController.swift` (the window, the pages, `GrantRow`), `App/OnboardingCatalog.swift` (`GrantItem`, `FocusReturnWatch`, the five rows, `OnboardingMetrics`), `App/ControlActionHandler.swift`; the words are `Core/StringsOnboarding.swift`. The flag is `AppConfig.onboardingDone`, written through `Engine.markOnboardingDone`; `AppDelegate` opens it and cross-wires `othersNeedUsActive` with `SettingsWindow` and `UpdateController`. **A permission is asked from a row's button and nowhere else** | §10 *The onboarding wizard*, §12, `macOS.md` *Permissions*, `pitfalls.md`, the checklist's §4 |
-| a settings page, its look or its copy | **Invoke the `building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the six page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
+| the onboarding wizard: a page, a row, what a row's button does, who is in front | **Invoke the `macos-building-onboarding` skill first**: it holds the window's whole contract and every trap it hit. `App/OnboardingWindowController.swift` (the window, the pages, `GrantRow`), `App/OnboardingCatalog.swift` (`GrantItem`, `FocusReturnWatch`, the five rows, `OnboardingMetrics`), `App/ControlActionHandler.swift`; the words are `Core/StringsOnboarding.swift`. The flag is `AppConfig.onboardingDone`, written through `Engine.markOnboardingDone`; `AppDelegate` opens it and cross-wires `othersNeedUsActive` with `SettingsWindow` and `UpdateController`. **A permission is asked from a row's button and nowhere else** | §10 *The onboarding wizard*, §12, `macOS.md` *Permissions*, `pitfalls.md`, the checklist's §4 |
+| a settings page, its look or its copy | **Invoke the `macos-building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the six page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
 | a CLI command | `CLI/CLIMain.swift` (and its usage text), `Platform/Control.swift` (new fields optional), `Engine.controlResponse` | §11, `architecture.md` *Control plane* |
 | updates: the check, its schedule, the notification | `Core/UpdateCheck.swift` (versions, what a reply means — `UpdateCheckTests`), `Core/UpdateSchedule.swift`, `Core/UpdatePanel.swift` (the Updates group), the `update…` numbers in `Core/Constants.swift`; `Platform/UpdateChecker.swift` (the request — `UpdateCheckerTests`); `App/UpdateController.swift` (the one owner), `App/UpdateNotifier.swift`, the Updates group of `App/SettingsGeneralPage.swift` | §10 *Updates*, §12, §13, `macOS.md` *Updates* |
 | updates: the window, the fetch, making it ready, Install and Relaunch | `Core/UpdateSession.swift`, `Core/StagedUpdateCheck.swift`, `Core/UpdateInstallScript.swift` (the helper's text, its plan, its result — run under a real `/bin/sh` by `UpdateInstallScriptTests`); `Platform/UpdateChecker.swift` (`UpdateDownload`), `UpdateStager.swift`, `CodeSignature.swift`, `UpdateInstaller.swift`, `DetachedProcess.swift`; `App/UpdateWindow.swift`, `UpdateController.installAndRelaunch`; the words in `Core/StringsUpdateWindow.swift` and `Core/StringsUpdate.swift` | the same, plus `pitfalls.md` (the six update entries) and the checklist's §3. **Read those entries before touching the order of an install** |
@@ -192,8 +203,8 @@ are `docs/functional.md`.
 
 ```bash
 # ---- the two actions. A build of this app reaches a Mac by one of these and by nothing else. ----
-make install     # skill: install-locally. The production build → /Applications; leaves no .app or .dmg behind
-make release     # skill: publish-release. The same, plus tag, push, GitHub release, and the tree moves on
+make install     # skill: macos-install-locally. The production build → /Applications; leaves no .app or .dmg behind
+make release     # skill: macos-publish-release. The same, plus tag, push, GitHub release, and the tree moves on
 # -------------------------------------------------------------------------------------------------
 ```
 
