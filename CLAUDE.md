@@ -215,15 +215,15 @@ make release     # skill: publish-release. The same, plus tag, push, GitHub rele
   anywhere under the repository**, on any exit path. **It restarts the owner's
   running monitor**: say when you ran it and when you did not.
 - `make release LEVEL=<patch|minor|major>` (`scripts/publish.sh <level>`) —
-  **the other way.** Refuses on a dirty tree, then bumps the version by the
-  level given, commits and pushes that bump, refuses if the resulting tag
-  already exists, and only then builds — everything `install` does, plus the
-  tag, the push and the GitHub release carrying the image. Nothing bumps the
-  version again afterward. Run it only when the owner has asked for a release,
-  and ask which level if they have not said. `sh scripts/publish.sh <level>
-  --no-install` publishes and leaves `/Applications` alone, which is how the
-  update a user gets is tested: the copy here stays on the older version and
-  installs the release itself.
+  **the other way.** Refuses on a dirty tree, computes the new version and
+  refuses if that tag already exists, then bumps the version by the level
+  given, commits and pushes that bump, and only then builds — everything
+  `install` does, plus the tag, the push and the GitHub release carrying the
+  image. Nothing bumps the version again afterward. Run it only when the
+  owner has asked for a release, and ask which level if they have not said.
+  `sh scripts/publish.sh <level> --no-install` publishes and leaves
+  `/Applications` alone, which is how the update a user gets is tested: the
+  copy here stays on the older version and installs the release itself.
 - **There is no third way.** A bundle left in `build/` is a complete
   application that Spotlight offers; launching it by accident gives a second
   MySidepulse with the same bundle identifier, the same journal and the same
