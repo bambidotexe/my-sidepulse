@@ -228,9 +228,9 @@ make release     # skill: publish-release. The same, plus tag, push, GitHub rele
   launch agent. `scripts/no-leftovers.sh` holds that rule: `no_leftovers`
   sweeps, `never_indexed` keeps Spotlight off `build/` while a build is going.
 - `scripts/version.sh` — the version rule, and the only thing that writes the
-  version: **the tree is always one patch ahead of the newest GitHub release**,
-  so the copy on this Mac is never offered an update that would replace it with
-  something older. No releases yet → the tree is `0.0.1`.
+  version: **a local install always builds and installs exactly the tree's own
+  version**. Publishing is the only thing that moves it, and raises the tree to
+  the next patch once it has, so that version is never built again.
 - `make app` / `make dmg` / `scripts/release.sh` — the steps underneath, useful
   on their own only to debug the pipeline. `make-app.sh` refuses an ad-hoc build
   without `DEBUG_OK=1`, and **an ad-hoc or Debug build is never installed and

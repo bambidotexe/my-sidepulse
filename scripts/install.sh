@@ -42,7 +42,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-VERSION="$(version_check)" || exit 1
+VERSION="$(version_tree)"
 echo "installing $APP_NAME $VERSION" >&2
 
 DMG="$("$ROOT/scripts/release.sh")"

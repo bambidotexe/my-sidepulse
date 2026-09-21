@@ -4,7 +4,7 @@
 # SIGN_IDENTITY="-" in the environment signs ad-hoc instead, for a throwaway build that cannot be shipped.
 set -eu
 
-VERSION="1.0.1"
+VERSION="1.0.0"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/signing.env"
 APP="$ROOT/build/MySidepulse.app"
