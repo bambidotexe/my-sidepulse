@@ -149,8 +149,9 @@ that skips one is not done.
    anything in `SessionStore`. A change to LED program text is verified **on
    the strip** — the exact-text tests are necessary and are not the proof.
 6. **Commit per task** on `main`: conventional commits (`feat|fix|build|docs(scope): …`), the attribution
-   trailers from the session's system reminder, files staged by path. A change
-   to the app bumps `VERSION` in `scripts/make-app.sh`, and its commit title is
+   trailers from the session's system reminder, files staged by path. Never
+   touch `VERSION` in `scripts/make-app.sh`: only a release moves it
+   (`scripts/publish.sh`, below), in a commit of its own titled
    `build(version): the tree moves to X.Y.Z`.
 
 The sync rule in one sentence: **the code and `docs/functional.md` describe the
