@@ -445,15 +445,14 @@ opens on General, already at that page's height and centred.
 | System | Terminal | `Terminal hook`, `Set Up Terminal Hook` or `Remove Terminal Hook` (§7) | |
 | System | Notifications | `Notifications permission`, and `Allow Notifications` while it is not granted | |
 | System | Welcome | `Show Onboarding Again`, which opens the wizard at page one (above) | |
-| Health | Overview | `MySidepulse` and the page summed up; `Check Again` | |
-| Health | Permissions, Claude Code, Strip, Phone, Terminal, App | every state that bears on the app working (below) | |
-| Health | Report | `Copy Report` | |
+| Health | Health | the checks, green, orange or red (below); `Check Again` | |
+| Health | Information | four readings, blue (below) | |
 
 Every change is written as it is made; there is no Apply. While the window is
 open every row that reports the engine, and the notification permission, is
 re-read every **2 s**; the two hook rows are re-read when the window opens, when
 System or Health is shown and after each of System's buttons; the doctor and the
-process readings of the Health page when it is shown and on `Check Again`.
+crash reports of the Health page when it is shown and on `Check Again`.
 
 ### How every page is built
 
@@ -538,27 +537,42 @@ under the tiles is the selected tile's sentence. Battery glance adds a battery
 level slider, A colour adds a colour picker. `Keep It`, offered for an effect
 or a colour, makes it the mode (§3).
 
-**Health** answers, at a glance, whether MySidepulse is doing its job. It
-reports and changes nothing: each row is a state, in the colour of the rule
-above, its detail (the doctor's sentence, a path, a date) as its tooltip, and
-under each group, while a row is orange or red, a warning saying where it is put
-right. The version and updates are not here: they are General's.
+**Health** answers, at a glance, whether MySidepulse works, and it is two
+tables and nothing else. It reports and changes nothing. **Health** holds the
+checks: what has to be in place or running for MySidepulse to work, each green,
+orange or red, never blue, its detail (the doctor's sentence, a path, a date) as
+its tooltip; under the table, while a line is orange or red, a warning saying
+where it is put right; its last row is `Check Again`, with a spinner beside it
+until the doctor has answered and for at least half a second
+(`K.healthMinimumBusy`). **Information** holds a few readings, blue. A
+preference is on neither table, and neither are the version and updates (they
+are General's), the mode, the battery, how long the app has run, its memory or
+where it is installed.
 
-| Group | Rows |
-|---|---|
-| Overview | `MySidepulse`: **Everything works** in green, **N things to look at** in orange (the orange rows), or **Not working: N problems** in red (the red rows; red wins); **Checking** with a spinner until the doctor has answered and while `Check Again` runs, for at least half a second (`K.healthMinimumBusy`). Then `Check Again` |
-| Permissions | Notifications permission: Granted, or Denied in orange |
-| Claude Code | Claude Code hooks: Enabled, or Disabled / Invalid in red · Hook command (once the hooks are there): Valid, or Invalid in red when they run a copy of MySidepulse that is gone, the command as the tooltip · Journal: Available, or Failed in red when the hook cannot append · Last hook event, in blue (`12 s ago`, `5 min ago`, or `None yet`) · one blue row per Claude session, `Session <id>`: what it is doing in the user's words and since when, its directory as the tooltip, or `Claude sessions` **None** |
-| Strip | each strip, `<name>, <n> LEDs`: Available, or Stalled in orange, its mount path as the tooltip; with none, `SidePulse strip` **Missing** in orange · What the strip shows: Auto, Off, Colour or Effect, in blue, the colour or the effect as the tooltip · Showing: the `StatusCopy` sentence, in blue · Battery, in blue |
-| Phone | Phone notifications: Enabled; Disabled in blue (the user's switch); Invalid in orange when the topic or the server cannot be posted to, the masked topic and the server as the tooltip |
-| Terminal | Terminal hook: Enabled, or Disabled in orange · one blue row per command, what it runs: Running, Succeeded or Failed, `seen` once acknowledged, and since when; or `Terminal commands` **None** |
-| App | Open at login and reopen after a crash: Enabled; Disabled in orange (a crash would leave the strip frozen); Enabled in orange with the General page's warning while this process is not the one launchd supervises · The mysidepulse command: Available, or Failed in orange when a command cannot reach the app over its socket · Running for, Memory used, in blue · Crashes in the last 7 days (`K.healthCrashWindow`, read from `~/Library/Logs/DiagnosticReports`): None, or a count in orange with the last one's date as the tooltip · Installed in: Applications; another folder in blue; the disk image or a temporary copy in orange |
-| Report | `Copy Report`: every row of the page as text, with the app's version and macOS's first and the topic masked |
+| Health line | When | Reads |
+|---|---|---|
+| Claude Code hooks | always, once the hook files are read | Enabled; Disabled in red; Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
+| Terminal hook | always, once read | Enabled, or Disabled in orange |
+| Notifications permission | always, once read | Granted, or Denied in orange |
+| SidePulse strip | always, once the engine has answered | Available (each strip's name, LEDs and mount path as the tooltip); Missing in orange with none plugged in; Stalled in orange |
+| Open at login and reopen after a crash (the launch agent) | always, once the engine has answered | Enabled; Disabled in orange (a crash would leave the strip frozen); Opened by hand in orange while this process is not the one launchd supervises, with the General page's warning |
+| Phone notifications | only while the phone half is switched on | Enabled, or Invalid in orange when the topic or the server cannot be posted to, the masked topic and the server as the tooltip |
+| The mysidepulse command | only while a command cannot reach the app over its socket | Failed in orange |
+| Crashes in the last 7 days | only while there is one (`K.healthCrashWindow`, read from `~/Library/Logs/DiagnosticReports`) | the count in orange, the last one's date as the tooltip |
+
+Five lines on a Mac where everything works, eight at most (`HealthLimits`).
+
+| Information line | When | Reads |
+|---|---|---|
+| Last hook event | while either hook is set up | `12 s ago`, `5 min ago`, or `None yet` |
+| Claude sessions | while the Claude Code hooks are set up | how many, or **None**; each session's state in the user's words and since when as the tooltip |
+| Terminal commands | while the terminal hook is set up | how many, or **None**; each command's state as the tooltip |
+| Showing | while a strip is plugged in | the `StatusCopy` sentence |
 
 The doctor's checks run off the main queue, through the real socket, when the
 page is shown and on `Check Again`; everything else on the page is the engine's
 status and the notification permission, re-read every 2 s while the window is
-open, and the hook files.
+open, the hook files, and the crash reports, read with the doctor.
 
 **System** holds what MySidepulse needs from outside itself, each beside the
 button that gives it. `Claude Code hooks` is **Enabled** in green, **Disabled**
@@ -952,7 +966,6 @@ window shows them, and the phone push bodies (§6).
 |---|---|
 | Every word `mysidepulse` prints in a terminal (§11) | The CLI is English by rule, not by omission. The same code produces the doctor's details for both, and the language is read where the sentence is built, so the window is French while the terminal stays English. |
 | The doctor's nine check names (`app`, `hooks installed`, `device`, …) | Identifiers the CLI prints and the Health page matches on, not prose. |
-| The Health page's `Copy Report` scaffolding: the `[OK]`, `[INFO]`, `[WARN]`, `[FAIL]` tags | A diagnostic dump to paste into a bug report, built like the CLI's output; its rows are the page's own words. |
 | The push `Title` header (`Claude Code`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
 | The block in `~/.zshrc` and the shell snippet | Shell code, read by zsh. |
 | `MySidepulse`, `SidePulse`, `Claude Code`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |

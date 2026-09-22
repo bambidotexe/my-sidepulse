@@ -200,7 +200,7 @@ the icon is hidden. Every change applies as you make it.
 | **Notifications** | the phone switch · the ntfy server · the topic, with its QR code · a test button |
 | **Playground** | nine states and six effects to try on the real strip |
 | **System** | set up or remove the Claude Code hooks and the terminal hook, each with one button · allow notifications · show the welcome wizard again |
-| **Health** | whether MySidepulse works, at a glance: the hooks, the journal, the strip, the phone, the terminal hook, the app itself, each green, orange or red · the last hook event and every session and command right now · *Check Again* · *Copy Report* |
+| **Health** | whether MySidepulse works, at a glance, in two tables. Health: the Claude Code hooks, the terminal hook, the notification permission, the strip, the launch agent, and while they apply the phone link, the command and a recent crash, each green, orange or red, then *Check Again*. Information: the last hook event, the Claude sessions, the terminal commands, what the strip shows |
 | **Tip** | everything is free and stays free · a one-time tip on Ko-fi |
 
 The app speaks **English and French**, following the language your Mac is set to. The command line is always

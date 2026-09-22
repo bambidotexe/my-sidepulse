@@ -1,7 +1,7 @@
 import Foundation
 
-/// The Health page's own words: the overview, the labels of the rows no other page has, the readings, and
-/// the sentences that say how to put a row right. A row that another page also shows takes that page's
+/// The Health page's own words: the two tables' titles, the labels of the lines no other page has, the
+/// readings, and the sentences that say how to put a line right. A row that another page also shows takes that page's
 /// label and warning, so one state is never named twice. The detail sentences in the tooltips come from
 /// `DoctorStrings`, because the CLI prints them too.
 ///
@@ -11,40 +11,19 @@ public struct HealthPageStrings {
     private let language: Language
     init(_ language: Language) { self.language = language }
 
-    // MARK: Overview
+    // MARK: The two tables
 
-    public var overviewTitle: String {
+    public var healthTitle: String {
         switch language {
-        case .en: "Overview"
-        case .fr: "Vue d'ensemble"
+        case .en: "Health"
+        case .fr: "Santé"
         }
     }
 
-    public var everythingWorks: String {
+    public var informationTitle: String {
         switch language {
-        case .en: "Everything works"
-        case .fr: "Tout fonctionne"
-        }
-    }
-
-    public func toLookAt(_ count: Int) -> String {
-        switch language {
-        case .en: count == 1 ? "1 thing to look at" : "\(count) things to look at"
-        case .fr: count == 1 ? "1 point à vérifier" : "\(count) points à vérifier"
-        }
-    }
-
-    public func notWorking(problems count: Int) -> String {
-        switch language {
-        case .en: count == 1 ? "Not working: 1 problem" : "Not working: \(count) problems"
-        case .fr: count == 1 ? "Ne fonctionne pas : 1 problème" : "Ne fonctionne pas : \(count) problèmes"
-        }
-    }
-
-    public var checking: String {
-        switch language {
-        case .en: "Checking"
-        case .fr: "Vérification"
+        case .en: "Information"
+        case .fr: "Informations"
         }
     }
 
@@ -55,23 +34,7 @@ public struct HealthPageStrings {
         }
     }
 
-    // MARK: Permissions
-
-    public var permissionsTitle: String {
-        switch language {
-        case .en: "Permissions"
-        case .fr: "Autorisations"
-        }
-    }
-
     // MARK: Claude Code
-
-    public var hookCommandLabel: String {
-        switch language {
-        case .en: "Hook command"
-        case .fr: "Commande du hook"
-        }
-    }
 
     public var hookCommandFix: String {
         switch language {
@@ -79,13 +42,6 @@ public struct HealthPageStrings {
             + "remove the hooks and set them up again."
         case .fr: "Les hooks lancent une copie de MySidepulse qui n'existe plus. Sur la page Système, "
             + "retirez les hooks puis réinstallez-les."
-        }
-    }
-
-    public var journalLabel: String {
-        switch language {
-        case .en: "Journal"
-        case .fr: "Journal"
         }
     }
 
@@ -145,13 +101,6 @@ public struct HealthPageStrings {
         }
     }
 
-    public func sessionLabel(idPrefix: String) -> String {
-        switch language {
-        case .en: "Session \(idPrefix)"
-        case .fr: "Session \(idPrefix)"
-        }
-    }
-
     /// What a session is doing and since when, in the user's words rather than the engine's.
     public func sessionMark(_ phase: HealthFacts.SessionPhase, ageSeconds: Int) -> String {
         "\(sessionPhase(phase)), \(ago(seconds: ageSeconds))"
@@ -188,36 +137,6 @@ public struct HealthPageStrings {
         case (.plan, .fr): "un plan"
         case (.error, .en): "an error"
         case (.error, .fr): "une erreur"
-        }
-    }
-
-    public var unknownDirectory: String {
-        switch language {
-        case .en: "unknown directory"
-        case .fr: "répertoire inconnu"
-        }
-    }
-
-    // MARK: Strip
-
-    public var modeLabel: String {
-        switch language {
-        case .en: "What the strip shows"
-        case .fr: "Ce que montre le ruban"
-        }
-    }
-
-    public var batteryLabel: String {
-        switch language {
-        case .en: "Battery"
-        case .fr: "Batterie"
-        }
-    }
-
-    public func batteryMark(percent: Int, plugged: Bool) -> String {
-        switch language {
-        case .en: "\(percent) %, \(plugged ? "plugged in" : "on battery")"
-        case .fr: "\(percent) %, \(plugged ? "sur secteur" : "sur batterie")"
         }
     }
 
@@ -278,14 +197,7 @@ public struct HealthPageStrings {
         }
     }
 
-    // MARK: App
-
-    public var appTitle: String {
-        switch language {
-        case .en: "App"
-        case .fr: "App"
-        }
-    }
+    // MARK: Service
 
     public var launchAgentFix: String {
         switch language {
@@ -293,6 +205,13 @@ public struct HealthPageStrings {
             + "phone silent until you open MySidepulse again."
         case .fr: "Activez-le dans Général, sous Démarrage. Désactivé, un plantage laisse le ruban figé "
             + "et votre téléphone silencieux jusqu'à ce que vous rouvriez MySidepulse."
+        }
+    }
+
+    public var openedByHand: String {
+        switch language {
+        case .en: "Opened by hand"
+        case .fr: "Ouvert à la main"
         }
     }
 
@@ -312,56 +231,10 @@ public struct HealthPageStrings {
         }
     }
 
-    public var runningForLabel: String {
-        switch language {
-        case .en: "Running for"
-        case .fr: "En marche depuis"
-        }
-    }
-
-    /// How long something has run, to the minute, in the two largest units that mean anything.
-    public func duration(seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds))
-        let days = total / 86_400
-        let hours = (total % 86_400) / 3_600
-        let minutes = (total % 3_600) / 60
-        switch language {
-        case .en:
-            if days > 0 { return "\(days) d \(hours) h" }
-            if hours > 0 { return "\(hours) h \(minutes) min" }
-            return minutes > 0 ? "\(minutes) min" : "Less than a minute"
-        case .fr:
-            if days > 0 { return "\(days) j \(hours) h" }
-            if hours > 0 { return "\(hours) h \(minutes) min" }
-            return minutes > 0 ? "\(minutes) min" : "Moins d'une minute"
-        }
-    }
-
-    public var memoryLabel: String {
-        switch language {
-        case .en: "Memory used"
-        case .fr: "Mémoire utilisée"
-        }
-    }
-
-    public func megabytes(_ count: Int) -> String {
-        switch language {
-        case .en: "\(count) MB"
-        case .fr: "\(count) Mo"
-        }
-    }
-
     public func crashesLabel(days: Int) -> String {
         switch language {
         case .en: "Crashes in the last \(days) days"
         case .fr: "Plantages ces \(days) derniers jours"
-        }
-    }
-
-    public var noCrashes: String {
-        switch language {
-        case .en: "None"
-        case .fr: "Aucun"
         }
     }
 
@@ -374,61 +247,8 @@ public struct HealthPageStrings {
 
     public var crashesFix: String {
         switch language {
-        case .en: "Console shows what happened, under “Crash Reports”. Copy the report below to send it along."
-        case .fr: "Console montre ce qui s'est passé, sous « Rapports de blocage ». Copiez le rapport "
-            + "ci-dessous pour l'envoyer avec."
-        }
-    }
-
-    public var locationLabel: String {
-        switch language {
-        case .en: "Installed in"
-        case .fr: "Emplacement"
-        }
-    }
-
-    public func locationWord(_ location: AppLocation) -> String {
-        switch (location, language) {
-        case (.applications, _): "Applications"
-        case (.elsewhere(let folder), _): folder
-        case (.diskImage, .en): "Disk image"
-        case (.diskImage, .fr): "Image disque"
-        case (.temporaryCopy, .en): "Temporary copy"
-        case (.temporaryCopy, .fr): "Copie temporaire"
-        }
-    }
-
-    public var locationFix: String {
-        switch language {
-        case .en: "Quit MySidepulse, drag it to the Applications folder, and open it from there. "
-            + "Where it runs now, it cannot update itself."
-        case .fr: "Quittez MySidepulse, glissez-le dans le dossier Applications et ouvrez-le "
-            + "depuis là. Là où il tourne, il ne peut pas se mettre à jour."
-        }
-    }
-
-    // MARK: Report
-
-    public var reportTitle: String {
-        switch language {
-        case .en: "Report"
-        case .fr: "Rapport"
-        }
-    }
-
-    public var reportHint: String {
-        switch language {
-        case .en: "Copies everything on this page as text. The notification topic stays masked, so it "
-            + "is safe to paste anywhere."
-        case .fr: "Copie tout le contenu de cette page sous forme de texte. Le sujet de notification "
-            + "reste masqué, donc sûr à coller n'importe où."
-        }
-    }
-
-    public var copyReportButton: String {
-        switch language {
-        case .en: "Copy Report"
-        case .fr: "Copier le rapport"
+        case .en: "Console shows what happened, under “Crash Reports”."
+        case .fr: "Console montre ce qui s'est passé, sous « Rapports de blocage »."
         }
     }
 }

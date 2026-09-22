@@ -187,7 +187,7 @@ are `docs/functional.md`.
 | updates: the check, its schedule, the notification | `Core/UpdateCheck.swift` (versions, what a reply means — `UpdateCheckTests`), `Core/UpdateSchedule.swift`, `Core/UpdatePanel.swift` (the Updates group), the `update…` numbers in `Core/Constants.swift`; `Platform/UpdateChecker.swift` (the request — `UpdateCheckerTests`); `App/UpdateController.swift` (the one owner), `App/UpdateNotifier.swift`, the Updates group of `App/SettingsGeneralPage.swift` | §10 *Updates*, §12, §13, `macOS.md` *Updates* |
 | updates: the window, the fetch, making it ready, Install and Relaunch | `Core/UpdateSession.swift`, `Core/StagedUpdateCheck.swift`, `Core/UpdateInstallScript.swift` (the helper's text, its plan, its result — run under a real `/bin/sh` by `UpdateInstallScriptTests`); `Platform/UpdateChecker.swift` (`UpdateDownload`), `UpdateStager.swift`, `CodeSignature.swift`, `UpdateInstaller.swift`, `DetachedProcess.swift`; `App/UpdateWindow.swift`, `UpdateController.installAndRelaunch`; the words in `Core/StringsUpdateWindow.swift` and `Core/StringsUpdate.swift` | the same, plus `pitfalls.md` (the six update entries) and the checklist's §3. **Read those entries before touching the order of an install** |
 | a doctor check | `Platform/Doctor.swift` for what it probes and its `name` (an identifier, never translated), `Core/StringsDoctor.swift` for its detail sentence — `DoctorTests` (every detail is a sentence with no long dash, in both languages). The Health page reads a check by its name in `SettingsModel.healthFacts`, takes its `ok` and its sentence (the tooltip), and never reads the sentence back | §11, §10 *What the pages say*, §15 |
-| the Health page: a row, its colour, its fix sentence | **Invoke the `macos-building-settings-pages` skill first** (*The Health page*). `Core/HealthReport.swift` (`HealthFacts` → the groups and rows), `Core/HealthRules.swift` (the colour rules, shared with the System page's rows), `Core/Health.swift` (the level, row, group, summary), `Core/StringsHealthPage.swift`; `App/SettingsModel.swift` (`healthFacts`, `readHealth`, `checkAgain`), `App/SettingsHealthPage.swift` (draws only), `App/SettingsWindow.swift` (reads a page when it is shown); the readers `Platform/CrashReports.swift`, `ProcessStats.swift`, `InstallLocation.swift` — `HealthTests`, `CrashReportsTests` | §10 *What the pages say* |
+| the Health page: a check, a reading, a colour, a fix sentence | **Invoke the `macos-building-settings-pages` skill first** (*The Health page*: two tables, what is a check, the limits). `Core/HealthReport.swift` (`HealthFacts` → `checks(for:)` and `readings(for:)`), `Core/HealthRules.swift` (the colour rules, shared with the System page's rows), `Core/Health.swift` (the level, `HealthRow`, `InfoRow`, `HealthLimits`), `Core/StringsHealthPage.swift`; `App/SettingsModel.swift` (`healthFacts`, `readHealth`, `checkAgain`), `App/SettingsHealthPage.swift` (draws only), `App/SettingsWindow.swift` (reads a page when it is shown); the reader `Platform/CrashReports.swift` — `HealthTests` (the worst case holds `HealthLimits`), `CrashReportsTests` | §10 *What the pages say* |
 | **any sentence the user reads**, in either language | `Core/Strings*.swift` (one table per surface; a string is one accessor switching over `Language`, so the two languages are added together or not at all), `Core/Localization.swift` (the language rule and the ambient switch) — `LocalizationTests`, which also reads the tables off disk to check the text rules in both languages | §15, and the section that shows the sentence |
 | a new language | `Core/Localization.swift` (`Language`) — every table then fails to compile until it answers for it, which is the point | §15 |
 | a constant | `Core/Constants.swift`, with its evidence in the comment | the section that states it, and §13 |
@@ -211,7 +211,7 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (338, one opt-in skip) runs in about two seconds;
+  `MySidepulseCoreTests` (336, one opt-in skip) runs in about two seconds;
   `MySidepulsePlatformTests` (133) takes about 24 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
@@ -291,8 +291,8 @@ Full version in `docs/architecture.md`.
   `UpdateInstallScript` (the rest of the update's rules, and the text of the
   helper that finishes an install) ·
   `StatusCopy` (which sentence and tone a display state gets) ·
-  `Health` + `HealthRules` + `HealthReport` (the Health page's rows and the
-  colour rule every page's grants follow) ·
+  `Health` + `HealthRules` + `HealthReport` (the Health page's two tables and
+  the colour rule every page's grants follow) ·
   `Localization` (`Language`, the rule that reads a system language tag, and
   `Loc`, the ambient switch) + `Strings*` (every user-facing string, English and
   French side by side, one table per surface).
@@ -305,8 +305,7 @@ Full version in `docs/architecture.md`.
   dedupe, 2 s watchdog) · `LedDevice` (identity = `st_dev`, `st_ino`) ·
   `Keepalive` · `Notifier` + `ClaudeSessions` (the only ntfy client) ·
   `Control` + `ControlServer` + `ControlClient` (Unix socket, JSON lines) ·
-  `Doctor` · `CrashReports` + `ProcessStats` + `InstallLocation` (what the
-  Health page reads about the app itself) · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
+  `Doctor` · `CrashReports` (the Health page's crash line) · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
   both hooks, for the CLI and the settings window alike) · `UpdateChecker` +
   `UpdateDownload` (the only code that talks to GitHub) · `UpdateStager` +
   `CodeSignature` (the disk image, the copy, its signature) · `UpdateInstaller`
@@ -375,7 +374,7 @@ The app target has no automated tests. Its verification is the strip,
   from the doctor's sentences). The CLI's output is English by rule, which costs
   nothing to keep because the language is read where a sentence is built.
 - **The ntfy topic is a password.** `config.json` is `0600`; `doctor`, `status`,
-  the Health report and the log carry only a masked prefix. Never put a live
+  the Health page's tooltip and the log carry only a masked prefix. Never put a live
   topic in a commit message, an issue, a document or a transcript, and never
   read `config.json` to look at it.
 - Every `config.json` key added after the first release is optional: a missing
@@ -427,7 +426,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (338 + 133, one opt-in skip) at
+`swift build` is clean and `swift test` is green (336 + 133, one opt-in skip) at
 this commit. The live journal replays.
 
 Walked end to end on the owner's Mac: a drag install from the disk image, which

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Everything the Health page reports, as values. The app gathers them (the engine's status, the doctor's
-/// checks, the hook files, the system); this turns them into the page's groups, so what a fact reads as, in
+/// checks, the hook files, the system); this turns them into the page's two tables, so what a fact reads as, in
 /// which colour and with which sentence, is decided here and tested (`HealthTests`).
 ///
 /// A fact that is nil has not been read yet, and its row is left out rather than shown as unknown.
@@ -109,7 +109,7 @@ public struct HealthFacts: Equatable {
     public var hookBinary: Check?
     /// The command the hooks run, as `settings.json` holds it.
     public var hookCommand: String?
-    /// The doctor's "journal": whether the hook can append to it.
+    /// The doctor's "journal": whether the hooks can append to it.
     public var journal: Check?
     public var lastHookEventSeconds: Int?
     public var sessions: [Session] = []
@@ -121,9 +121,7 @@ public struct HealthFacts: Equatable {
     // Strip
     /// Nil until the engine has answered; empty when no strip is mounted.
     public var devices: [Device]?
-    public var mode: LedMode?
     public var display: DisplayState?
-    public var battery: PowerState?
 
     // Phone
     public var phone: Phone?
@@ -132,247 +130,177 @@ public struct HealthFacts: Equatable {
     public var launchAgent: LaunchAgentState?
     /// The doctor's "app": whether a `mysidepulse` command can reach this app over its socket.
     public var control: Check?
-    public var runningSeconds: TimeInterval?
-    public var memoryBytes: UInt64?
     /// When each crash report of the app in the last `K.healthCrashWindow` was written, newest first.
     public var recentCrashes: [Date] = []
-    public var location: AppLocation?
-    public var bundlePath = ""
 
     public init() {}
 }
 
-/// The Health page's groups, and the text Copy Report puts on the clipboard.
+/// The Health page's two tables: the checks, green, orange or red, and the readings, blue.
+///
+/// **A check is something that has to be in place or running for MySidepulse to work**: the hooks that tell
+/// it what Claude Code and the terminal do, the permission its alerts need, the strip it lights, the launch
+/// agent that brings it back after a crash, the phone link once it is switched on. A preference is never a
+/// check, and neither is a reading. The skill `macos-building-settings-pages` (*The Health page*) holds
+/// the rules and every app's list.
 public enum HealthReport {
-    /// The groups under the overview, in page order: the permission, then what the whole point rests on
-    /// (Claude Code's hooks in, the strip and the phone out), then the terminal, then the app itself.
-    public static func groups(for facts: HealthFacts) -> [HealthGroup] {
-        [permissions(facts), claudeCode(facts), strip(facts), phone(facts), terminal(facts), app(facts)]
-            .filter { !$0.rows.isEmpty }
+    /// The Health table, in page order. A fact nobody has read yet leaves its line out rather than showing
+    /// it unknown.
+    public static func checks(for facts: HealthFacts) -> [HealthRow] {
+        [claudeHooks(facts), terminalHook(facts), notifications(facts), strip(facts), launchAgent(facts),
+         phone(facts), commandLine(facts), crashes(facts.recentCrashes)].compactMap { $0 }
     }
 
-    static func permissions(_ facts: HealthFacts) -> HealthGroup {
+    /// The Information table, in page order, each line only once it has something to say.
+    public static func readings(for facts: HealthFacts) -> [InfoRow] {
         let t = Loc.settings.health
-        let words = Loc.settings.words
-        var rows: [HealthRow] = []
-        if let granted = facts.notificationsGranted {
-            rows.append(HealthRow(id: "notifications permission",
-                                  label: Loc.settings.system.notificationsPermissionLabel,
-                                  level: HealthRules.grant(held: granted, required: false),
-                                  word: granted ? words.granted : words.denied,
-                                  fix: Loc.settings.system.notificationsWarning))
+        var rows: [InfoRow] = []
+        let claudeSetUp = facts.claudeHooks == .setUp
+        let terminalSetUp = facts.terminalHookSetUp == true
+
+        if claudeSetUp || terminalSetUp {
+            rows.append(InfoRow(id: "last hook event", label: t.lastHookEventLabel,
+                                value: facts.lastHookEventSeconds.map(t.ago(seconds:)) ?? t.noneYet))
         }
-        return HealthGroup(id: "permissions", title: t.permissionsTitle, rows: rows)
+        if claudeSetUp {
+            rows.append(InfoRow(id: "sessions", label: t.claudeSessionsLabel,
+                                value: facts.sessions.isEmpty ? t.noSessions : "\(facts.sessions.count)",
+                                detail: facts.sessions.isEmpty ? nil : facts.sessions.map {
+                                    "\($0.id.prefix(8)): \(t.sessionMark($0.phase, ageSeconds: $0.ageSeconds))"
+                                }.joined(separator: "\n")))
+        }
+        if terminalSetUp {
+            rows.append(InfoRow(id: "commands", label: t.terminalCommandsLabel,
+                                value: facts.jobs.isEmpty ? t.noCommands : "\(facts.jobs.count)",
+                                detail: facts.jobs.isEmpty ? nil : facts.jobs.map {
+                                    "\($0.label ?? $0.id): \(t.jobMark($0.phase, acknowledged: $0.acknowledged, ageSeconds: $0.ageSeconds))"
+                                }.joined(separator: "\n")))
+        }
+        if let devices = facts.devices, !devices.isEmpty, let display = facts.display {
+            rows.append(InfoRow(id: "showing", label: Loc.settings.strip.showingLabel,
+                                value: StatusCopy.line(for: display).text))
+        }
+        return rows
     }
 
-    static func claudeCode(_ facts: HealthFacts) -> HealthGroup {
+    /// Required: without them the strip never shows Claude. One line says whether they work at all: set up,
+    /// pointing at a copy of MySidepulse that exists, and able to write the journal the app reads.
+    static func claudeHooks(_ facts: HealthFacts) -> HealthRow? {
+        guard let hooks = facts.claudeHooks else { return nil }
         let t = Loc.settings.health
         let system = Loc.settings.system
         let words = Loc.settings.words
-        var rows: [HealthRow] = []
-
-        if let hooks = facts.claudeHooks {
-            let level = HealthRules.grant(held: hooks == .setUp, required: true)
-            rows.append(HealthRow(id: "claude code hooks", label: system.claudeCodeHooksLabel, level: level,
-                                  word: hooks == .setUp ? words.enabled
-                                      : hooks == .missing ? words.disabled : words.invalid,
-                                  detail: facts.hooksCheck?.detail,
-                                  fix: hooks == .unreadable ? system.settingsUnreadableWarning
-                                                            : system.withoutHooksWarning))
+        let label = system.claudeCodeHooksLabel
+        switch hooks {
+        case .missing:
+            return HealthRow(id: "claude code hooks", label: label, level: HealthRules.grant(held: false, required: true),
+                             word: words.disabled, detail: facts.hooksCheck?.detail, fix: system.withoutHooksWarning)
+        case .unreadable:
+            return HealthRow(id: "claude code hooks", label: label, level: .failure, word: words.invalid,
+                             detail: facts.hooksCheck?.detail, fix: system.settingsUnreadableWarning)
+        case .setUp:
+            if let binary = facts.hookBinary, !binary.ok {
+                return HealthRow(id: "claude code hooks", label: label, level: .failure, word: words.invalid,
+                                 detail: facts.hookCommand ?? binary.detail, fix: t.hookCommandFix)
+            }
+            if let journal = facts.journal, !journal.ok {
+                return HealthRow(id: "claude code hooks", label: label, level: .failure, word: words.failed,
+                                 detail: journal.detail, fix: t.journalFix)
+            }
+            return HealthRow(id: "claude code hooks", label: label, level: .good, word: words.enabled,
+                             detail: facts.hookCommand)
         }
-        // Only once the hooks are there: with none installed, no command points anywhere, and a green
-        // "Valid" would read as a hook that works.
-        if facts.claudeHooks == .setUp, let binary = facts.hookBinary {
-            rows.append(HealthRow(id: "hook command", label: t.hookCommandLabel,
-                                  level: binary.ok ? .good : .failure,
-                                  word: binary.ok ? words.valid : words.invalid,
-                                  detail: facts.hookCommand ?? binary.detail, fix: t.hookCommandFix))
-        }
-        if let journal = facts.journal {
-            rows.append(HealthRow(id: "journal", label: t.journalLabel,
-                                  level: journal.ok ? .good : .failure,
-                                  word: journal.ok ? words.available : words.failed,
-                                  detail: journal.detail, fix: t.journalFix))
-        }
-        rows.append(HealthRow(id: "last hook event", label: t.lastHookEventLabel, level: .info,
-                              word: facts.lastHookEventSeconds.map(t.ago(seconds:)) ?? t.noneYet))
-        if facts.sessions.isEmpty {
-            rows.append(HealthRow(id: "sessions", label: t.claudeSessionsLabel, level: .info,
-                                  word: t.noSessions))
-        }
-        for session in facts.sessions {
-            rows.append(HealthRow(id: "session \(session.id)",
-                                  label: t.sessionLabel(idPrefix: String(session.id.prefix(8))),
-                                  level: .info,
-                                  word: t.sessionMark(session.phase, ageSeconds: session.ageSeconds),
-                                  detail: session.cwd ?? t.unknownDirectory))
-        }
-        return HealthGroup(id: "claude code", title: system.claudeCodeTitle, rows: rows)
     }
 
-    static func strip(_ facts: HealthFacts) -> HealthGroup {
-        let t = Loc.settings.health
+    static func terminalHook(_ facts: HealthFacts) -> HealthRow? {
+        guard let setUp = facts.terminalHookSetUp else { return nil }
+        let words = Loc.settings.words
+        return HealthRow(id: "terminal hook", label: Loc.settings.system.terminalHookLabel,
+                         level: HealthRules.grant(held: setUp, required: false),
+                         word: setUp ? words.enabled : words.disabled,
+                         fix: Loc.settings.system.withoutTerminalHookWarning)
+    }
+
+    static func notifications(_ facts: HealthFacts) -> HealthRow? {
+        guard let granted = facts.notificationsGranted else { return nil }
+        let words = Loc.settings.words
+        return HealthRow(id: "notifications permission", label: Loc.settings.system.notificationsPermissionLabel,
+                         level: HealthRules.grant(held: granted, required: false),
+                         word: granted ? words.granted : words.denied,
+                         fix: Loc.settings.system.notificationsWarning)
+    }
+
+    /// The strip the whole point is lit on: there, and taking what it is sent.
+    static func strip(_ facts: HealthFacts) -> HealthRow? {
+        guard let devices = facts.devices else { return nil }
         let strip = Loc.settings.strip
         let words = Loc.settings.words
-        var rows: [HealthRow] = []
-
-        if let devices = facts.devices {
-            if devices.isEmpty {
-                rows.append(HealthRow(id: "strip", label: strip.sidePulseStripLabel, level: .warning,
-                                      word: words.missing, fix: strip.stripHintEmpty))
-            }
-            for device in devices {
-                rows.append(HealthRow(id: "strip \(device.name)",
-                                      label: strip.deviceRow(name: device.name, leds: device.leds),
-                                      level: device.stalled ? .warning : .good,
-                                      word: device.stalled ? words.stalled : words.available,
-                                      detail: device.path, fix: strip.stalledWarning(name: device.name)))
-            }
+        let detail = devices.map { "\(strip.deviceRow(name: $0.name, leds: $0.leds)), \($0.path)" }
+            .joined(separator: "\n")
+        if devices.isEmpty {
+            return HealthRow(id: "strip", label: strip.sidePulseStripLabel, level: .warning, word: words.missing,
+                             fix: strip.stripHintEmpty)
         }
-        if let mode = facts.mode {
-            // The user's choice, whichever it is; the detail names the colour or the effect forced.
-            let (word, detail): (String, String?) = switch mode {
-            case .auto: (strip.modeAuto, nil)
-            case .off: (strip.modeOff, nil)
-            case .color(let hex): (strip.modeColour, hex)
-            case .effect(let name): (strip.modeEffect, name)
-            }
-            rows.append(HealthRow(id: "mode", label: t.modeLabel, level: .info, word: word, detail: detail))
+        if let stalled = devices.first(where: \.stalled) {
+            return HealthRow(id: "strip", label: strip.sidePulseStripLabel, level: .warning, word: words.stalled,
+                             detail: detail, fix: strip.stalledWarning(name: stalled.name))
         }
-        if let display = facts.display {
-            rows.append(HealthRow(id: "showing", label: strip.showingLabel, level: .info,
-                                  word: StatusCopy.line(for: display).text))
-        }
-        if let battery = facts.battery {
-            rows.append(HealthRow(id: "battery", label: t.batteryLabel, level: .info,
-                                  word: t.batteryMark(percent: battery.percent, plugged: battery.plugged)))
-        }
-        return HealthGroup(id: "strip", title: strip.stripTitle, rows: rows)
+        return HealthRow(id: "strip", label: strip.sidePulseStripLabel, level: .good, word: words.available,
+                         detail: detail)
     }
 
-    static func phone(_ facts: HealthFacts) -> HealthGroup {
+    /// The launch agent opens MySidepulse at login and brings it back after a crash.
+    static func launchAgent(_ facts: HealthFacts) -> HealthRow? {
+        guard let agent = facts.launchAgent else { return nil }
         let t = Loc.settings.health
         let words = Loc.settings.words
-        var rows: [HealthRow] = []
-        if let phone = facts.phone {
-            let (word, detail): (String, String?) = switch phone {
-            case .disabled: (words.disabled, nil)
-            case .enabled(let detail): (words.enabled, detail)
-            case .unusable(let detail): (words.invalid, detail)
-            }
-            rows.append(HealthRow(id: "phone notifications", label: t.phoneNotificationsLabel,
-                                  level: HealthRules.phone(phone), word: word, detail: detail,
-                                  fix: t.phoneFix))
+        let word = switch agent {
+        case .enabled: words.enabled
+        case .disabled: words.disabled
+        case .notSupervised: t.openedByHand
         }
-        return HealthGroup(id: "phone", title: Loc.settings.notifications.phoneTitle, rows: rows)
+        return HealthRow(id: "launch agent", label: Loc.settings.general.openAtLoginToggle,
+                         level: HealthRules.launchAgent(agent), word: word,
+                         fix: agent == .notSupervised ? Loc.settings.general.startupWarningOpenedByHand
+                                                      : t.launchAgentFix)
     }
 
-    static func terminal(_ facts: HealthFacts) -> HealthGroup {
+    /// Only while the phone half is switched on: off, it is the user's choice and nothing to check.
+    static func phone(_ facts: HealthFacts) -> HealthRow? {
         let t = Loc.settings.health
-        let system = Loc.settings.system
         let words = Loc.settings.words
-        var rows: [HealthRow] = []
-        if let setUp = facts.terminalHookSetUp {
-            rows.append(HealthRow(id: "terminal hook", label: system.terminalHookLabel,
-                                  level: HealthRules.grant(held: setUp, required: false),
-                                  word: setUp ? words.enabled : words.disabled,
-                                  fix: system.withoutTerminalHookWarning))
+        switch facts.phone {
+        case nil, .disabled?:
+            return nil
+        case .enabled(let detail)?:
+            return HealthRow(id: "phone notifications", label: t.phoneNotificationsLabel, level: .good,
+                             word: words.enabled, detail: detail)
+        case .unusable(let detail)?:
+            return HealthRow(id: "phone notifications", label: t.phoneNotificationsLabel, level: .warning,
+                             word: words.invalid, detail: detail, fix: t.phoneFix)
         }
-        if facts.jobs.isEmpty {
-            rows.append(HealthRow(id: "commands", label: t.terminalCommandsLabel, level: .info,
-                                  word: t.noCommands))
-        }
-        // A command has no name of its own beyond what it runs, so its row is the command itself.
-        for job in facts.jobs {
-            rows.append(HealthRow(id: "job \(job.id)", label: job.label ?? job.id, level: .info,
-                                  word: t.jobMark(job.phase, acknowledged: job.acknowledged,
-                                                  ageSeconds: job.ageSeconds)))
-        }
-        return HealthGroup(id: "terminal", title: system.terminalTitle, rows: rows)
     }
 
-    /// What every app of the family reports about itself, with MySidepulse's launch agent in the place of a
-    /// login item and the socket its command answers on.
-    static func app(_ facts: HealthFacts) -> HealthGroup {
+    /// Only while a `mysidepulse` command cannot reach the app: while it can, there is nothing to say.
+    static func commandLine(_ facts: HealthFacts) -> HealthRow? {
+        guard let control = facts.control, !control.ok else { return nil }
         let t = Loc.settings.health
-        let general = Loc.settings.general
-        let words = Loc.settings.words
-        var rows: [HealthRow] = []
-
-        if let agent = facts.launchAgent {
-            rows.append(HealthRow(id: "launch agent", label: general.openAtLoginToggle,
-                                  level: HealthRules.launchAgent(agent),
-                                  word: agent == .disabled ? words.disabled : words.enabled,
-                                  fix: agent == .notSupervised ? general.startupWarningOpenedByHand
-                                                               : t.launchAgentFix))
-        }
-        if let control = facts.control {
-            rows.append(HealthRow(id: "command line", label: t.commandLineLabel,
-                                  level: control.ok ? .good : .warning,
-                                  word: control.ok ? words.available : words.failed,
-                                  detail: control.detail, fix: t.commandLineFix))
-        }
-        if let seconds = facts.runningSeconds {
-            rows.append(HealthRow(id: "running for", label: t.runningForLabel, level: .info,
-                                  word: t.duration(seconds: seconds)))
-        }
-        if let bytes = facts.memoryBytes {
-            rows.append(HealthRow(id: "memory", label: t.memoryLabel, level: .info,
-                                  word: t.megabytes(Int((Double(bytes) / 1_048_576).rounded()))))
-        }
-        let crashes = facts.recentCrashes.count
-        rows.append(HealthRow(id: "crashes", label: t.crashesLabel(days: Int(K.healthCrashWindow / 86_400)),
-                              level: HealthRules.crashes(crashes),
-                              word: crashes == 0 ? t.noCrashes : "\(crashes)",
-                              detail: facts.recentCrashes.first.map { t.lastCrash(stamp($0)) },
-                              fix: t.crashesFix))
-        if let location = facts.location {
-            rows.append(HealthRow(id: "location", label: t.locationLabel,
-                                  level: HealthRules.location(location),
-                                  word: t.locationWord(location), detail: facts.bundlePath,
-                                  fix: t.locationFix))
-        }
-        return HealthGroup(id: "app", title: t.appTitle, rows: rows)
+        return HealthRow(id: "command line", label: t.commandLineLabel, level: .warning,
+                         word: Loc.settings.words.failed, detail: control.detail, fix: t.commandLineFix)
     }
 
-    /// The first row's word: everything works, how many lines to look at, or how many stop the app.
-    public static func summaryWord(_ summary: HealthSummary) -> String {
+    /// The line every app of the family ends its Health table with, **only while there is a crash** in the
+    /// last `K.healthCrashWindow`.
+    public static func crashes(_ recentCrashes: [Date]) -> HealthRow? {
+        guard let last = recentCrashes.first else { return nil }
         let t = Loc.settings.health
-        switch summary.level {
-        case .failure: return t.notWorking(problems: summary.blocking)
-        case .warning: return t.toLookAt(summary.toLookAt)
-        case .good, .info: return t.everythingWorks
-        }
+        return HealthRow(id: "crashes", label: t.crashesLabel(days: Int(K.healthCrashWindow / 86_400)),
+                         level: .warning, word: "\(recentCrashes.count)", detail: t.lastCrash(stamp(last)),
+                         fix: t.crashesFix)
     }
 
-    /// The copied report: which app and which system, the summary, then every group of the page with one
-    /// line per row, its level, its word and its detail. Written for a bug report, so nothing in it is a
-    /// secret: the phone's topic reaches it masked, as the doctor prints it.
-    public static func text(appName: String, version: String, system: String, groups: [HealthGroup]) -> String {
-        var lines = ["\(appName) \(version), \(system)", summaryWord(HealthSummary(groups: groups))]
-        for group in groups {
-            lines.append("")
-            lines.append(group.title)
-            for row in group.rows {
-                var line = "\(tag(row.level)) \(row.label): \(row.word)"
-                if let detail = row.detail, !detail.isEmpty { line += " (\(detail))" }
-                lines.append(line)
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private static func tag(_ level: HealthLevel) -> String {
-        switch level {
-        case .info: "[INFO]"
-        case .good: "[OK]  "
-        case .warning: "[WARN]"
-        case .failure: "[FAIL]"
-        }
-    }
-
-    /// A moment as a bug report wants it: the same in every language, sortable, to the minute, in the Mac's
-    /// own time zone.
+    /// A moment as a tooltip wants it: the same in every language, sortable, to the minute, in the Mac's own
+    /// time zone.
     static func stamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

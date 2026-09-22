@@ -246,29 +246,22 @@ final class SettingsModel: ObservableObject {
 
     // MARK: health
 
-    /// What only the Health page shows about the process itself, read when the page is shown and on Check
-    /// Again, never on the tick.
-    struct ProcessReadings: Equatable {
-        var runningSeconds: TimeInterval?
-        var memoryBytes: UInt64?
-        var recentCrashes: [Date] = []
-        var location: AppLocation?
-        var bundlePath = ""
-    }
-
-    @Published private(set) var processReadings = ProcessReadings()
+    /// When each crash report of the app in the last `K.healthCrashWindow` was written: what only the
+    /// Health page shows about the process itself, read when the page is shown and on Check Again, never on
+    /// the tick.
+    @Published private(set) var recentCrashes: [Date] = []
     /// From a press of Check Again until the doctor has answered, and for at least `K.healthMinimumBusy`.
     @Published private(set) var isChecking = false
 
-    /// Called by the window when the Health page is shown: the doctor, the hook files and the process,
-    /// read now. The engine's rows follow the 2 s tick on their own.
+    /// Called by the window when the Health page is shown: the doctor, the hook files and the crash
+    /// reports, read now. The engine's lines follow the 2 s tick on their own.
     func readHealth() {
         refreshHooks()
-        readProcess()
+        readCrashes()
         runDoctor()
     }
 
-    /// Check Again: everything the page shows, read now, with the overview on *Checking* until the doctor
+    /// Check Again: everything the page shows, read now, with a spinner beside the button until the doctor
     /// has answered and long enough to be seen.
     func checkAgain() {
         guard !isChecking else { return }
@@ -277,24 +270,17 @@ final class SettingsModel: ObservableObject {
         refresh()
         refreshNotificationsGrant()
         refreshHooks()
-        readProcess()
+        readCrashes()
         runDoctor { [weak self] in
             let left = max(0, K.healthMinimumBusy - Date().timeIntervalSince(started))
             DispatchQueue.main.asyncAfter(deadline: .now() + left) { self?.isChecking = false }
         }
     }
 
-    private func readProcess() {
-        let now = Date()
+    private func readCrashes() {
         let process = Bundle.main.executableURL?.lastPathComponent ?? "MySidepulseApp"
-        let fresh = ProcessReadings(
-            runningSeconds: ProcessStats.launchDate.map { now.timeIntervalSince($0) },
-            memoryBytes: ProcessStats.memoryFootprint,
-            recentCrashes: CrashReports.recent(process: process,
-                                               since: now.addingTimeInterval(-K.healthCrashWindow)),
-            location: InstallLocation.current(),
-            bundlePath: Bundle.main.bundleURL.path)
-        if fresh != processReadings { processReadings = fresh }
+        let fresh = CrashReports.recent(process: process, since: Date().addingTimeInterval(-K.healthCrashWindow))
+        if fresh != recentCrashes { recentCrashes = fresh }
     }
 
     /// The real doctor, through the real socket, off the main queue: the
@@ -351,7 +337,6 @@ final class SettingsModel: ObservableObject {
             facts.devices = (status.devices ?? []).map {
                 HealthFacts.Device(name: $0.name, leds: $0.leds, path: $0.path, stalled: $0.stalled)
             }
-            facts.battery = status.battery.map { PowerState(percent: $0.percent, plugged: $0.plugged) }
             facts.phone = status.notify.map { notify in
                 guard notify.enabled else { return .disabled }
                 let detail = Loc.doctor.notificationsOn(topicMasked: notify.topicMasked, server: notify.server)
@@ -364,15 +349,10 @@ final class SettingsModel: ObservableObject {
                 default: .notSupervised
                 }
             }
-            facts.mode = mode
             facts.display = displayState
         }
 
-        facts.runningSeconds = processReadings.runningSeconds
-        facts.memoryBytes = processReadings.memoryBytes
-        facts.recentCrashes = processReadings.recentCrashes
-        facts.location = processReadings.location
-        facts.bundlePath = processReadings.bundlePath
+        facts.recentCrashes = recentCrashes
         return facts
     }
 

@@ -285,7 +285,7 @@ rejected by eye within minutes of a build whose tests were green.
 ### The topic is a password
 - **Symptom.** A topic pasted into a transcript or an issue is burned: anyone can read the feed. It has happened once.
 - **Why.** ntfy topics are unauthenticated.
-- **Instead.** Generated, never derived from the machine. `config.json` is `0600`, re-applied after every save because an atomic write replaces the inode. `status`, `doctor`, the Health report and the log carry only the first six characters; the status reply has no field that could hold the raw topic. Only `mysidepulse notify` and the Notifications page's reveal print it.
+- **Instead.** Generated, never derived from the machine. `config.json` is `0600`, re-applied after every save because an atomic write replaces the inode. `status`, `doctor`, the Health page and the log carry only the first six characters; the status reply has no field that could hold the raw topic. Only `mysidepulse notify` and the Notifications page's reveal print it.
 - **Rule.** Never put a live topic in a commit message, an issue, a doc or a transcript. Topics are validated, not escaped: anything but `[A-Za-z0-9_-]{1,64}` is rejected.
 
 ### One POST is not a delivery

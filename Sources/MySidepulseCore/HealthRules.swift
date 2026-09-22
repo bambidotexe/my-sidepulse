@@ -19,33 +19,6 @@ public enum HealthRules {
         state == .enabled ? .good : .warning
     }
 
-    /// The phone half is the user's to switch off, which is the state they asked for; on and unable to
-    /// post is a feature that does not work while the strip still does.
-    public static func phone(_ phone: HealthFacts.Phone) -> HealthLevel {
-        switch phone {
-        case .disabled: .info
-        case .enabled: .good
-        case .unusable: .warning
-        }
-    }
-
-    /// A crash the app came back from still cost the user whatever it was doing, so any crash in the window
-    /// is worth a look; none is green.
-    public static func crashes(_ count: Int) -> HealthLevel {
-        count == 0 ? .good : .warning
-    }
-
-    /// Running out of a disk image, or out of the read-only copy macOS makes of an app launched from where
-    /// it was downloaded, is running an app that is not installed: it goes when the image is ejected, and an
-    /// update cannot replace it. Any other folder is a choice.
-    public static func location(_ location: AppLocation) -> HealthLevel {
-        switch location {
-        case .applications: .good
-        case .elsewhere: .info
-        case .diskImage, .temporaryCopy: .warning
-        }
-    }
-
     /// Whether a file in `~/Library/Logs/DiagnosticReports` is a crash report of the process named
     /// `process`: the name, a dash, the date the system stamps (`MySidepulseApp-2026-09-21-101010.ips`), and
     /// the extension of a crash report old or new. A user fault of the same process (`ExcUserFault_…`), or
@@ -59,18 +32,6 @@ public enum HealthRules {
         guard stamp.count > pattern.count else { return false }
         return zip(stamp, pattern).allSatisfy { char, slot in slot == "-" ? char == "-" : char.isASCII && char.isNumber }
     }
-
-    /// Where a bundle is, from its path. `home` is the user's home folder; `readOnlyVolume` is whether the
-    /// volume the bundle is on is mounted read-only, which is what a disk image is.
-    public static func location(bundlePath: String, home: String, readOnlyVolume: Bool) -> AppLocation {
-        if bundlePath.contains("/AppTranslocation/") { return .temporaryCopy }
-        if readOnlyVolume { return .diskImage }
-        let folder = (bundlePath as NSString).deletingLastPathComponent
-        if folder == "/Applications" || folder == (home as NSString).appendingPathComponent("Applications") {
-            return .applications
-        }
-        return .elsewhere(folder: (folder as NSString).lastPathComponent)
-    }
 }
 
 /// What the launch agent says about this process, as `LoginService` reports it.
@@ -81,16 +42,4 @@ public enum LaunchAgentState: Equatable, Sendable {
     /// The agent is installed, but this process was opened by hand and is not the one launchd supervises,
     /// so a crash would not be recovered until the next login.
     case notSupervised
-}
-
-/// Where the running bundle is.
-public enum AppLocation: Equatable, Sendable {
-    /// `/Applications` or `~/Applications`.
-    case applications
-    /// A folder of the user's choosing, named by its last component.
-    case elsewhere(folder: String)
-    /// A read-only volume: the disk image it came in.
-    case diskImage
-    /// The randomised read-only copy macOS runs a quarantined app from (App Translocation).
-    case temporaryCopy
 }
