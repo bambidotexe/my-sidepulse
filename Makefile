@@ -26,10 +26,11 @@ install:
 	sh scripts/install.sh
 
 # The same install, plus a tagged, pushed GitHub release carrying the disk image, at the version the given
-# LEVEL bumps to (patch, minor or major — required). Only run when the owner has asked for a release.
+# LEVEL bumps to (patch, minor or major — required); NOTES is the file holding the release notes (required,
+# outside the repository). Only run when the owner has asked for a release.
 # scripts/publish.sh has the sequence.
 release:
-	sh scripts/publish.sh $(LEVEL)
+	sh scripts/publish.sh $(LEVEL) --notes=$(NOTES)
 
 uninstall:
 	-"$(CLI)" uninstall-hooks
