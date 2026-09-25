@@ -153,6 +153,10 @@ public struct SessionStore {
             sessions[sid] = s
             return
         }
+        if e.event == .verdict {
+            applyVerdict(e, sessionId: sid)
+            return
+        }
         var s = sessions[sid] ?? Session(id: sid, stateSince: now, lastEventAt: now)
         s.lastEventAt = now
         if let agent = e.agent { s.agent = agent }
@@ -332,11 +336,28 @@ public struct SessionStore {
             // keeps the same turn running, and its later events count.
             clearPending(&s)
             applyStopVerdict(&s, now: now)
-        case .sessionEnd, .parseError, .ack, .subagentStart, .subagentStop:
+        case .sessionEnd, .parseError, .ack, .verdict, .subagentStart, .subagentStop:
             break // handled above; subagent shapes without agent_id carry no signal
         }
         updateHoldRelease(&s, now: now)
         sessions[sid] = s
+    }
+
+    /// The app's own verdict, replayed after a relaunch or read back by the
+    /// tailer: the same call the live check made, as of the line's stamp,
+    /// which is when the verdict took effect. It never creates a session and
+    /// never refreshes liveness. A main-agent event after the stamp means the
+    /// session moved on since, and the line changes nothing; each verdict
+    /// refuses a state it does not apply to, so the live store reading its
+    /// own line back changes nothing either. An unknown verdict is ignored.
+    private mutating func applyVerdict(_ e: JournalEvent, sessionId sid: String) {
+        guard let s = sessions[sid], e.loggedAt >= s.lastMainEventAt,
+              let verdict = e.verdict.flatMap(TurnVerdict.init(rawValue:)) else { return }
+        switch verdict {
+        case .turnAbandoned: abandonTurn(sessionId: sid, now: e.loggedAt, endedAt: e.loggedAt)
+        case .turnFinished: finishTurn(sessionId: sid, now: e.loggedAt, endedAt: e.loggedAt)
+        case .dialogAnswered: dialogAnswered(sessionId: sid, now: e.loggedAt)
+        }
     }
 
     /// Claude Code 2.1 routes the blocking dialogs through the permission
@@ -565,16 +586,26 @@ public struct SessionStore {
         sessions = sessions.filter { $0.value.agentPid != pid }
     }
 
-    /// Startup prune after journal replay: drop sessions whose recorded
-    /// process no longer exists, or is no longer that agent's. Sessions
-    /// without a pid are left to staleness. A live pid is not proof of a
-    /// live Codex session: a TUI session's pid is Codex's managed daemon,
-    /// alive across every TUI, and a desktop thread's is the app's own
-    /// app-server, so such a session is kept and the launch check reads its
-    /// rollout (`codexCandidates` with no quiet gate).
-    public mutating func pruneDead(isAlive: (AgentKind, Int32) -> Bool) {
+    /// Startup prune after journal replay: a session is kept only while its
+    /// recorded process is alive and runs its agent (`isAlive`) and, for a
+    /// Claude session, while the registry record for that pid, when there
+    /// is one, names this session (`registrySession`, given the pid and the
+    /// session's transcript path, which says where the registry is): a
+    /// Claude process hosts one session at a time, so a record naming
+    /// another means the pid was reused. Sessions without a pid are left to
+    /// staleness. A live pid is not proof of a live Codex session: a TUI
+    /// session's pid is Codex's managed daemon, alive across every TUI, and
+    /// a desktop thread's is the app's own app-server, so such a session is
+    /// kept and the launch check reads its rollout (`codexCandidates` with
+    /// no quiet gate). Codex has no registry.
+    public mutating func pruneDead(isAlive: (AgentKind, Int32) -> Bool,
+                                   registrySession: (Int32, String?) -> String? = { _, _ in nil }) {
         sessions = sessions.filter { entry in
-            entry.value.agentPid.map { isAlive(entry.value.agent, $0) } ?? true
+            let s = entry.value
+            guard let pid = s.agentPid else { return true }
+            guard isAlive(s.agent, pid) else { return false }
+            guard s.agent == .claude, let named = registrySession(pid, s.transcriptPath) else { return true }
+            return named == s.id
         }
     }
 
@@ -638,12 +669,17 @@ public struct SessionStore {
     /// sitting idle at its prompt and the transcript shows no completed
     /// answer, or a Codex rollout ends on `turn_aborted`, the turn is over
     /// and delivered nothing: dark, with no alert and no push. `endedAt` is
-    /// when the source says the turn ended (see `rescueStamp`).
-    public mutating func abandonTurn(sessionId: String, now: Date, endedAt: Date? = nil) {
-        guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
-        set(&s, .idle, Self.rescueStamp(endedAt, in: s, now: now))
+    /// when the source says the turn ended (see `rescueStamp`). Returns the
+    /// instant the verdict took effect, for the journal, or nil when it
+    /// changed nothing.
+    @discardableResult
+    public mutating func abandonTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
+        guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
+        let stamp = Self.rescueStamp(endedAt, in: s, now: now)
+        set(&s, .idle, stamp)
         closeTurn(&s, byInterrupt: false, now: now)
         sessions[sessionId] = s
+        return stamp
     }
 
     /// When a rescued verdict takes effect: when the turn ended, as the
@@ -670,17 +706,23 @@ public struct SessionStore {
     /// hook itself) cannot. A Codex rollout that ends on `task_complete` is
     /// the same proof.
     /// `endedAt` dates the finish as `abandonTurn`'s does; helpers still out
-    /// hold it as of now.
-    public mutating func finishTurn(sessionId: String, now: Date, endedAt: Date? = nil) {
-        guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
+    /// hold it as of now. Returns the instant the verdict took effect, or
+    /// nil when it changed nothing.
+    @discardableResult
+    public mutating func finishTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
+        guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
+        let stamp: Date
         if !s.hasLiveHelpers(at: now) && s.backgroundIds.isEmpty {
-            set(&s, .done, Self.rescueStamp(endedAt, in: s, now: now))
+            stamp = Self.rescueStamp(endedAt, in: s, now: now)
+            set(&s, .done, stamp)
         } else {
+            stamp = now
             applyStopVerdict(&s, now: now)
         }
         closeTurn(&s, byInterrupt: false, now: now)
         updateHoldRelease(&s, now: now)
         sessions[sessionId] = s
+        return stamp
     }
 
     /// The registry said "busy": Claude is genuinely running a turn even
@@ -716,10 +758,13 @@ public struct SessionStore {
     /// The dialog was answered and the turn is running again — Claude's own
     /// registry says busy with a stamp newer than the dialog itself. Back
     /// to working; `set` disarms the pending push with the state change.
-    public mutating func dialogAnswered(sessionId: String, now: Date) {
-        guard var s = sessions[sessionId], s.state.isOpenWaiting else { return }
+    /// Returns `now` when it took effect, or nil when it changed nothing.
+    @discardableResult
+    public mutating func dialogAnswered(sessionId: String, now: Date) -> Date? {
+        guard var s = sessions[sessionId], s.state.isOpenWaiting else { return nil }
         set(&s, .working, now)
         sessions[sessionId] = s
+        return now
     }
 
     /// A waiting/done LED is an unread notification: seeing it clears it.

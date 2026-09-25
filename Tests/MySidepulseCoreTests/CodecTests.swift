@@ -38,6 +38,18 @@ final class CodecTests: XCTestCase {
                      "a line written before the field reads as one without a turn")
     }
 
+    /// The app's own verdict line. An older app version fails to decode the
+    /// event name and skips the line, the compatibility the ack line rides on.
+    func testTheVerdictLineRoundTrips() throws {
+        var e = JournalEvent(loggedAt: Date(timeIntervalSince1970: 1_787_652_000.25), event: .verdict)
+        e.sessionId = "s1"; e.verdict = "turn-abandoned"
+        let data = try JournalCodec.encodeLine(e)
+        XCTAssertEqual(JournalCodec.decodeLine(data), e)
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(text.contains(#""event":"MySidepulseVerdict""#))
+        XCTAssertTrue(text.contains(#""verdict":"turn-abandoned""#))
+    }
+
     func testDateWithoutFractionAccepted() throws {
         let line = #"{"logged_at":"2026-08-21T10:00:00Z","event":"UserPromptSubmit","session_id":"s1"}"#
         XCTAssertNotNil(JournalCodec.decodeLine(Data(line.utf8)))

@@ -185,10 +185,10 @@ public enum Doctor {
                 return JournalWriter.append(Data("probe".utf8), to: probe)
             },
             lastEventAge: {
-                // Acks are the app's own lines; this check answers "are
+                // Ack and verdict lines are the app's own; this check answers "are
                 // hooks arriving", so only hook traffic counts.
                 let events = JournalTailer.readAll(url: Paths.journal)
-                guard let last = events.last(where: { $0.event != .parseError && $0.event != .ack })
+                guard let last = events.last(where: { $0.event != .parseError && $0.event != .ack && $0.event != .verdict })
                 else { return nil }
                 return Date().timeIntervalSince(last.loggedAt)
             })

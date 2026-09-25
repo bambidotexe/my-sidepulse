@@ -265,10 +265,12 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
   record is the daemon's, and only the daemon's death forgets its sessions.
   The desktop app's `codex` is a shared app-server too, alive for every
   thread of the app, so its pid proves no single session either; only
-  `codex exec` records a process of its own. At launch, sessions whose pid
-  is dead or is no longer that agent's process are dropped; a Codex session
-  whose pid is a shared app-server is kept, and the launch check below
-  decides it.
+  `codex exec` records a process of its own. At launch, a replayed session
+  is kept only while its pid is alive, runs its agent and, for a Claude
+  session, when a registry record exists for the pid, names the same
+  session: a Claude process hosts one session at a time, so a record naming
+  another means the pid has moved on. A Codex session whose pid is a shared
+  app-server is kept, and the launch check below decides it.
 
 ### When hooks say nothing
 
@@ -343,8 +345,20 @@ While the registry says `busy`, a quiet session is kept alive and stays
 `K.abandonRecheckSeconds` (15 s) while the condition lasts.
 
 The registry is Claude Code's own `<config>/sessions/<pid>.json`, where
-`<config>` is the process's `CLAUDE_CONFIG_DIR` or `~/.claude`. Transcript
-entries marked `isSidechain` are ignored.
+`<config>` is the directory the session's transcript lives in
+(`<config>/projects/<slug>/<session>.jsonl`), so a relocated
+`CLAUDE_CONFIG_DIR` is found; for a session no line has named a transcript
+for, it is the process's own `CLAUDE_CONFIG_DIR` when macOS lets it be read,
+then `~/.claude`. Transcript entries marked `isSidechain` are ignored.
+
+The app records its own verdicts in the journal — a turn abandoned, a finish
+recovered, a dialog answered, whether the registry, a rollout or Codex's
+daemon gave it — each stamped when it took effect, so a relaunch replays
+them and never resurrects a turn it had already closed. A recorded verdict
+changes nothing when a main-agent event of its session came after it, and
+never brings a session back. A replayed finish is a replayed `Stop`: it
+pushes again only while its push is still inside
+`K.notifyMaxLatenessSeconds`.
 
 ## 5. Acknowledgement
 

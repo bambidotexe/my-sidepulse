@@ -120,7 +120,8 @@ with `wallDeadline`, so time spent asleep counts.
    drains the file synchronously. Events older than the last boot
    (`BootTime.bootDate`) are ignored.
 2. On the next main-queue turn — after the drained events have been applied —
-   drop sessions whose pid is dead or no longer that agent's process
+   drop sessions whose pid is dead or no longer that agent's process, and
+   Claude sessions whose pid's registry record names another session
    (`pruneDead`), scrub push deadlines already past the late-drop window
    (`dropStaleNotifications`), run the stores' `tick`; when a working session
    is hosted by Codex's managed daemon and its socket exists, ask the daemon
@@ -145,7 +146,7 @@ after it.
 | Codex | 12 hooks → `mysidepulse hook --agent codex` → the same journal, the line saying `codex` | the same |
 | Journal | kqueue on the file (`DispatchSourceFileSystemObject`: write, extend, rename, delete); follows rotation, retries a failed reopen every 0.5 s | `SessionStore.apply` |
 | Agent processes, Claude's and Codex's | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
-| Claude's own registry | `<config>/sessions/<pid>.json`, read only for quiet `working` turns and open waits of Claude sessions (`ClaudeProcessRegistry`); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered` |
+| Claude's own registry | `<config>/sessions/<pid>.json`, `<config>` taken from the session's transcript path (`ClaudeProcessRegistry.configDir(fromTranscriptPath:)`), read only for quiet `working` turns and open waits of Claude sessions, and once per Claude session by the launch prune (`ClaudeProcessRegistry`); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered`, `pruneDead` |
 | Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
 | Codex's daemon | its control socket, `~/.codex/app-server-control/app-server-control.sock` (`CodexDaemonClient`, a WebSocket over the unix socket on a utility queue, 1 s per call, completing on main; `WebSocketFrame` and `CodexThreadRecord` in Core read the frames and the answers): `thread/read` for a quiet `working` Codex session whose pid is the managed daemon (`ProcWalk.isManagedCodexDaemon`), one question out per session, the answer applied only if the session is still `working` with the same `lastMainEventAt`; `thread/loaded/list` once at launch. `notLoaded` / `idle` → the rollout tells finished from aborted, dark by default; `active` → `noteBusy`; anything else, or no answer, leaves the session to the rollout for 15 s | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read for quiet `working` Codex sessions (`SessionStore.codexCandidates`) the daemon does not host or could not decide, and after the daemon says a thread runs nothing; the recorded `transcript_path` when Core trusts it, else the daemon's `path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
@@ -161,7 +162,8 @@ Nothing polls either agent. The registry and transcript (Claude sessions),
 Codex's daemon and the rollout (Codex sessions) are asked on the engine's own
 deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`), never on a
 free-running timer, and once at launch: after the replay, `pruneDead` (which
-keeps a Codex session whose pid is a shared app-server, `ProcWalk.isCodexDaemon`),
+reads each Claude session's registry record, and keeps a Codex session whose
+pid is a shared app-server, `ProcWalk.isCodexDaemon`),
 then `dropStaleNotifications`, the stores' `tick`, the daemon's
 `thread/loaded/list` when it hosts a working session, `checkAbandonedTurns`
 with no quiet gate, and only then the first `sync()`.
@@ -226,7 +228,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 
 | File | Writer | Content |
 |---|---|---|
-| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude` or `codex`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is: the key kept its name. |
+| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude` or `codex`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is: the key kept its name. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. An older app version skips both names. |
 | `journal.1.jsonl` | the app, by rename | The previous journal. Rotation at 20 MB, or at 5 MB when no session is active. |
 | `config.json` | the app only, mode `0600`, atomic | `AppConfig`, below. |
 | `control.sock` | the app | The control socket. |

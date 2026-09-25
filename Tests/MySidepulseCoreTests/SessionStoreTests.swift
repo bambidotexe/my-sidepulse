@@ -1087,4 +1087,147 @@ final class SessionStoreTests: XCTestCase {
         s.processExited(pid: 40531)
         XCTAssertTrue(s.sessions.isEmpty, "the daemon's death forgets every session it hosted")
     }
+
+    // MARK: - verdicts in the journal
+
+    func verdictLine(_ verdict: String, _ t: TimeInterval, sid: String = "s1") -> JournalEvent {
+        var e = ev(.verdict, t, sid: sid)
+        e.verdict = verdict
+        return e
+    }
+
+    /// A verdict the app reached live goes into the journal, stamped when it
+    /// took effect: replaying the same lines, the line included, gives the
+    /// very session the live store holds, and the live store reading its own
+    /// line back through the tailer changes nothing.
+    func testAJournaledVerdictReplaysAsTheSameVerdict() {
+        let turn = [ev(.userPromptSubmit, 0, pid: 42, turn: "p1"),
+                    ev(.preToolUse, 5, tool: "Bash", turn: "p1")]
+        func replay(_ lines: [JournalEvent]) -> SessionStore {
+            var s = SessionStore()
+            for line in lines { s.apply(line) }
+            return s
+        }
+
+        var dark = replay(turn)
+        let darkAt = dark.abandonTurn(sessionId: "s1", now: at(60), endedAt: at(40))
+        XCTAssertEqual(darkAt, at(40), "the verdict says when it took effect")
+        let darkLine = verdictLine("turn-abandoned", 40)
+        XCTAssertEqual(replay(turn + [darkLine]).sessions["s1"], dark.sessions["s1"])
+        let before = dark.sessions["s1"]
+        dark.apply(darkLine)
+        XCTAssertEqual(dark.sessions["s1"], before, "the app's own line read back is a no-op")
+
+        var green = replay(turn)
+        let greenAt = green.finishTurn(sessionId: "s1", now: at(60), endedAt: at(40))
+        XCTAssertEqual(greenAt, at(40))
+        let greenLine = verdictLine("turn-finished", 40)
+        XCTAssertEqual(replay(turn + [greenLine]).sessions["s1"], green.sessions["s1"])
+        XCTAssertEqual(state(replay(turn + [greenLine])), .done)
+        let finished = green.sessions["s1"]
+        green.apply(greenLine)
+        XCTAssertEqual(green.sessions["s1"], finished)
+
+        let dialog = [ev(.userPromptSubmit, 0, pid: 42, turn: "p1"),
+                      ev(.preToolUse, 5, tool: "ExitPlanMode", turn: "p1")]
+        var answered = replay(dialog)
+        let answeredAt = answered.dialogAnswered(sessionId: "s1", now: at(30))
+        XCTAssertEqual(answeredAt, at(30))
+        let answeredLine = verdictLine("dialog-answered", 30)
+        XCTAssertEqual(replay(dialog + [answeredLine]).sessions["s1"], answered.sessions["s1"])
+        XCTAssertEqual(state(replay(dialog + [answeredLine])), .working)
+
+        var waiting = replay(dialog)
+        XCTAssertNil(waiting.abandonTurn(sessionId: "s1", now: at(30)),
+                     "a verdict that changes nothing has nothing to record")
+        var twice = replay(turn)
+        twice.abandonTurn(sessionId: "s1", now: at(60), endedAt: at(40))
+        XCTAssertNil(twice.abandonTurn(sessionId: "s1", now: at(70), endedAt: at(40)))
+    }
+
+    /// A relaunch replays the finish it recovered, never its push: the
+    /// deadline is as old as the turn's end, and the launch scrub drops it.
+    func testAReplayedFinishVerdictNeverPushesAtLaunch() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        s.apply(ev(.preToolUse, 5, tool: "Bash", turn: "p1"))
+        s.apply(verdictLine("turn-finished", 40))
+        XCTAssertEqual(state(s), .done)
+        let launch = at(40 + K.notifyDebounceSeconds + K.notifyMaxLatenessSeconds + 1)
+        s.dropStaleNotifications(now: launch)
+        XCTAssertEqual(s.tick(now: launch, userPresent: false), [])
+        XCTAssertEqual(state(s), .done, "green for what is left of its time")
+    }
+
+    func testAVerdictForAnUnknownSessionIsIgnored() {
+        var s = SessionStore()
+        s.apply(verdictLine("turn-finished", 10, sid: "ghost"))
+        s.apply(verdictLine("turn-abandoned", 10, sid: "ghost"))
+        s.apply(verdictLine("dialog-answered", 10, sid: "ghost"))
+        XCTAssertTrue(s.sessions.isEmpty, "a verdict never creates a session")
+
+        s.apply(ev(.userPromptSubmit, 0, pid: 42))
+        s.apply(verdictLine("turn-something-new", 30))
+        XCTAssertEqual(state(s), .working, "a verdict this version does not know changes nothing")
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(0))
+    }
+
+    /// A verdict is about the turn it saw: a main-agent event after its stamp
+    /// means the session moved on, and the line changes nothing. One at the
+    /// same instant applies. Either way it is not activity.
+    func testAVerdictOlderThanTheLastMainEventIsIgnored() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42))
+        s.apply(ev(.preToolUse, 5, tool: "Bash"))
+        s.apply(verdictLine("turn-abandoned", 3))
+        XCTAssertEqual(state(s), .working)
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(5), "a verdict never refreshes liveness")
+
+        s.apply(verdictLine("turn-abandoned", 5))
+        XCTAssertEqual(state(s), .idle, "the same instant applies")
+        XCTAssertEqual(s.sessions["s1"]?.stateSince, at(5))
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(5))
+    }
+
+    /// A pid Claude Code has since given to another session, or a recycled
+    /// pid another Claude took, no longer runs this one: the registry record
+    /// names the session a Claude process hosts. No record proves nothing;
+    /// Codex has no registry.
+    func testPruneDropsAPidWhoseRegistryNamesAnotherSession() {
+        var s = SessionStore()
+        var withTranscript = ev(.userPromptSubmit, 0, sid: "s1", pid: 42)
+        withTranscript.transcriptPath = "/tmp/cfg/projects/slug/s1.jsonl"
+        s.apply(withTranscript)
+        s.apply(ev(.userPromptSubmit, 1, sid: "s2", pid: 43))
+        s.apply(ev(.userPromptSubmit, 2, sid: "s3", pid: 44))
+        var codex = ev(.userPromptSubmit, 3, sid: "c1", pid: 43)
+        codex.agent = .codex
+        s.apply(codex)
+        var asked: [Int32: String?] = [:]
+        s.pruneDead(isAlive: { _, _ in true }, registrySession: { pid, transcript in
+            asked[pid] = transcript
+            switch pid {
+            case 42: return "s1"
+            case 43: return "someone-else"
+            default: return nil
+            }
+        })
+        XCTAssertEqual(s.sessions.keys.sorted(), ["c1", "s1", "s3"])
+        XCTAssertEqual(asked[42], "/tmp/cfg/projects/slug/s1.jsonl",
+                       "the record is looked up where the session's transcript lives")
+
+        var dead = SessionStore()
+        dead.apply(ev(.userPromptSubmit, 0, sid: "s1", pid: 42))
+        dead.pruneDead(isAlive: { _, _ in false }, registrySession: { _, _ in "s1" })
+        XCTAssertTrue(dead.sessions.isEmpty, "a record never keeps a dead pid")
+    }
+
+    /// The launch check runs before the first paint with no quiet gate: the
+    /// hooks that could have ended a turn fired while the app was away.
+    func testAbandonCandidatesAtLaunchIgnoreTheQuietGate() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42))
+        XCTAssertTrue(s.abandonCandidates(at: at(1)).isEmpty, "live, the quiet gate holds")
+        XCTAssertEqual(s.abandonCandidates(at: at(1), quietSeconds: 0).map(\.sessionId), ["s1"])
+    }
 }

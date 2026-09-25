@@ -26,7 +26,7 @@ final class ClaudeProcessRegistryTests: XCTestCase {
         defer { unsetenv("CLAUDE_CONFIG_DIR") }
         // setenv after launch does NOT rewrite the kernel-side KERN_PROCARGS2
         // block, so read(pid:) on ourselves would miss it — parse directly.
-        let record = ClaudeProcessRegistry.read(pid: getpid())
+        let record = ClaudeProcessRegistry.read(pid: getpid(), transcriptPath: nil)
         // Whether or not the env override is visible to the sysctl path, the
         // default-~/.claude fallback must not produce someone else's record.
         if let record {
@@ -47,5 +47,39 @@ final class ClaudeProcessRegistryTests: XCTestCase {
 
         try Data(#"{"pid": "not a number"}"#.utf8).write(to: file)
         XCTAssertNil(ClaudeProcessRegistry.record(fromFileAt: file, expectedPid: getpid()))
+    }
+
+    /// Claude Code keeps its transcripts under `<config>/projects/<slug>/`,
+    /// so a transcript path names the config directory its registry is in.
+    func testConfigDirIsDerivedFromTheTranscriptPath() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertEqual(ClaudeProcessRegistry.configDir(
+            fromTranscriptPath: "\(home)/.claude/projects/-Users-me-proj/abc.jsonl")?.path,
+                       "\(home)/.claude")
+        XCTAssertEqual(ClaudeProcessRegistry.configDir(
+            fromTranscriptPath: "/tmp/cfg/projects/s/a.jsonl")?.path, "/tmp/cfg")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/tmp/a.jsonl"))
+        XCTAssertEqual(ClaudeProcessRegistry.configDir(
+            fromTranscriptPath: "/Users/me/projects/app/.claude/projects/s/a.jsonl")?.path,
+                       "/Users/me/projects/app/.claude",
+                       "the last projects folder that holds a slug folder is the config's")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/tmp/projects/a.jsonl"),
+                     "a projects folder right above the file holds no slug")
+    }
+
+    func testReadFollowsTheTranscriptsConfigDir() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mysidepulse-registry-cfg-\(getpid())")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("sessions"),
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("""
+        {"pid": \(getpid()), "sessionId": "relocated", "status": "busy",
+         "statusUpdatedAt": 1787749584554}
+        """.utf8).write(to: dir.appendingPathComponent("sessions/\(getpid()).json"))
+        let transcript = dir.appendingPathComponent("projects/-tmp-x/relocated.jsonl").path
+        let record = ClaudeProcessRegistry.read(pid: getpid(), transcriptPath: transcript)
+        XCTAssertEqual(record?.sessionId, "relocated")
+        XCTAssertTrue(record?.isBusy == true)
     }
 }

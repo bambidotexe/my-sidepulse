@@ -26,6 +26,22 @@ public enum HookEventName: String, Codable, Equatable {
     /// Older app versions fail to decode the name and skip the line, which
     /// is the compatibility this rides on.
     case ack = "MySidepulseAck"
+    /// Not a hook event either: the app's own record of a verdict it reached
+    /// when hooks said nothing (`TurnVerdict`), appended to the journal so a
+    /// relaunch replays it. Older app versions skip it, as they skip `.ack`.
+    case verdict = "MySidepulseVerdict"
+}
+
+/// What a `.verdict` line says the app decided about a quiet turn or an open
+/// wait. Its line is stamped when the verdict took effect, so replaying it
+/// gives the same state since the same instant.
+public enum TurnVerdict: String, Equatable {
+    /// The turn ended without delivering anything: dark (`abandonTurn`).
+    case turnAbandoned = "turn-abandoned"
+    /// The turn finished and only its `Stop` was lost (`finishTurn`).
+    case turnFinished = "turn-finished"
+    /// An open dialog was answered with no hook (`dialogAnswered`).
+    case dialogAnswered = "dialog-answered"
 }
 
 /// One trimmed journal line. Bodies (tool_input/response, prompts) never
@@ -79,6 +95,9 @@ public struct JournalEvent: Codable, Equatable {
     /// For `.ack` lines only: the stateSince of the alert that was seen, so
     /// replay can never clear a newer alert than the one acknowledged.
     public var ackStateSince: Date?
+    /// For `.verdict` lines only: a `TurnVerdict` raw value. A string, so a
+    /// verdict a later version adds reads as unknown and changes nothing.
+    public var verdict: String?
 
     public init(loggedAt: Date, event: HookEventName) {
         self.loggedAt = loggedAt
@@ -110,5 +129,6 @@ public struct JournalEvent: Codable, Equatable {
         case permissionMode = "permission_mode"
         case rawPrefix = "raw_prefix"
         case ackStateSince = "ack_state_since"
+        case verdict
     }
 }

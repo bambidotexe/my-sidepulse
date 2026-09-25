@@ -8,9 +8,12 @@ import MySidepulseCore
 /// hooks — which matters because hooks can die mid-session while the
 /// journal goes silent and the turn keeps working underneath.
 ///
-/// The config dir is per account under cswap (CLAUDE_CONFIG_DIR in the
-/// process's environment), so the file is located through the process, not
-/// through a fixed path.
+/// The config dir is per account under an account switcher such as cswap
+/// (`CLAUDE_CONFIG_DIR`), so the file is located through the session: its
+/// transcript lives at `<config>/projects/<slug>/<session>.jsonl`, which
+/// names the directory. A session no line has named a transcript for falls
+/// back to the process's own `CLAUDE_CONFIG_DIR`, when macOS lets another
+/// process's environment be read, then to `~/.claude`.
 public enum ClaudeProcessRegistry {
     public struct Record: Equatable {
         public let sessionId: String?
@@ -25,12 +28,25 @@ public enum ClaudeProcessRegistry {
         public var isBusy: Bool { status == "busy" }
     }
 
-    public static func read(pid: Int32) -> Record? {
-        let configDir = ProcWalk.environmentValue("CLAUDE_CONFIG_DIR", forPid: pid)
-            .map { URL(fileURLWithPath: $0) }
+    public static func read(pid: Int32, transcriptPath: String?) -> Record? {
+        let configDir = transcriptPath.flatMap(configDir(fromTranscriptPath:))
+            ?? ProcWalk.environmentValue("CLAUDE_CONFIG_DIR", forPid: pid).map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
         return record(fromFileAt: configDir.appendingPathComponent("sessions/\(pid).json"),
                       expectedPid: pid)
+    }
+
+    /// The config directory a Claude Code transcript lives in: the parent of
+    /// the last `projects` folder that sits at least two levels above the
+    /// file (`<config>/projects/<slug>/<session>.jsonl`). The last one, so a
+    /// config directory inside a folder called `projects` is still found.
+    /// Nil for a path with no such folder.
+    public static func configDir(fromTranscriptPath path: String) -> URL? {
+        let components = (path as NSString).pathComponents
+        guard components.count >= 4,
+              let index = components[..<(components.count - 2)].lastIndex(of: "projects"),
+              index > 0 else { return nil }
+        return URL(fileURLWithPath: NSString.path(withComponents: Array(components[..<index])))
     }
 
     static func record(fromFileAt file: URL, expectedPid: Int32) -> Record? {

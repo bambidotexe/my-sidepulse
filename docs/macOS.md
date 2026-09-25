@@ -93,8 +93,18 @@ agent's process (the nearest Claude Code or Codex ancestor: Claude by a
 `claude` name or path component, Codex by a `codex` one, which covers the
 standalone release under `~/.codex/packages`, the `~/.local/bin` launcher and
 the copy inside `ChatGPT.app`), its host app and its terminal tab, and how the
-app reads a Claude process's `CLAUDE_CONFIG_DIR` and tells Codex's daemon by
-its arguments.
+app tells Codex's daemon by its arguments.
+
+Claude Code's registry, `<config>/sessions/<pid>.json`, lives in the config
+directory, which `CLAUDE_CONFIG_DIR` relocates (an account switcher such as
+cswap sets it per account). The app finds it from the transcript path the
+hooks name, `<config>/projects/<slug>/<session>.jsonl`: the parent of the
+last `projects` folder at least two levels above the file
+(`ClaudeProcessRegistry.configDir(fromTranscriptPath:)`). Only for a session
+no line has named a transcript for is the process's own `CLAUDE_CONFIG_DIR`
+read from `KERN_PROCARGS2`, then `~/.claude` taken. Another same-user
+process's environment is not relied on: `ps -E` prints a running Claude's
+here, but a reader has been seen to get none.
 
 Codex's TUI does not run its sessions' hooks itself: Codex's managed daemon
 does, `codex app-server --listen unix:// --managed-daemon`, installed under

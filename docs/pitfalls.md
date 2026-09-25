@@ -288,7 +288,20 @@ rejected by eye within minutes of a build whose tests were green.
 
 ### `kill(pid, 0)` proves a process, not the process
 - **Symptom.** A dead session kept alive by a recycled pid after the app was down.
-- **Instead.** The startup prune also requires the pid to still look like Claude; the registry record must carry the same pid.
+- **Instead.** The startup prune also requires the pid to still look like Claude and, when the registry has a record for the pid, the record to name the same session; a record is only trusted when it carries the same pid.
+- **Rule.** A recycled pid with no record, or a Claude that took over the pid before writing its record, is kept until the 2 h backstop.
+
+### The registry is not always under `~/.claude`
+- **Symptom.** Under an account switcher such as cswap, every Claude Code turn ended with Esc or Ctrl-C rolls for 2 h, and the log says `quiet turn undecidable: … no registry record for claude pid`.
+- **Why.** `CLAUDE_CONFIG_DIR` moves the registry, and the only way to it through the process is its environment, which macOS may withhold from another process.
+- **Instead.** The directory is read from the transcript path the hooks name (`<config>/projects/<slug>/<session>.jsonl`, kept on the session), for the rescues and the launch prune alike; the process's environment, then `~/.claude`, only for a session no line has named a transcript for.
+- **Rule.** A transcript outside `<config>/projects/` would fall back the same way; none is known.
+
+### A verdict that lives in memory dies with a relaunch
+- **Symptom (potential).** A turn the registry had already closed rolls again after a relaunch, until the first check.
+- **Why.** The journal holds only hook lines; the rescues' verdicts are the app's own conclusions and no hook repeats them.
+- **Instead.** Every verdict is appended as a `MySidepulseVerdict` line stamped when it took effect; replay applies it through the same call, and the tailer's delivery of the app's own line changes nothing. The line is written after the fact, so its stamp can be older than the line before it.
+- **Rule.** Anything that reads the journal for "the last hook event" filters out the app's lines (`MySidepulseAck`, `MySidepulseVerdict`), or a verdict written after the fact reads as hook traffic.
 
 ### Walk the process chain from the parent
 - **Symptom.** The hook records MySidepulse.app as the host app.

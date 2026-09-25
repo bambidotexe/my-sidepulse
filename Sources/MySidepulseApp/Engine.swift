@@ -166,18 +166,22 @@ final class Engine {
             // Everything queued by the drain has now been applied.
             self.replaying = false
             // Alive is not enough: a pid recycled while the app was down
-            // must not keep a dead session's state on the strip. A Codex
-            // session's pid is a shared app-server (the managed daemon for
-            // every TUI, the desktop app's own for its threads), which
+            // must not keep a dead session's state on the strip. A Claude
+            // session is kept only while the pid runs Claude and its
+            // registry record, when there is one, names that session. A
+            // Codex session's pid is a shared app-server (the managed daemon
+            // for every TUI, the desktop app's own for its threads), which
             // proves nothing about the session: it is kept, and the launch
             // check below reads its rollout.
-            self.store.pruneDead { agent, pid in
+            self.store.pruneDead(isAlive: { agent, pid in
                 guard kill(pid, 0) == 0 || errno == EPERM else { return false }
                 if agent == .codex, let info = ProcWalk.info(for: pid), ProcWalk.isCodexDaemon(info) {
                     return true
                 }
                 return ProcWalk.looksLike(agent, pid: pid)
-            }
+            }, registrySession: { pid, transcriptPath in
+                ClaudeProcessRegistry.read(pid: pid, transcriptPath: transcriptPath)?.sessionId
+            })
             // Replayed alerts must not push again: a deadline already long
             // past either fired in the previous instance or was abandoned
             // there. Without this, every `make install` under a standing
@@ -236,9 +240,9 @@ final class Engine {
     func handle(_ events: [JournalEvent]) {
         guard !events.isEmpty else { return }
         for event in events { store.apply(event) }
-        // Ack lines are the app's own; "last event" answers "are hooks
-        // arriving", so only hook traffic may refresh it.
-        if let latest = events.filter({ $0.event != .ack }).map(\.loggedAt).max(),
+        // Ack and verdict lines are the app's own; "last event" answers "are
+        // hooks arriving", so only hook traffic may refresh it.
+        if let latest = events.filter({ $0.event != .ack && $0.event != .verdict }).map(\.loggedAt).max(),
            latest > (lastEventSeen ?? .distantPast) {
             lastEventSeen = latest
         }
@@ -295,6 +299,38 @@ final class Engine {
                 JournalWriter.append(line, to: Paths.journal)
             }
         }
+    }
+
+    /// A verdict is state the journal replay cannot reconstruct either: it
+    /// goes into the journal as one `MySidepulseVerdict` line, stamped when
+    /// it took effect, so a relaunch replays the same verdict as of the same
+    /// instant instead of the turn it ended. The tailer delivers the line
+    /// back, where it changes nothing. Nil means the verdict changed nothing
+    /// and there is nothing to record.
+    private func persist(_ verdict: TurnVerdict, sessionId: String, at stamp: Date?) {
+        guard let stamp else { return }
+        var event = JournalEvent(loggedAt: stamp, event: .verdict)
+        event.sessionId = sessionId
+        event.verdict = verdict.rawValue
+        if let line = try? Trim.cappedLine(event) {
+            JournalWriter.append(line, to: Paths.journal)
+        }
+    }
+
+    /// The rescues' three verdicts, applied to the store and journaled.
+    private func finishTurn(_ sessionId: String, now: Date, endedAt: Date?) {
+        persist(.turnFinished, sessionId: sessionId,
+                at: store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt))
+    }
+
+    private func abandonTurn(_ sessionId: String, now: Date, endedAt: Date?) {
+        persist(.turnAbandoned, sessionId: sessionId,
+                at: store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt))
+    }
+
+    private func dialogAnswered(_ sessionId: String, now: Date) {
+        persist(.dialogAnswered, sessionId: sessionId,
+                at: store.dialogAnswered(sessionId: sessionId, now: now))
     }
 
     func powerChanged(_ new: PowerState?) {
@@ -671,7 +707,8 @@ final class Engine {
     private func checkAbandonedTurns(now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds) -> Bool {
         var ended = false
         for (sessionId, pid) in store.abandonCandidates(at: now, quietSeconds: quietSeconds) {
-            guard let record = ClaudeProcessRegistry.read(pid: pid),
+            guard let session = store.sessions[sessionId] else { continue }
+            guard let record = ClaudeProcessRegistry.read(pid: pid, transcriptPath: session.transcriptPath),
                   record.sessionId == sessionId else {
                 if warnedNoRegistry.insert(sessionId).inserted {
                     Log.app.warning("""
@@ -682,7 +719,6 @@ final class Engine {
                 }
                 continue
             }
-            guard let session = store.sessions[sessionId] else { continue }
             if record.isIdle, let stamped = record.statusUpdatedAt,
                stamped > session.lastMainEventAt {
                 // The turn is over. HOW it ended is the transcript's to say:
@@ -699,7 +735,7 @@ final class Engine {
                         pid \(pid) reports idle and the transcript ends on a completed \
                         answer — finished
                         """)
-                    store.finishTurn(sessionId: sessionId, now: now, endedAt: stamped)
+                    finishTurn(sessionId, now: now, endedAt: stamped)
                     ended = true
                 case .incomplete:
                     Log.app.notice("""
@@ -707,7 +743,7 @@ final class Engine {
                         \(pid) reports idle since \(stamped, privacy: .public) with no \
                         completed answer in the transcript — going dark
                         """)
-                    store.abandonTurn(sessionId: sessionId, now: now, endedAt: stamped)
+                    abandonTurn(sessionId, now: now, endedAt: stamped)
                     ended = true
                 case .unreadable:
                     if now.timeIntervalSince(session.lastEventAt) >= K.abandonUndecidedDarkSeconds {
@@ -716,7 +752,7 @@ final class Engine {
                             pid \(pid) reports idle, the transcript is unreadable, and the \
                             conservative window has passed — going dark
                             """)
-                        store.abandonTurn(sessionId: sessionId, now: now, endedAt: stamped)
+                        abandonTurn(sessionId, now: now, endedAt: stamped)
                         ended = true
                     }
                 }
@@ -741,7 +777,8 @@ final class Engine {
         // registry busy, so an open wait whose stamp is newer than the
         // dialog itself has been answered — back on the work.
         for (sessionId, pid, stateSince) in store.openWaitCandidates() {
-            guard let record = ClaudeProcessRegistry.read(pid: pid),
+            guard let record = ClaudeProcessRegistry.read(pid: pid,
+                                                          transcriptPath: store.sessions[sessionId]?.transcriptPath),
                   record.sessionId == sessionId,
                   record.isBusy,
                   let stamped = record.statusUpdatedAt,
@@ -752,7 +789,7 @@ final class Engine {
                 claude pid \(pid) went busy at \(stamped, privacy: .public), after the \
                 dialog opened — back to working
                 """)
-            store.dialogAnswered(sessionId: sessionId, now: now)
+            dialogAnswered(sessionId, now: now)
         }
         return checkCodexTurns(now: now, quietSeconds: quietSeconds) || ended
     }
@@ -796,14 +833,14 @@ final class Engine {
                 lost Stop recovered: Codex session \(sessionId, privacy: .public) — rollout \
                 ends on task_complete at \(endedAt, privacy: .public) — finished
                 """)
-            store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+            finishTurn(sessionId, now: now, endedAt: endedAt)
             ended = true
         case .aborted(let endedAt):
             Log.app.notice("""
                 turn abandoned: Codex session \(sessionId, privacy: .public) — rollout ends \
                 on turn_aborted at \(endedAt, privacy: .public) — going dark
                 """)
-            store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+            abandonTurn(sessionId, now: now, endedAt: endedAt)
             ended = true
         case .busy:
             if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
@@ -941,19 +978,19 @@ final class Engine {
                 in its thread and the rollout ends on task_complete at \(endedAt, privacy: .public) \
                 — finished
                 """)
-            store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+            finishTurn(sessionId, now: now, endedAt: endedAt)
         case .aborted(let endedAt):
             Log.app.notice("""
                 turn abandoned: Codex session \(sessionId, privacy: .public) — nothing runs in its \
                 thread and the rollout ends on turn_aborted at \(endedAt, privacy: .public) — going dark
                 """)
-            store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+            abandonTurn(sessionId, now: now, endedAt: endedAt)
         case .busy, .nothing:
             Log.app.notice("""
                 turn abandoned: Codex session \(sessionId, privacy: .public) — nothing runs in its \
                 thread and the rollout shows no end of this turn — going dark
                 """)
-            store.abandonTurn(sessionId: sessionId, now: now, endedAt: fallbackEnd)
+            abandonTurn(sessionId, now: now, endedAt: fallbackEnd)
         }
     }
 
