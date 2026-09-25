@@ -198,11 +198,11 @@ lines.
 
 | Event | Result |
 |---|---|
-| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept — the mid-flight marker of a compaction already under way. |
+| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept, a held `Stop` stays held and the state `PreCompact` remembered is kept — the mid-flight marker of a compaction already under way. |
 | `UserPromptSubmit` | `working` |
 | `PreToolUse` | `AskUserQuestion` or Codex's `request_user_input` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
 | `PostToolUse`, `PostToolUseFailure`, `PermissionDenied` | `working` |
-| `PreCompact` | `working`, remembering the state it found |
+| `PreCompact` | `working`, remembering the state it found; a second `PreCompact` with no `PostCompact` and no turn boundary since keeps what the first remembered. A turn boundary — a prompt, a `Stop`, an `Interrupt`, a `SessionStart` that is not a compaction's — forgets it. |
 | `PostCompact` | the state `PreCompact` found, or `working` when it found none: a compaction inside a turn leaves it working, one at the prompt leaves it idle, finished or waiting, a finish or a wait with its alert — since when, seen or not, its push, whether a helper raised it, its settle — untouched |
 | `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
 | `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan` |
@@ -219,14 +219,19 @@ Every event of a turn carries the turn's id: Claude Code's `prompt_id`,
 Codex's `turn_id`. An `Interrupt`, or a verdict that the turn is over (*When
 hooks say nothing*), closes the turn named by the last main-agent event that
 carried an id: the prompt that opened it, or the later event of a turn
-followed from mid-turn or going on under a new id. Any event that arrives for
+followed from mid-turn or going on under a new id. A finish held behind
+helpers or background shells is not over yet and closes nothing, whether a
+`Stop` or a verdict found it. Any event that arrives for
 a closed turn, but a prompt, a `SessionStart` or a `SessionEnd`, only proves
 the hook alive and changes nothing: the end of a tool Codex aborted, seconds
 or minutes later, its `Stop`, its notifications, its compaction, and every
 helper event of that turn. A `Stop` ends the turn but does not close it: a
 Stop hook that blocks it keeps the turn running, and its later events count.
 A prompt always opens a turn, whatever id it carries, a closed one included,
-whose events then count again. For `K.abortQuarantineSeconds` (120 s) after an
+whose events then count again. A main-agent `PreToolUse` reopens a turn a
+verdict closed, and counts, since a new tool call is never the straggler of
+an aborted tool and Claude Code carries one `prompt_id` across consecutive
+turns; a turn an `Interrupt` closed is reopened by a prompt only. For `K.abortQuarantineSeconds` (120 s) after an
 `Interrupt`, and until a prompt, a tool or permission event without a turn id
 changes nothing either. A line without a turn id otherwise follows the rules
 above.

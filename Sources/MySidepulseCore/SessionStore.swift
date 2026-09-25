@@ -63,8 +63,12 @@ public struct Session: Equatable {
     public var lastMainTurnId: String?
     /// The turns an `Interrupt` or a verdict closed, the most recent last,
     /// at most `Session.closedTurnsKept` of them. An event of one of these
-    /// turns proves the hook alive and changes nothing else.
+    /// turns proves the hook alive and changes nothing else, but a prompt,
+    /// and a main-agent `PreToolUse` of a turn a verdict closed.
     public var closedTurnIds: [String] = []
+    /// Those of `closedTurnIds` an `Interrupt` closed: only a prompt
+    /// reopens them.
+    public var interruptedTurnIds: Set<String> = []
     /// When the last `Interrupt` arrived, until a prompt opens a turn: the
     /// start of the quarantine for tool events that name no turn.
     public var interruptedAt: Date?
@@ -72,7 +76,10 @@ public struct Session: Equatable {
     /// any `.waiting`), the bookkeeping that goes with it: `PostCompact`
     /// restores both, so a compaction is work while it runs and afterwards
     /// the session goes back to what it was, not to `working`, and a
-    /// standing alert does not re-arm its push or its settle.
+    /// standing alert does not re-arm its push or its settle. A turn
+    /// boundary (a prompt, a `Stop`, an `Interrupt`, a start that is not a
+    /// compaction's) forgets it, so one whose `PostCompact` never came
+    /// dies with its turn.
     var compactionSnapshot: CompactionSnapshot?
     public static let closedTurnsKept = 8
 
@@ -217,18 +224,21 @@ public struct SessionStore {
             // background shell survived it either. Compaction is NOT one: it
             // happens inside a turn, with helpers possibly out. It is also
             // not a state of its own — `PreCompact` already went `working`,
-            // and this mid-flight marker changes nothing.
+            // and this mid-flight marker changes nothing, a held Stop and
+            // the compaction's snapshot included.
             if e.source != "compact" {
                 s.liveAgents.removeAll()
                 s.backgroundIds.removeAll()
+                s.compactionSnapshot = nil
+                clearPending(&s)
+                set(&s, .idle, now)
             }
-            clearPending(&s)
-            if e.source != "compact" { set(&s, .idle, now) }
         case .userPromptSubmit:
             // A prompt always opens a turn, even one that names a closed
             // turn: its events count again, its Stop and Interrupt included.
-            if let id = e.turnId { s.closedTurnIds.removeAll { $0 == id } }
+            if let id = e.turnId { Self.reopen(id, in: &s) }
             s.interruptedAt = nil
+            s.compactionSnapshot = nil
             // NOT a helper boundary: Claude Code 2.1 accepts a prompt while
             // a previous turn's background helper still runs, so clearing
             // the registry here would green-light a Stop over a
@@ -241,9 +251,10 @@ public struct SessionStore {
             set(&s, .working, now)
         case .preCompact:
             // Work while it runs, remembering the state it found (and, if
-            // one is already held from an earlier PreCompact with no
-            // PostCompact between, keeping that one: the state now is
-            // already `working`, not what a compaction should restore).
+            // one is already held from an earlier PreCompact of the same
+            // turn with no PostCompact between, keeping that one: the state
+            // now is already `working`, not what a compaction should
+            // restore).
             if s.compactionSnapshot == nil {
                 s.compactionSnapshot = CompactionSnapshot(
                     state: s.state, stateSince: s.stateSince,
@@ -277,6 +288,9 @@ public struct SessionStore {
             }
             s.compactionSnapshot = nil
         case .preToolUse:
+            // A tool call of a turn a verdict closed reopens it (see
+            // `changesNothing`); of any other turn this changes nothing.
+            if let id = e.turnId { Self.reopen(id, in: &s) }
             clearPending(&s)
             switch e.toolName {
             case "AskUserQuestion", "request_user_input": set(&s, .waiting(.question), now)
@@ -326,6 +340,7 @@ public struct SessionStore {
             clearPending(&s)
             s.liveAgents.removeAll()
             s.backgroundIds.removeAll()
+            s.compactionSnapshot = nil
             set(&s, .idle, now)
             closeTurn(&s, byInterrupt: true, now: now)
         case .stop:
@@ -335,6 +350,7 @@ public struct SessionStore {
             // turn without closing it: a Stop hook that blocks the Stop
             // keeps the same turn running, and its later events count.
             clearPending(&s)
+            s.compactionSnapshot = nil
             applyStopVerdict(&s, now: now)
         case .sessionEnd, .parseError, .ack, .verdict, .subagentStart, .subagentStop:
             break // handled above; subagent shapes without agent_id carry no signal
@@ -390,15 +406,22 @@ public struct SessionStore {
     /// follows an aborted turn: an event that reopened it would roll for
     /// hours. An event of a closed turn changes nothing, a helper's included
     /// (the interrupt or the verdict ended the helpers), except a prompt,
-    /// which opens a turn, and a session's start. A tool or permission
-    /// event that names no turn changes nothing for
-    /// `K.abortQuarantineSeconds` after an `Interrupt`, until a prompt.
-    /// `SessionEnd` and acknowledgements never reach it.
+    /// which opens a turn, a session's start, and a main-agent `PreToolUse`
+    /// of a turn a verdict closed, which reopens it: a new tool call is
+    /// never the straggler of an aborted tool, and Claude Code carries one
+    /// prompt id across consecutive turns, so a turn whose prompt line was
+    /// lost would otherwise stay dark. A turn an `Interrupt` closed is
+    /// reopened by a prompt only. A tool or permission event that names no
+    /// turn changes nothing for `K.abortQuarantineSeconds` after an
+    /// `Interrupt`, until a prompt. `SessionEnd` and acknowledgements never
+    /// reach it.
     private static func changesNothing(_ e: JournalEvent, in s: Session, now: Date) -> Bool {
         let ofAClosedTurn = e.turnId.map { s.closedTurnIds.contains($0) } ?? false
         if e.agentId != nil { return ofAClosedTurn }
         switch e.event {
         case .sessionStart, .userPromptSubmit: return false
+        case .preToolUse:
+            if let id = e.turnId, ofAClosedTurn, !s.interruptedTurnIds.contains(id) { return false }
         default: break
         }
         if ofAClosedTurn { return true }
@@ -416,11 +439,21 @@ public struct SessionStore {
     /// last main-agent event that carried an id named: the prompt's, a
     /// later tool event's when the turn goes on under a new id with no
     /// prompt line, or the closing `Interrupt`'s own.
+    /// An interrupt's close stands over a verdict's for the same turn.
     private func closeTurn(_ s: inout Session, byInterrupt: Bool, now: Date) {
-        if let id = s.lastMainTurnId, !s.closedTurnIds.contains(id) {
-            s.closedTurnIds = Array((s.closedTurnIds + [id]).suffix(Session.closedTurnsKept))
+        if let id = s.lastMainTurnId {
+            if !s.closedTurnIds.contains(id) {
+                s.closedTurnIds = Array((s.closedTurnIds + [id]).suffix(Session.closedTurnsKept))
+                s.interruptedTurnIds.formIntersection(s.closedTurnIds)
+            }
+            if byInterrupt { s.interruptedTurnIds.insert(id) }
         }
         s.interruptedAt = byInterrupt ? now : nil
+    }
+
+    private static func reopen(_ id: String, in s: inout Session) {
+        s.closedTurnIds.removeAll { $0 == id }
+        s.interruptedTurnIds.remove(id)
     }
 
     /// The finish line, shared by Stop and the lost-Stop rescue: done if
@@ -692,7 +725,8 @@ public struct SessionStore {
     }
 
     /// When a rescued verdict takes effect: when the turn ended, as the
-    /// registry's stamp or the rollout's end marker says, never before the
+    /// registry's stamp, the rollout's end marker or the daemon's thread
+    /// record's `updatedAt` says, never before the
     /// last main-agent event (an end marker naming the turn can be stamped
     /// before the aborted tool's late event) and never after now. A verdict
     /// dated to its real end is the `Stop` that was lost, replayed: `done`
@@ -718,7 +752,9 @@ public struct SessionStore {
     /// hold it as of now. Returns the instant the finish took effect, for
     /// the journal, or nil when it changed nothing or was held: a held
     /// finish is the hold rules' to end, not an outcome to record, and a
-    /// relaunch decides that turn afresh.
+    /// relaunch decides that turn afresh. Only an applied finish closes the
+    /// turn; a held one leaves it open exactly as a held `Stop` does, so
+    /// the helpers still out go on counting, their questions included.
     @discardableResult
     public mutating func finishTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
@@ -726,11 +762,11 @@ public struct SessionStore {
         if !s.hasLiveHelpers(at: now) && s.backgroundIds.isEmpty {
             let finishedAt = Self.rescueStamp(endedAt, in: s, now: now)
             set(&s, .done, finishedAt)
+            closeTurn(&s, byInterrupt: false, now: now)
             stamp = finishedAt
         } else {
             applyStopVerdict(&s, now: now)
         }
-        closeTurn(&s, byInterrupt: false, now: now)
         updateHoldRelease(&s, now: now)
         sessions[sessionId] = s
         return stamp

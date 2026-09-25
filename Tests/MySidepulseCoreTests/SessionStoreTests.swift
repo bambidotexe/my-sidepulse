@@ -253,6 +253,60 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(state(workingCase), .working)
     }
 
+    /// A snapshot whose `PostCompact` never came dies with its turn: the
+    /// Stop forgets it, so a `/compact` at the prompt after it snapshots the
+    /// standing finish and gives it back untouched, with no working roll
+    /// after the compaction and no second "Finished" push.
+    func testAStaleCompactionSnapshotIsForgottenAtTheNextTurn() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, turn: "p1"))
+        s.apply(ev(.preCompact, 5, turn: "p1"))
+        XCTAssertEqual(s.sessions["s1"]?.compactionSnapshot?.state, .working)
+        s.apply(ev(.stop, 10, tail: "Done.", turn: "p1"))
+        XCTAssertEqual(state(s), .done)
+        XCTAssertNil(s.sessions["s1"]?.compactionSnapshot, "the Stop is a turn boundary")
+        let finished = s.sessions["s1"]!
+        XCTAssertEqual(s.tick(now: at(12)), [])
+        s.apply(ev(.preCompact, 14))
+        XCTAssertEqual(state(s), .working)
+        s.apply(ev(.postCompact, 16))
+        XCTAssertEqual(state(s), .done, "the compaction at the prompt gives the finish back")
+        XCTAssertEqual(s.sessions["s1"]?.stateSince, finished.stateSince)
+        XCTAssertEqual(s.sessions["s1"]?.notifyAt, finished.notifyAt, "the same push deadline")
+        let pushes = s.tick(now: at(26)) + s.tick(now: at(60)) + s.tick(now: at(600))
+        XCTAssertEqual(pushes.count, 1, "one Finished push, not a second one")
+
+        // Every other turn boundary forgets it too; a compaction's own
+        // SessionStart does not.
+        for boundary in [ev(.userPromptSubmit, 22, turn: "p2"), ev(.interrupt, 22, turn: "p1"),
+                         ev(.sessionStart, 22, source: "startup")] {
+            var b = SessionStore()
+            b.apply(ev(.userPromptSubmit, 0, turn: "p1"))
+            b.apply(ev(.preCompact, 20, turn: "p1"))
+            b.apply(boundary)
+            XCTAssertNil(b.sessions["s1"]?.compactionSnapshot, "\(boundary.event)")
+        }
+        var compact = SessionStore()
+        compact.apply(ev(.userPromptSubmit, 0, turn: "p1"))
+        compact.apply(ev(.preCompact, 20, turn: "p1"))
+        compact.apply(ev(.sessionStart, 22, source: "compact"))
+        XCTAssertNotNil(compact.sessions["s1"]?.compactionSnapshot)
+    }
+
+    /// A compaction's own `SessionStart` is no boundary for the hold either:
+    /// a Stop held behind a helper stays held through it.
+    func testAHeldStopSurvivesACompactSessionStart() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0))
+        s.apply(ev(.preToolUse, 1, tool: "Read", agent: "a1"))
+        s.apply(ev(.stop, 10, tail: "Done."))
+        XCTAssertEqual(s.sessions["s1"]?.pendingDone, true)
+        s.apply(ev(.sessionStart, 12, source: "compact"))
+        XCTAssertEqual(state(s), .working)
+        XCTAssertEqual(s.sessions["s1"]?.pendingDone, true, "the hold stands")
+        XCTAssertEqual(s.sessions["s1"]?.liveAgents["a1"], at(1))
+    }
+
     /// `SessionStart(compact)` alone, with no `PreCompact` before it, changes
     /// nothing: it is the mid-flight marker, not a state of its own, and it
     /// keeps the helpers and background shells a plain `SessionStart` would
@@ -920,6 +974,114 @@ final class SessionStoreTests: XCTestCase {
             s.apply(ev(.interrupt, Double(i * 10 + 5), turn: "t\(i)"))
         }
         XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, (2..<10).map { "t\($0)" })
+    }
+
+    /// A finish held behind a helper still reporting leaves the turn open,
+    /// as a held Stop does: that helper's permission ask raises the amber
+    /// and refreshes the helper, whether the finish was rescued or a Stop.
+    func testAHeldRescuedFinishDoesNotCloseTheTurn() {
+        func run(_ finish: (inout SessionStore) -> Void) -> SessionStore {
+            var s = SessionStore()
+            s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+            s.apply(ev(.preToolUse, 1, tool: "Task", turn: "p1"))
+            s.apply(ev(.preToolUse, 5, tool: "Read", agent: "a1", turn: "p1"))
+            finish(&s)
+            XCTAssertEqual(s.sessions["s1"]?.state, .working)
+            XCTAssertEqual(s.sessions["s1"]?.pendingDone, true, "held behind the helper")
+            XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, [], "a held finish is not over yet")
+            s.apply(ev(.permissionRequest, 40, tool: "Bash", agent: "a1", turn: "p1"))
+            return s
+        }
+        let rescued = run { XCTAssertNil($0.finishTurn(sessionId: "s1", now: at(30))) }
+        XCTAssertEqual(rescued.sessions["s1"]?.state, .waiting(.permission))
+        XCTAssertEqual(rescued.sessions["s1"]?.liveAgents["a1"], at(40))
+        XCTAssertNotNil(rescued.sessions["s1"]?.notifyAt, "the needs-you push is armed")
+        let stopped = run { $0.apply(ev(.stop, 30, tail: "Done.", turn: "p1")) }
+        XCTAssertEqual(stopped.sessions["s1"]?.state, rescued.sessions["s1"]?.state)
+        XCTAssertEqual(stopped.sessions["s1"]?.liveAgents, rescued.sessions["s1"]?.liveAgents)
+        XCTAssertEqual(stopped.sessions["s1"]?.notifyAt, rescued.sessions["s1"]?.notifyAt)
+    }
+
+    /// A new tool call is never the straggler of an aborted tool, and a
+    /// Claude prompt id carries on across consecutive turns whose prompt
+    /// line may be lost: a main-agent `PreToolUse` reopens a turn a verdict
+    /// closed, and the turn's events count again.
+    func testAToolCallAfterAVerdictReopensTheTurn() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        s.apply(ev(.preToolUse, 1, tool: "Bash", turn: "p1"))
+        s.finishTurn(sessionId: "s1", now: at(30))
+        XCTAssertEqual(state(s), .done)
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["p1"])
+        s.apply(ev(.preToolUse, 60, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(s), .working, "the next turn under the same id is work")
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, [], "and the id is open again")
+        XCTAssertEqual(s.sessions["s1"]?.lastMainEventAt, at(60))
+        s.apply(ev(.permissionRequest, 61, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(s), .waiting(.permission))
+        s.apply(ev(.postToolUse, 70, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(s), .working, "a following PostToolUse counts")
+        s.apply(ev(.stop, 80, tail: "Done.", turn: "p1"))
+        XCTAssertEqual(state(s), .done, "and so does its Stop")
+
+        var a = SessionStore()
+        a.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        a.abandonTurn(sessionId: "s1", now: at(30))
+        a.apply(ev(.preToolUse, 60, tool: "Read", agent: "a1", turn: "p1"))
+        XCTAssertEqual(state(a), .idle, "a helper's tool call reopens nothing")
+        a.apply(ev(.preToolUse, 61, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(a), .working, "the abandoned turn's id reopens too")
+    }
+
+    /// An interrupt's close is reopened by a prompt and by nothing else: a
+    /// tool call of the interrupted turn is its aborted tool's straggler.
+    func testAToolCallAfterAnInterruptDoesNotReopenTheTurn() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(ev(.preToolUse, 1, tool: "Bash", turn: "t1"))
+        s.apply(ev(.interrupt, 10, turn: "t1"))
+        s.apply(ev(.preToolUse, 20, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(state(s), .idle)
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["t1"])
+        s.apply(ev(.preToolUse, 10 + K.abortQuarantineSeconds + 60, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(state(s), .idle, "past the quarantine as well")
+
+        // A verdict that closed the turn first, then an interrupt naming no
+        // turn: the interrupt's close is the one that stands.
+        var v = SessionStore()
+        v.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "t1"))
+        v.finishTurn(sessionId: "s1", now: at(30))
+        v.apply(ev(.interrupt, 40))
+        v.apply(ev(.preToolUse, 50, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(state(v), .idle)
+        XCTAssertEqual(v.sessions["s1"]?.closedTurnIds, ["t1"])
+    }
+
+    /// Only a tool call reopens a verdict's close: the late end of a tool,
+    /// its failure, a permission, a Stop, a notification, a compaction and
+    /// a helper's event still change nothing.
+    func testALatePostToolUseAfterAVerdictStillChangesNothing() {
+        let late: [JournalEvent] = [
+            ev(.postToolUse, 40, tool: "Bash", turn: "p1"),
+            ev(.postToolUseFailure, 40, tool: "Bash", turn: "p1"),
+            ev(.permissionRequest, 40, tool: "Bash", turn: "p1"),
+            ev(.permissionDenied, 40, tool: "Bash", turn: "p1"),
+            ev(.stop, 40, tail: "Done.", turn: "p1"),
+            ev(.notification, 40, ntype: "permission_prompt", turn: "p1"),
+            ev(.preCompact, 40, turn: "p1"),
+            ev(.postCompact, 40, turn: "p1"),
+            ev(.preToolUse, 40, tool: "Bash", agent: "a1", turn: "p1"),
+        ]
+        for e in late {
+            var s = SessionStore()
+            s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+            s.apply(ev(.preToolUse, 1, tool: "Bash", turn: "p1"))
+            s.abandonTurn(sessionId: "s1", now: at(30))
+            s.apply(e)
+            XCTAssertEqual(state(s), .idle, "\(e.event)")
+            XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["p1"], "\(e.event)")
+            XCTAssertEqual(s.sessions["s1"]?.stateSince, at(30), "\(e.event)")
+        }
     }
 
     // MARK: Codex's rollout check

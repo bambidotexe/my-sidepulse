@@ -600,7 +600,7 @@ final class Engine {
     private func paint(_ program: String, showing state: DisplayState, brightness: Int,
                        on device: LedDevice, now: Date) {
         let key = device.key
-        if var current = paintings[key] {
+        if let current = paintings[key] {
             if current.loop == program, current.brightness == brightness {
                 // A pending handover writes it; otherwise the writer's dedupe
                 // makes this free, and a write that failed is tried again.
