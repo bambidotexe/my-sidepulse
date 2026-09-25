@@ -43,7 +43,7 @@ LEDs are addressed `0 … n−1`, left to right. Colours are `#rrggbb`, lowercas
 sent exactly as the palette holds them (`LedPalette`: K's defaults, each slot
 replaced by the Colours page's override in `config.json`) — the host does no
 channel reordering and no gamma. A colour is a true colour: dimming is the
-`brightness` line's job (below), never a darker hex. An override that is not `#`
+strip's brightness (below), never a darker hex. An override that is not `#`
 and six hex digits is ignored and the slot keeps its default, since one
 malformed colour makes the whole program unreadable.
 
@@ -54,7 +54,6 @@ host emits only these line forms:
 
 | Form | Meaning |
 |---|---|
-| `brightness N` | First line only. Global brightness, `1…254`. Omitted at full brightness (255) and never sent with `off`. |
 | `off` | Whole strip dark. |
 | `off <dur>` | Whole strip dark for `<dur>`. |
 | `off <dur> cosine` | Fade the whole strip to dark over `<dur>` on a cosine curve. |
@@ -73,9 +72,9 @@ picks the shorter spelling (`0.2s`, not `200ms`), because of the size ceiling
 below.
 
 **Limits the host stays inside:** 20 lines and 512 bytes per program
-(`testProgramsRespectDeviceLimits`). The 8-LED rainbow is the tightest at 501
-bytes with a brightness line; that ceiling is why it has four frames and steps
-two hues at a time.
+(`testProgramsRespectDeviceLimits`). The 8-LED rainbow is the tightest at 486
+bytes; that ceiling is why it has four frames and steps two hues at a time.
+No program carries a `brightness N` line (see *Brightness*).
 
 A program the device cannot parse is not shown at all: the strip blinks red six
 times instead. One malformed colour is enough, which is why
@@ -203,18 +202,166 @@ rejects it, and the program builder falls back to `off`.
 ## Brightness
 
 Per volume name, `1…255`, stored in `config.json` under `brightness` keyed by
-the lower-cased volume name; absent means 255. It is sent as the `brightness N`
-first line. `off` is never prefixed. The Strip page's slider sets it, and so does
+the lower-cased volume name; absent means 255. **It is never sent as a
+`brightness N` line.** Every colour of every program is scaled by it on the way
+out, each channel multiplied by `brightness / 255` and rounded
+(`LedProgram.scaled`), which is the arithmetic the strip's own line applies to
+what it draws: the same values reach the LEDs, and the palette keeps its true
+colours. The line is not used because, on the owner's strip, a program that
+carried one showed its lit LEDs at full scale for a frame at the parse (the
+strip renders before the line takes effect), which a colour already at the
+brightness cannot do. The Strip page's slider sets it, and so does
 `mysidepulse brightness cycle` (functional.md §11), which writes the same value
 for every plugged-in strip. Both set a perceived percent and send
 `255 · fraction^γ` (`BrightnessCurve`, `K.brightnessGamma`): the value is linear
 in the LEDs' power, the eye is not.
 
 **The white LED** of `brightness cycle`, on a strip that would be dark, is one
-line with its brightness line, the baseline shape the split opens with:
+line, the baseline shape the split opens with, scaled like everything else:
 `0:#ba5eff 160ms;1:#000000 160ms;…;7:#000000 160ms`. `#ba5eff` is what reads as
 white on the strip; `#ffffff` reads yellow there.
 (`LedProgram.brightnessPreview`). It is never drawn over another program.
+
+## Carrying an animation on
+
+A program starts from its first line and the strip keeps no phase across
+parses, so every rewrite restarts what is playing. When the animation carries
+on through a change (functional.md §3 *Carrying an animation on*), the host
+writes a one-shot **tail** at once, then the loop when the tail ends
+(`LedContinuation`, `Engine.paint`). The tail is built from the text the host
+wrote, read back into lines and segments, cut at the phase: the milliseconds
+since that program was written, modulo the loop's length, with a line that has
+no timing counted as one frame (`LedContinuation.frameMs`, 17 ms).
+
+**Firmware facts the tail rests on**, each verified on the owner's strip, which
+runs firmware older than the vendor's document:
+
+- `repeat N` is refused: a parse error, six red blinks. A program cannot play
+  a prefix once and then loop, which is why the tail is a write of its own.
+- `none` easing is accepted.
+- A whole-strip `#hex D pulse` looks identical to `#hex D/2 cosine` followed
+  by `off D/2 cosine`: the pulse is two cosine halves, so it can be cut anywhere.
+- Not verified, and therefore not used: a per-LED `cosine`, the other easings,
+  `roll`. A tail is assembled only from the shapes above and the per-LED
+  crossfade and pulse the programs already use.
+- A program carrying a `brightness N` line shows its lit LEDs at full scale for
+  a frame at the parse, and a segment starts from the LED's visible value at
+  the brightness it was drawn with. Both are why colours are scaled on the way
+  out and a brightness tail opens with a bridge line (below).
+
+**What the vendor's engine says.** The vendor ships its LED engine as
+`sdled.wasm` for its own preview (`inteliwear/sidepulse`, `src/sidepulse/
+resources`), and it runs under Node. It is newer than the strip's firmware (it
+takes `repeat N`, and it shows no flash at a parse), so it is evidence, not the
+authority. On it: timing is millisecond-exact, the working loop 1585 ms, an
+instant line 17 ms (the breath's period 4517, the blink's 1517), and a
+brightness line costs no time; a per-LED pulse is the raised cosine
+`(1 − cos 2πt/D) / 2` from the pre-pulse colour, to the unit; a whole-strip
+pulse is the same; a plain per-LED crossfade eases like CSS `ease`
+(`cubic-bezier(0.25, 0.1, 0.25, 1)`, 80 % of the way at half time), `linear`
+and `cosine` are what they say; a crossfade behind a delay and a 17 ms
+crossfade parse. `LedContinuation` uses those curves for the bridge.
+
+**Cut rules**, each keeping the line's length so the tail ends exactly at the
+loop's end:
+
+| The segment under way | Its rest |
+|---|---|
+| whole-strip `off <d>` (`cosine` or not) | `off <remaining>` with the same easing |
+| whole-strip `#hex <D> pulse`, rising | `#hex <D/2 − t> cosine`, then `off <D/2> cosine` on its own line |
+| the same, falling | `off <remaining> cosine` |
+| per-LED, not started yet | unchanged, its delay reduced |
+| per-LED, finished | dropped: the LED holds what it holds |
+| per-LED crossfade `i:#hex <d>` | `i:#hex <remaining>`, from where the LED is |
+| per-LED pulse past its peak | `i:#000000 <remaining>`: a crossfade to its pre-pulse value, black in every program |
+| per-LED pulse still rising, at or past half its peak (`riseToPeakFrom`) | on the bridge (below) `i:#hex <bridge>`, to its peak; then `i:#000000 <remaining>`, the fall |
+| per-LED pulse still rising, below half | on the bridge `i:#000000 <bridge>`, to black; then `i:#hex <remaining> pulse 0ms`, the whole pulse from black, its peak a little late |
+| per-LED pulse starting during the bridge | nothing on the bridge; then `i:#hex <remaining> pulse 0ms` from the bridge's end, up to 60 ms late |
+
+**From a dark strip** (functional.md §3, off and back within
+`K.resumeFromDarkSeconds`), the same cut with every pulse under way played
+from black over what is left of it: a per-LED pulse, rising or falling, as
+`i:#hex <remaining> pulse 0ms`; a whole-strip pulse on its way down as
+`#hex <remaining> pulse`, one on its way up as its rising cosine, which from
+black is already the fade-in. The rest is unchanged: LEDs not started yet
+start on time, and a crossfade fades in to its target.
+
+**The bridge.** A segment starts from the LED's visible value, and that value
+was drawn at the old brightness, so a lit LED would carry the old brightness
+to the end of its segment while a fresh pulse started at the new one. And a
+rising pulse cannot be continued with one segment: a fall leaves a hole in
+the wave, a pulse from its level leaves that level lit. So a brightness tail
+opens with a BRIDGE line of up to `LedContinuation.bridgeMs` (60 ms, or what
+is left of the line under way): every lit LED crossfades to where it goes on
+from, at the new brightness once scaled. A falling pulse, and a crossfade, go
+to their value at the bridge's end (the pulse's raised cosine, or the
+crossfade's `ease` curve from the previous line's colour); a rising pulse at
+or past half its peak goes to its peak and falls from there; one below half
+goes to black and then plays whole from black; a held LED, a steady zone,
+goes to its colour; a whole-strip line under way bridges as one instant
+`#hex`. The cut then continues from the bridge's end, and a pulse that would
+have started during the bridge starts at its end. Not from dark, where the
+fade-in is the point, and dropped when it would not fit in 512 bytes, which
+only the rainbow's first frame hits. The roll 500 ms in, cut at brightness
+255 and as written at 128:
+
+```
+0:#ff374a 60ms; 1:#ff374a 60ms; 2:#000000 60ms; 3:#000000 60ms
+0:#000000 360ms; 1:#000000 455ms; 2:#ff374a 550ms pulse 0ms; 3:#ff374a 645ms pulse 0ms; 4:#ff374a 740ms pulse 0ms; 5:#ff374a 760ms pulse 75ms; 6:#ff374a 760ms pulse 170ms; 7:#ff374a 760ms pulse 265ms
+```
+
+```
+0:#801c25 60ms; 1:#801c25 60ms; 2:#000000 60ms; 3:#000000 60ms
+0:#000000 360ms; 1:#000000 455ms; 2:#801c25 550ms pulse 0ms; 3:#801c25 645ms pulse 0ms; 4:#801c25 740ms pulse 0ms; 5:#801c25 760ms pulse 75ms; 6:#801c25 760ms pulse 170ms; 7:#801c25 760ms pulse 265ms
+```
+
+What that costs, on the pass of the press only: the two dimmest rising LEDs
+go dark for the bridge and peak up to about 100 ms late, one LED started up
+to 60 ms late, and a rising LED past half rises to its peak in 60 ms rather
+than the rest of its rise. Nothing is skipped and nothing stays lit.
+
+Every tail is cut from unscaled text, the palette's colours, and scaled once
+on the way out; the Engine keeps the unscaled text of what plays, so a second
+cut works from the same colours.
+A cut duration is spelled the shortest way (`0.1s`); an unchanged one keeps
+the spelling the host gave it, so the reader and the writer round-trip every
+program byte for byte (`testEveryHostProgramReadsBackAsItself`).
+
+**The roll under a zone.** When a split opens, closes or changes over the same
+roll, the tail is the roll's rest with the zone's LEDs taken out of every line
+(`LedProgram.rollHandover` says which LEDs, `LedContinuation.transition` writes
+it). A green zone is `i:#green 160ms` on the first line; a zone that closes is
+`i:#000000 160ms` there. An amber zone needs blink one on a line of its own and
+blink two 70 ms into the next, so the roll's line under way is split: its next
+200 ms as one crossfade per LED to the value that LED's pulse reaches by then
+(a chord of the pulse, `LedContinuation.piece`, the colour scaled per channel),
+then its rest under the cut rules, blink two riding it. When a zone LED is lit
+at that moment, a per-LED pulse would return it to that red and hold it under
+the pair, so the split's own 160 ms baseline comes first, the zone fading to
+black beside a 160 ms chord of the roll, then the two blink lines: three
+lines, as soon as the split written outright would blink, and two lines again
+if three would not fit in 512 bytes. The last chord is the bridge: at its
+end a rising LED past half goes to its peak, one below half to black to start
+over, and a pulse that would have started during it starts at its end. A
+steady zone, and a zone that closes, open over the bridge itself. The tail ends
+where the roll's loop would have, so the loop written there finds the roll
+dark; the blink pair's rhythm has one irregular gap there, from the transition
+to the loop's first pair. When the roll is at its dark end, with nothing left
+but LED 7's fall, the new program is written outright.
+
+The 8-LED working roll 500 ms in, LEDs 0…2 lit, a question landing (brightness 255):
+
+```
+3:#9a212d 160ms; 4:#3a0c11 120ms 40ms; 5:#030101 25ms 135ms; 0:#000000 160ms; 1:#000000 160ms; 2:#000000 160ms
+3:#fa3648 0.2s; 4:#f03446 0.2s; 5:#a42330 0.2s; 6:#430e13 130ms 70ms; 7:#050102 35ms 165ms; 0:#ff7000 0.2s pulse 0ms; 1:#ff7000 0.2s pulse 0ms; 2:#ff7000 0.2s pulse 0ms
+3:#000000 345ms; 4:#000000 440ms; 5:#000000 535ms; 6:#000000 630ms; 7:#000000 725ms; 0:#ff7000 0.2s pulse 70ms; 1:#ff7000 0.2s pulse 70ms; 2:#ff7000 0.2s pulse 70ms
+```
+
+**Limits.** Every tail is checked at every phase in 5 ms steps, on 2 and 8 LEDs,
+at 255 and 254: under 512 bytes and 20 lines, no brightness line, every line a
+shape the reader knows, its length the loop's remainder within one frame
+(`testEveryTailIsWellFormedAndEndsAtTheLoopEnd`,
+`testEveryTransitionIsWellFormed`).
 
 ## Writing
 

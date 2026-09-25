@@ -34,6 +34,28 @@ final class Engine {
     /// keeps `config.ledModeBeforeOff`.
     private var cyclingMode = false
     private var devices: [DeviceKey: LedDevice] = [:]
+    /// What each strip plays: the program it is running (a loop, or a
+    /// one-shot tail that carries an animation across a rewrite), since when,
+    /// the loop to write when a tail ends and the state that loop shows, and
+    /// the brightness it is all scaled to (`LedContinuation`). The texts are
+    /// unscaled, the palette's true colours; what goes to the strip is
+    /// `LedProgram.scaled` at the brightness. The handover is the loop's
+    /// write, scheduled at the tail's end; a real change cancels it.
+    private struct Painting {
+        var playing: String
+        var playingSince: Date
+        var loop: String
+        var state: DisplayState
+        var brightness: Int
+        var handover: DispatchWorkItem?
+        var boundary: Date?
+        /// The loop that went dark, and its timeline: `origin` is a moment the
+        /// loop starts, so its phase at any time is the time since then modulo
+        /// its length. Painted again within `K.resumeFromDarkSeconds` of
+        /// `since`, the same animation resumes on that timeline.
+        var dark: (loop: String, origin: Date, since: Date)?
+    }
+    private var paintings: [DeviceKey: Painting] = [:]
     private var config: AppConfig
     private let writer = LedWriter()
     private let keepalive = Keepalive()
@@ -261,6 +283,8 @@ final class Engine {
             "device appeared: \(device.mountPath, privacy: .public) leds=\(device.ledCount)")
         devices[device.key] = device
         writer.deviceAppeared(device)
+        paintings[device.key]?.handover?.cancel()
+        paintings.removeValue(forKey: device.key)
         sync()
     }
 
@@ -269,6 +293,8 @@ final class Engine {
         Log.app.notice("device disappeared: \(path, privacy: .public)")
         devices.removeValue(forKey: key)
         writer.deviceGone(key)
+        paintings[key]?.handover?.cancel()
+        paintings.removeValue(forKey: key)
         onStateChanged?()
     }
 
@@ -444,15 +470,112 @@ final class Engine {
                                                      until: brightnessPreviewUntil, now: now)
         for device in devices.values {
             let brightness = config.brightness(forVolumeName: device.name)
+            // Unscaled: the brightness is applied on the way out, by `paint`.
             let program = showsWhite
-                ? LedProgram.brightnessPreview(ledCount: device.ledCount, brightness: brightness)
+                ? LedProgram.brightnessPreview(ledCount: device.ledCount, brightness: 255)
                 : LedProgram.program(for: decision, power: paintPower, ledCount: device.ledCount,
-                                     brightness: brightness, palette: palette)
-            writer.write(program: program, to: device)
+                                     brightness: 255, palette: palette)
+            paint(program, showing: decision, brightness: brightness, on: device, now: now)
         }
         attention.setPolling(real.isAlertable)
         scheduleNextDeadline(now: now)
         onStateChanged?()
+    }
+
+    /// One strip's write. An animation that carries on is not restarted: the
+    /// same animation at another brightness gets the rest of what it is
+    /// playing at the new brightness, a roll that continues under a zone
+    /// that opens, closes or changes gets the transition tail, and the same
+    /// animation painted again within `K.resumeFromDarkSeconds` of going dark
+    /// resumes where it would have been; the loop itself is written when the
+    /// tail ends. A brightness tail ends at the loop's own boundary, so a
+    /// second change during it cuts the tail again and keeps that boundary.
+    /// Anything else is written at once. `program` is unscaled.
+    private func paint(_ program: String, showing state: DisplayState, brightness: Int,
+                       on device: LedDevice, now: Date) {
+        let key = device.key
+        if var current = paintings[key] {
+            if current.loop == program, current.brightness == brightness {
+                // A pending handover writes it; otherwise the writer's dedupe
+                // makes this free, and a write that failed is tried again.
+                if current.handover == nil {
+                    writer.write(program: LedProgram.scaled(program, brightness: brightness), to: device)
+                }
+                return
+            }
+            let elapsed = Int(now.timeIntervalSince(current.playingSince) * 1000)
+            let ledCount = device.ledCount
+            if current.playing == "off", let dark = current.dark,
+               now.timeIntervalSince(dark.since) <= K.resumeFromDarkSeconds,
+               dark.loop == program, let loopMs = LedContinuation.loopMs(of: dark.loop) {
+                let sinceOrigin = Int(now.timeIntervalSince(dark.origin) * 1000)
+                let phase = ((sinceOrigin % loopMs) + loopMs) % loopMs
+                if let tail = LedContinuation.tail(of: dark.loop, elapsedMs: phase, brightness: brightness,
+                                                   fromDark: true) {
+                    carryOn(key, device: device, tail: tail, loop: program, state: state,
+                            brightness: brightness, now: now,
+                            boundary: now.addingTimeInterval(Double(tail.lengthMs) / 1000))
+                    return
+                }
+            }
+            if current.loop == program,
+               let tail = LedContinuation.tail(of: current.playing, elapsedMs: elapsed, brightness: brightness) {
+                let boundary: Date
+                if let pending = current.boundary, current.handover != nil {
+                    boundary = pending
+                } else {
+                    let loopMs = LedContinuation.loopMs(of: current.loop) ?? tail.lengthMs
+                    boundary = current.playingSince
+                        .addingTimeInterval(Double((elapsed / loopMs + 1) * loopMs) / 1000)
+                }
+                carryOn(key, device: device, tail: tail, loop: program, state: state,
+                        brightness: brightness, now: now, boundary: boundary)
+                return
+            }
+            if let roll = LedProgram.rollHandover(from: current.state, to: state, ledCount: ledCount,
+                                                  palette: palette),
+               let tail = LedContinuation.transition(
+                   from: current.playing, to: program, elapsedMs: elapsed, ledCount: ledCount,
+                   zoneBefore: roll.zoneBefore, zoneAfter: roll.zoneAfter, opening: roll.opening,
+                   brightness: brightness) {
+                carryOn(key, device: device, tail: tail, loop: program, state: state,
+                        brightness: brightness, now: now,
+                        boundary: now.addingTimeInterval(Double(tail.lengthMs) / 1000))
+                return
+            }
+            current.handover?.cancel()
+        }
+        writer.write(program: LedProgram.scaled(program, brightness: brightness), to: device)
+        // Going dark keeps the loop's timeline for a moment, so that coming
+        // back at once finds the animation where it would have been.
+        var dark: (loop: String, origin: Date, since: Date)?
+        if program == "off", let current = paintings[key], LedContinuation.loopMs(of: current.loop) != nil {
+            dark = (current.loop, current.boundary ?? current.playingSince, now)
+        }
+        paintings[key] = Painting(playing: program, playingSince: now, loop: program, state: state,
+                                  brightness: brightness, handover: nil, boundary: nil, dark: dark)
+    }
+
+    private func carryOn(_ key: DeviceKey, device: LedDevice, tail: LedContinuation.Tail, loop: String,
+                         state: DisplayState, brightness: Int, now: Date, boundary: Date) {
+        paintings[key]?.handover?.cancel()
+        writer.write(program: tail.program, to: device)
+        let work = DispatchWorkItem { [weak self] in self?.handOver(key) }
+        paintings[key] = Painting(playing: tail.unscaled, playingSince: now, loop: loop, state: state,
+                                  brightness: brightness, handover: work, boundary: boundary, dark: nil)
+        DispatchQueue.main.asyncAfter(wallDeadline: .now() + max(0, boundary.timeIntervalSince(now)),
+                                      execute: work)
+    }
+
+    /// The tail has ended: the loop starts here, on its own timeline.
+    private func handOver(_ key: DeviceKey) {
+        guard let device = devices[key], var current = paintings[key] else { return }
+        current.handover = nil
+        current.boundary = nil
+        current.playing = current.loop
+        current.playingSince = Date()
+        paintings[key] = current
+        writer.write(program: LedProgram.scaled(current.loop, brightness: current.brightness), to: device)
     }
 
     /// The quiet-turn check. Esc and Ctrl-C interrupt a turn without firing

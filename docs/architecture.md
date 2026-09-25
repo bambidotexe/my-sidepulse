@@ -89,7 +89,7 @@ sync():
   decision = Arbiter.decide(...)
   pre-paint acknowledgement if the user is typing in the host app
   apply a Playground preview over the decision (paint only)
-  for each device: writer.write(LedProgram.program(...))
+  for each device: paint(LedProgram.program(...))   // a tail when the animation carries on, else the write
   attention.setPolling(decision.isAlertable)
   scheduleNextDeadline(now)
 ```
@@ -97,6 +97,13 @@ sync():
 Inputs that call `sync()`: journal events (`handle`), process exits, power
 changes, device arrival, acknowledgement, mode / brightness / preview changes,
 job begin / end, wake from sleep, and the deadline timer.
+
+**Carrying an animation on.** `paint` keeps, per strip, what it is playing and
+since when, and the loop to hand over to. A brightness change on the same
+animation, or a zone opening, closing or changing over the same roll, writes
+the tail `LedContinuation` cuts from that record and schedules the loop's
+write at the tail's end, a `DispatchWorkItem` on the main queue; a real change
+cancels it and writes at once. `LedWriter` stays the only writer.
 
 **One timer.** There is no periodic tick. After every `sync()` the engine arms a
 single `DispatchSourceTimer` for the earliest of `SessionStore.nextDeadline`,

@@ -171,6 +171,7 @@ are `docs/functional.md`.
 | which events are subscribed, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift`, `Platform/HookInstaller.swift` (shared by the CLI and the settings window), `Platform/SettingsFile.swift`; the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests` | §4 *Source*, §10, §11 |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
 | the precedence ladder, the split display | `Core/Arbiter.swift` — `ArbiterTests` | §3 |
+| carrying an animation across a rewrite: the tail, its cut rules, the roll under a zone, when the loop is handed over | `Core/LedContinuation.swift` (the reader, the cut rules, `tail`, `transition`), `LedProgram.rollHandover` (which changes carry the roll), `Engine.paint` / `carryOn` / `handOver` — `ContinuationTests`, `TransitionTests` (exact text, and a sweep over every phase) | §3 *Carrying an animation on*, `device.md` *Carrying an animation on*, `pitfalls.md` |
 | what a state looks like: program text, colours, zone widths, effects | `Core/LedProgram.swift`, `LedEffects.swift`, `Constants.swift` — `ProgramTests` (exact text). The settings preview mirrors the timings and draws the palette's own hexes: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
 | which colours can be changed, their defaults, the Colours page | `Core/LedPalette.swift` (the slots, `standard` from `K`, the overrides rule, what each slot plays — `PaletteTests`), `Core/Constants.swift` (the defaults), `App/Engine.swift` (`palette`, `setColor`), `App/AppConfig.swift` (`colors`), `App/SettingsColorsPage.swift`, `Core/StringsColorsPage.swift` | §3 *Colours*, §10, `device.md`, `architecture.md` *Persistence* |
 | acknowledgement | `SessionStore.acknowledgeAlerts`, `JobStore.acknowledge`, `Engine.acknowledge`, `App/AttentionMonitor.swift`, `Platform/TerminalTabProber.swift`, `ProcWalk.tabTTY` | §5 |
@@ -213,7 +214,7 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (367, one opt-in skip) runs in about two seconds;
+  `MySidepulseCoreTests` (386, one opt-in skip) runs in about eleven seconds;
   `MySidepulsePlatformTests` (134) takes about 24 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
@@ -359,8 +360,9 @@ The app target has no automated tests. Its verification is the strip,
 - LED timings in `Constants.swift` are calibrated by eye on the real device:
   retune them only against hardware. The colours there are the owner's
   defaults for the Colours page, true colours, the same hex on the strip and on
-  screen. A strip's brightness dims it, never a darker hex. Colours are the
-  owner's call.
+  screen. A strip's brightness dims it, never a darker hex: the scaling is the
+  last step before the text goes out (`LedProgram.scaled`), never a line in the
+  program and never the palette. Colours are the owner's call.
 - **LED program text is a device contract.** Assemble it only from token
   shapes the device already accepts, inside 20 lines and 512 bytes; change it
   only together with the exact-text tests in `ProgramTests`; verify it on the
@@ -437,8 +439,13 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (367 + 134, one opt-in skip) at
+`swift build` is clean and `swift test` is green (386 + 134, one opt-in skip) at
 this commit. The live journal replays.
+
+Checked on the strip by the owner: the brightness key over the roll carries the
+wave on with no hole and nothing left lit, off and back within 2 s resumes it
+mid-wave, and a finish or a question landing over the roll opens its zone while
+the wave rolls on.
 
 Walked end to end on the owner's Mac: a drag install from the disk image, which
 now hands itself to launchd instead of asking the user to log out; `make install`

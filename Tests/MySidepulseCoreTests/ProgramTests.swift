@@ -81,10 +81,18 @@ final class ProgramTests: XCTestCase {
         XCTAssertEqual(p(.manualColor("#ff8800")), "#ff8800")
     }
 
-    func testBrightnessPrefix() {
-        XCTAssertEqual(p(.done, brightness: 128), "brightness 128\noff\n#00ff37 4.5s pulse\nrepeat")
+    /// Brightness is baked into the colours, each channel scaled and rounded
+    /// as the strip's own `brightness N` line would scale it, and the line
+    /// itself is never sent: on the owner's strip a program carrying one
+    /// showed its lit LEDs at full scale for a frame at every parse.
+    func testBrightnessScalesTheColours() {
+        XCTAssertEqual(p(.done, brightness: 128), "off\n#00801c 4.5s pulse\nrepeat")
         XCTAssertEqual(p(.done, brightness: 255), "off\n#00ff37 4.5s pulse\nrepeat")
-        XCTAssertEqual(p(.done, brightness: 0), "brightness 1\noff\n#00ff37 4.5s pulse\nrepeat", "clamped to 1")
+        XCTAssertEqual(p(.done, brightness: 0), "off\n#000100 4.5s pulse\nrepeat", "clamped to 1")
+        XCTAssertEqual(LedProgram.scaled("0:#ff374a 760ms pulse 0ms; 1:#000000 160ms", brightness: 128),
+                       "0:#801c25 760ms pulse 0ms; 1:#000000 160ms")
+        XCTAssertEqual(LedProgram.scaled("#ffffff", brightness: 128), "#808080")
+        XCTAssertFalse(p(.working, brightness: 40).contains("brightness"))
     }
 
     /// A job in flight rolls like Claude does — motion says something is
@@ -206,9 +214,8 @@ final class ProgramTests: XCTestCase {
                        "only a hand-edited config can get here — dark beats red-blink parse errors")
     }
 
-    func testEffectsTakeTheBrightnessPrefix() {
-        XCTAssertEqual(p(.effect("ember"), brightness: 128),
-                       "brightness 128\noff\n#ff5200 3.2s pulse\nrepeat")
+    func testEffectsTakeTheBrightness() {
+        XCTAssertEqual(p(.effect("ember"), brightness: 128), "off\n#802900 3.2s pulse\nrepeat")
     }
 
     /// Both hardcoded sites in Engine.sync() ask this instead of listing
@@ -252,9 +259,9 @@ final class ProgramTests: XCTestCase {
         XCTAssertEqual(p(.split(alert: .jobSucceeded, work: .working)),
                        p(.split(alert: .done, work: .working)))
         XCTAssertTrue(p(.split(alert: .done, work: .jobRunning)).contains(K.jobRunning))
-        // Brightness prefixes exactly like every other program.
+        // Brightness scales the colours exactly like every other program.
         XCTAssertTrue(p(.split(alert: .done, work: .working), brightness: 40)
-            .hasPrefix("brightness 40\n"))
+            .hasPrefix("0:#002809 160ms; 1:#002809 160ms; 2:#000000 160ms"))
     }
 
     /// The Dot keeps one LED for the roll whatever the zone constants say.

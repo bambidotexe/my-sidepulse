@@ -122,15 +122,39 @@ rejected by eye within minutes of a build whose tests were green.
 
 ### An overlay on an animation restarts it
 - **Symptom.** A white LED over the running animation, shown for two seconds after a brightness press, made the strip look like it flickered.
-- **Why.** The strip only takes whole programs, and a new program restarts its animation from the start: a breath caught halfway drops back to dark. Brightness is itself a program line, so a press restarts the animation once whatever is done; the overlay restarted it again when it left. Doing it at all also meant rewriting every whole-strip line per LED (`off`, `#hex` and a whole-strip pulse paint every LED), and the needs-you blink rewritten that way was over 512 bytes on 8 LEDs.
-- **Instead.** The white LED shows only on a strip that would be dark, where its leaving cannot be seen; an animation shows the new brightness itself.
+- **Why.** The strip only takes whole programs, and a new program restarts its animation from the start: a breath caught halfway drops back to dark. The overlay restarted it when it left. Doing it at all also meant rewriting every whole-strip line per LED (`off`, `#hex` and a whole-strip pulse paint every LED), and the needs-you blink rewritten that way was over 512 bytes on 8 LEDs.
+- **Instead.** The white LED shows only on a strip that would be dark, where its leaving cannot be seen; an animation shows the new brightness itself, carried on by a tail (below).
 - **Rule.** Anything added to the strip for a moment costs a restart of what it shows when it goes. Add it only where nothing is playing.
 
+### Waiting for the loop's end was rejected
+- **Symptom.** A brightness press that did nothing for up to four seconds, until the breath came round.
+- **Why.** Holding a change until the loop's boundary hides the restart, and the owner rejected it outright: a change applies now. The firmware refuses `repeat N`, so a single program cannot play the rest of the loop once and then loop.
+- **Instead.** Two writes: a one-shot tail, the rest of the current loop from the strip's phase at the new brightness, then the loop itself when the tail ends (`LedContinuation`, `Engine.paint`). The phase is the host's clock since the write; the strip's write-to-start latency is the same for every write and cancels. Whether the two clocks drift over a long roll is unmeasured, and accepted.
+- **Rule.** A change applies at once. What the strip is playing is cut, never held.
+
+### A segment starts from the visible value, at the old brightness
+- **Symptom.** After a brightness press mid-roll, the LEDs already lit finished their pulse at the old brightness and only the LEDs lighting after it showed the new one.
+- **Why.** The strip keeps the visible LED state across parses as the transition start colours, and that state is what was drawn, brightness included. A new brightness reaches what the program draws towards, not where each LED starts from.
+- **Instead.** Every brightness tail opens with a bridge line taking each lit LED to where it goes on from, at the new brightness (`LedContinuation.bridgeLine`).
+- **Rule.** A new brightness reaches a lit LED only through a colour it is told to go to.
+
+### A brightness line flashes the lit LEDs at the parse
+- **Symptom.** With a one-frame jump line in place, the bridge's first form, a brightness press mid-roll flashed the lit LEDs far brighter than the wave for a moment (the owner's video, frames of a wide white blob), while the build before it, whose tails opened with a fall, had not.
+- **Why.** On the owner's strip a program that carries `brightness N` draws at least one frame before the line takes effect. A fall from the visible value drew that frame at the value it already had; a jump line's targets are the level colours meant to be dimmed by the line, and drew at full scale. The vendor's engine, newer than the firmware, shows no such frame, so it was not the way to find out.
+- **Instead.** No program carries a brightness line. `LedProgram.scaled` multiplies every colour by the brightness on the way out, the same values the line would have drawn, and the tails are cut from unscaled text and scaled once.
+- **Rule.** Nothing the strip parses may depend on a line taking effect before the first frame.
+
+### A mid-wave cut is not exact
+- **Symptom.** In the roll, one or two LEDs miss their peak on the pass a brightness change or a zone lands on, or hold a dim red for up to a loop.
+- **Why.** The roll's pulses overlap, so no line boundary can fall between them, and a pulse on its way up needs two segments (finish the rise, then fall) that one line cannot hold for one LED. A whole-strip pulse is two cosine halves and cuts exactly; a per-LED pulse past its peak is a crossfade to black; a rising one is not expressible.
+- **Instead.** Both single segments were tried on the strip. A pulse from the LED's current level finishes the rise but returns to that level and holds it until the loop's next dark line, and each further press keeps it there: LEDs staying lit too long. A fall from that level never lights the LED: a hole in the wave, LED 5 dark between four lit and two lit in the owner's photo. So the tail opens with a bridge line (device.md *The bridge*): a rising LED below half its peak fades to black on it and plays whole from black after it; one past half rises to its peak on it and falls from there. Nothing is skipped and nothing stays lit; the price is a late peak on the two dimmest LEDs and a 60 ms rise on a bright one, on that pass only. A blinking zone that opens mid-wave adds a second cut 200 ms on, the roll's next 200 ms written as one crossfade per LED to the value the pulse reaches there.
+- **Rule.** Judge a cut on the strip. The exact-text tests pin the tail; they cannot say how it looks.
+
 ### Brightness is linear in power, not in what the eye sees
-- **Symptom.** Brightness steps of 33 %, 67 % and 100 % of `brightness N` that look almost the same.
+- **Symptom.** Brightness steps of 33 %, 67 % and 100 % of the strip's 1…255 scale that look almost the same.
 - **Why.** The eye's response to light is close to a cube root: a third of the power already looks like most of full.
 - **Instead.** Every brightness the owner sets is a perceived percent through `BrightnessCurve` (`255 · fraction^γ`).
-- **Rule.** Never step or slide `brightness N` linearly.
+- **Rule.** Never step or slide the strip's brightness value linearly.
 
 ### A per-LED pulse returns to its pre-pulse value, not to black
 - **Symptom.** In a split display the gaps show the previous program's colours.
@@ -164,8 +188,8 @@ rejected by eye within minutes of a build whose tests were green.
 
 ### Dim with brightness, never with a darker hex
 - **Symptom.** Colours that look nearly black on screen, pictures in the window drawn from hand-picked stand-ins instead of the real colours, and a colour picker that cannot show what the strip will do.
-- **Why.** The colours used to be dim hexes (`#330900` for amber) chosen to fake a low brightness, before the per-strip `brightness` line was known. A hex that low is a colour and a brightness mixed into one number, and a screen cannot render it as the LED does.
-- **Instead.** Every colour is a true colour, its hue at full scale, the same hex on the strip and in the window; the strip's brightness setting dims it. The Colours page plays a colour on the strip while it is picked, because an LED still renders a hue differently from a display.
+- **Why.** The colours used to be dim hexes (`#330900` for amber) chosen to fake a low brightness, before the per-strip brightness was known. A hex that low is a colour and a brightness mixed into one number, and a screen cannot render it as the LED does.
+- **Instead.** Every colour is a true colour, its hue at full scale, the same hex on the strip and in the window; the strip's brightness setting dims it, applied to the text as its last step (`LedProgram.scaled`, above), never to the palette. The Colours page plays a colour on the strip while it is picked, because an LED still renders a hue differently from a display.
 - **Rule.** Never darken a hex to dim the strip. Colours are the owner's call, judged on the strip.
 
 ### Do not flatten the rainbow by perceived brightness
@@ -437,3 +461,4 @@ Known, bounded, and left alone.
 - **`doctor`'s strip check never fails**, and its auto-start check fails when `Open at Login` is deliberately off — fairly, since that also turns off crash restart.
 - **`reconcile()` re-stats every known mount** when an unrelated disappear arrives without a description, so a transient stat failure can briefly report a live strip as gone.
 - **Wake forces no rescan**, and the safety-net timers pause during sleep.
+- **A transition tail's chords are one shape the strip has not been sent before**: a per-LED crossfade behind a delay (`4:#3a0c11 120ms 40ms`), which the vendor's grammar lists (`duration delay`) but this app had never written. A refused shape shows as six red blinks at the moment a zone opens over the roll. Every other tail shape is one the programs already use.

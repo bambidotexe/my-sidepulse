@@ -125,6 +125,42 @@ public enum LedProgram {
         return max(1, min(wanted, ledCount - 1))
     }
 
+    /// A change of state that carries the roll on: the same work keeps
+    /// rolling on the LEDs it keeps while an alert zone opens, closes or
+    /// changes width. The zone's LEDs before and after, and how the new zone
+    /// starts; nil when nothing rolls through the change.
+    public struct RollHandover: Equatable {
+        public let zoneBefore: Int
+        public let zoneAfter: Int
+        public let opening: LedContinuation.ZoneOpening?
+    }
+
+    public static func rollHandover(from: DisplayState, to: DisplayState, ledCount: Int,
+                                    palette: LedPalette = .standard) -> RollHandover? {
+        let count = max(2, min(8, ledCount))
+        func work(_ state: DisplayState) -> SplitWork? {
+            switch state {
+            case .working: return .working
+            case .jobRunning: return .jobRunning
+            case .split(_, let work): return work
+            default: return nil
+            }
+        }
+        func zone(_ state: DisplayState) -> Int {
+            if case .split(let alert, _) = state { return splitZone(alert: alert, ledCount: count) }
+            return 0
+        }
+        guard from != to, let before = work(from), let after = work(to), before == after else { return nil }
+        var opening: LedContinuation.ZoneOpening?
+        if case .split(let alert, _) = to {
+            switch alert {
+            case .waiting, .jobFailed: opening = .blink(palette.needsYou)
+            case .done, .jobSucceeded: opening = .steady(palette.done)
+            }
+        }
+        return RollHandover(zoneBefore: zone(from), zoneAfter: zone(to), opening: opening)
+    }
+
     /// The alert zone on the left, the working roll on the rest — built
     /// entirely from shapes this strip has PROVEN:
     ///
@@ -209,9 +245,39 @@ public enum LedProgram {
         return applyBrightness(line, brightness)
     }
 
+    /// A program at a brightness: every colour scaled by `brightness / 255`,
+    /// each channel rounded, which is what the strip's own `brightness N`
+    /// line does to the values it draws. Scaled here, not there, because a
+    /// program that carries a brightness line shows its lit LEDs at full
+    /// scale for a frame at every parse on the owner's strip, and a colour
+    /// already at the brightness cannot. The palette stays the true colour:
+    /// this is the last step before the text goes out.
     static func applyBrightness(_ program: String, _ brightness: Int) -> String {
+        scaled(program, brightness: brightness)
+    }
+
+    public static func scaled(_ program: String, brightness: Int) -> String {
         let b = max(1, min(255, brightness))
-        guard b < 255, program != "off" else { return program }
-        return "brightness \(b)\n\(program)"
+        guard b < 255 else { return program }
+        var out = ""
+        var rest = Substring(program)
+        while let hash = rest.firstIndex(of: "#") {
+            out += rest[..<hash]
+            let start = rest.index(after: hash)
+            let end = rest.index(start, offsetBy: 6, limitedBy: rest.endIndex) ?? rest.endIndex
+            let hex = rest[start..<end]
+            if hex.count == 6, let value = UInt32(hex, radix: 16) {
+                func channel(_ shift: UInt32) -> Int {
+                    Int((Double((value >> shift) & 0xff) * Double(b) / 255).rounded())
+                }
+                out += String(format: "#%02x%02x%02x", channel(16), channel(8), channel(0))
+                rest = rest[end...]
+            } else {
+                out += "#"
+                rest = rest[start...]
+            }
+        }
+        out += rest
+        return out
     }
 }

@@ -115,6 +115,11 @@ public enum K {
     /// press, restarted by each press: the owner's choice, long enough to
     /// judge the brightness between presses.
     public static let brightnessPreviewSeconds: TimeInterval = 2
+    /// How long after the strip went dark the same animation, painted again,
+    /// resumes where it would have been had it kept playing, its lit LEDs
+    /// fading in from black: the owner's figure, the time one press takes to
+    /// follow another through the cycle's off step. Later, it starts over.
+    public static let resumeFromDarkSeconds: TimeInterval = 2
     /// What reads as white on the strip, chosen by the owner's eye: `#ffffff`
     /// reads yellow there. White, so the LED shows the brightness itself.
     public static let brightnessPreviewWhite = "#ba5eff"

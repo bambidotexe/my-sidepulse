@@ -195,8 +195,7 @@ final class BrightnessCycleTests: XCTestCase {
 
     func testTheWhiteLedProgram() {
         XCTAssertEqual(LedProgram.brightnessPreview(ledCount: 8, brightness: 64), """
-        brightness 64
-        0:#ba5eff 160ms;1:#000000 160ms;2:#000000 160ms;3:#000000 160ms;4:#000000 160ms;5:#000000 160ms;6:#000000 160ms;7:#000000 160ms
+        0:#2f1840 160ms;1:#000000 160ms;2:#000000 160ms;3:#000000 160ms;4:#000000 160ms;5:#000000 160ms;6:#000000 160ms;7:#000000 160ms
         """)
         XCTAssertEqual(LedProgram.brightnessPreview(ledCount: 2, brightness: 255),
                        "0:#ba5eff 160ms;1:#000000 160ms")

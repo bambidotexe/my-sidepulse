@@ -94,6 +94,32 @@ colour is a true colour, the same hex on the strip and in the window; a strip's
 brightness (§10, Strip) is what dims it, never a darker hex. The six effects
 follow the same rule and are not recoloured.
 
+**Carrying an animation on.** The strip takes whole programs and every program
+starts from its first line, so a rewrite restarts what the strip shows. When
+the animation continues through a change, it is not restarted: the strip gets
+the rest of its current loop from the point it has reached, and the loop itself
+when that rest ends. Two changes carry on this way, at once, never waiting for
+the loop's end:
+
+1. **A brightness change** during any looping display: the same animation,
+   at the new brightness, from where it is.
+2. **The roll under a zone that opens, closes or changes**: work → split with
+   the same work, split → work, and split → split with the same work (a
+   finish becoming a question, a question becoming a finish). The roll's LEDs
+   carry on from where they are; a green zone is set at once, an amber zone
+   starts its double blink at once; a zone that closes goes dark at once and
+   its LEDs join the roll when the loop restarts.
+
+3. **Off and back within `K.resumeFromDarkSeconds` (2 s)**, the brightness
+   cycle's off step and the press after it, or `led off` then `led auto`: the
+   same animation resumes where it would have been had it kept playing in the
+   dark, its lit LEDs fading in from black. Later than that, or another
+   animation, starts from scratch.
+
+A change of animation (working → done alone, a different roll) starts the
+new one from its first line: there is nothing to carry on. The exact cut, and
+what a mid-pulse cut costs, are in [device.md](device.md).
+
 Colours, shapes and exact program text are in [device.md](device.md).
 
 ## 4. Claude Code status
@@ -845,11 +871,12 @@ rule rather than a gap (§15).
 
 With no arguments it prints usage and exits 0.
 
-**Brightness is perceived.** The strip's `brightness N` (1–255) scales the
-LEDs' power in a straight line, and the eye does not: a third of the power
-already looks like most of full. So every brightness the owner sets, by the
-Strip page's slider or by `brightness cycle`, is a perceived percent, and the
-strip gets `255 · (percent / 100)^γ`, never below 1 (`BrightnessCurve`).
+**Brightness is perceived.** The strip's brightness (1–255) scales the LEDs'
+power in a straight line, and the eye does not: a third of the power already
+looks like most of full. So every brightness the owner sets, by the Strip
+page's slider or by `brightness cycle`, is a perceived percent, and the
+strip's value is `255 · (percent / 100)^γ`, never below 1 (`BrightnessCurve`);
+every colour sent is scaled by it ([device.md](device.md) *Brightness*).
 `K.brightnessGamma` is 2.0, measured by the owner's eye on a white strip: a
 third of full looked like `brightness 30`, two thirds like 110. What is stored is
 still the strip's 1–255. At the dim end one unit of the strip is a percent or
@@ -876,10 +903,10 @@ lights LED 1, the leftmost, white at the new brightness (`#ba5eff`, which reads
 as white on the strip, where `#ffffff` reads yellow) for
 `K.brightnessPreviewSeconds` (2 s), restarted by each press, so the brightness
 can be seen between presses. While the strip shows anything else, that shows
-the new brightness itself and nothing is added: the strip only takes whole
-programs, so every press restarts its animation once, and a white LED over an
-animation would restart it a second time when it left. The white is paint
-only, like the Playground preview; the off step lights nothing.
+the new brightness itself, carried on from where it is (§3 *Carrying an
+animation on*), and nothing is added: a white LED over an animation would
+restart it when it left. The white is paint only, like the Playground preview;
+the off step lights nothing.
 
 `doctor` checks: app reachable; auto-start & restart (this process is the one
 launchd supervises); hooks installed (all 15); hook binary exists; hook command
@@ -998,6 +1025,10 @@ belongs to on the strip.
 | `brightnessSliderStepPercent` | 5 % | the Strip page's brightness slider's step: twenty positions, each visibly different at the measured γ |
 | `brightnessCycleSlackPercent` | 1 % | a step this close above the current brightness counts as reached |
 | `brightnessPreviewSeconds` | 2 s | the white LED on a dark strip after a `brightness cycle` press, restarted by each press |
+| `LedContinuation.frameMs` | 17 ms | what a program line with no timing lasts on the strip, counted in a loop's length |
+| `resumeFromDarkSeconds` | 2 s | off and back within this resumes the same animation where it would have been |
+| `LedContinuation.bridgeMs` | 60 ms | the longest bridge line, on which every lit LED moves to where it goes on from at the new brightness |
+| `LedContinuation.riseToPeakFrom` | 0.5 | a rising pulse at or past this share of its peak rises to the peak on the bridge; below it, it starts over from black |
 | Colour well pause | 0.3 s | a colour dragged in the colour panel is saved and written once it has paused this long (Colours, and the Playground's A colour) |
 | Settings status refresh | 2 s | the window re-reads the engine while open (`SettingsModel`) |
 
