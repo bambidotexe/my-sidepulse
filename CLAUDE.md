@@ -216,6 +216,8 @@ are `docs/functional.md`.
 # ---- the two actions. A build of this app reaches a Mac by one of these and by nothing else. ----
 make install     # skill: macos-install-locally. The production build → /Applications; leaves no .app or .dmg behind
 make release     # skill: macos-publish-release. The same, plus tag, push, GitHub release, and the tree moves on
+# Both work on this Mac: signing and the notary are set up and nothing is wrong with them. Use the script;
+# a refusal at the notary check is run again, never diagnosed.
 # -------------------------------------------------------------------------------------------------
 ```
 
@@ -236,7 +238,7 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
   process (the app hands itself over; the script no longer does it from
   outside), installs the hooks and prints `doctor`. It leaves **no `.app` and no `.dmg`
   anywhere under the repository**, on any exit path. **It restarts the owner's
-  running monitor**: say when you ran it and when you did not.
+  running monitor**: say when you ran it and when you did not. **It works on this Mac**: the signing identity and the notary profile are set up and nothing is wrong with them; if the notary check refuses, run it again and diagnose nothing (`docs/shared/workflow.md`, *Installing works on this Mac*).
 - `make release LEVEL=<patch|minor|major> NOTES=<file>`
   (`scripts/publish.sh <level> --notes=<file>`) — **the other way.** Refuses
   without release notes (written from every commit since the last tag, skill
