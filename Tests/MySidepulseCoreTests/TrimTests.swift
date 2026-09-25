@@ -137,9 +137,10 @@ final class TrimTests: XCTestCase {
 
     /// The transcript path rides only the turn-boundary events: enough for
     /// any session the app can rebuild, without paying ~120 bytes on every
-    /// tool event.
+    /// tool event. Codex's `Interrupt` is one: a session followed from its
+    /// interrupt on still names its rollout.
     func testTranscriptPathRecordedOnBoundaryEventsOnly() {
-        for name in ["SessionStart", "UserPromptSubmit", "Stop"] {
+        for name in ["SessionStart", "UserPromptSubmit", "Stop", "Interrupt"] {
             let e = Trim.journalEvent(fromHookPayload: payload([
                 "hook_event_name": name, "session_id": "s1",
                 "transcript_path": "/Users/x/.claude/projects/-p/abc.jsonl",

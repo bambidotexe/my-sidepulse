@@ -260,17 +260,40 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
   `idle`.
 - A session silent for `K.staleSeconds` (2 h) is forgotten.
 - A session whose agent process exits is forgotten at once (kqueue on the
-  pid). At launch, sessions whose pid is dead or is no longer that agent's
-  process are dropped.
+  pid), except that a Codex session hosted by the TUI is hosted by Codex's
+  managed daemon, one per user, alive across every TUI: the pid its hooks
+  record is the daemon's, and only the daemon's death forgets its sessions;
+  `codex exec` and the desktop app record their own process. At launch,
+  sessions whose pid is dead or is no longer that agent's process are
+  dropped; a Codex session whose pid is the daemon is kept, and the launch
+  check below decides it.
 
 ### When hooks say nothing
 
 Esc and Ctrl-C end a Claude Code turn without any hook, and hook delivery can
-stop mid-session. These rescues cover it, **for Claude Code sessions only**:
-they read Claude Code's own registry and transcript, which Codex has no
-counterpart of. Codex says its interrupts itself (`Interrupt`, above); a Codex
-`Stop` that never arrives leaves the roll until the session's process exits or
-the 2 h backstop.
+stop mid-session. For Claude Code sessions, the rescues below read Claude
+Code's own registry and transcript.
+
+Codex has no registry, but every Codex hook names the session's rollout file
+(`transcript_path`). A working Codex session quiet for `K.abandonQuietSeconds`
+with nothing out is checked against it every `K.abandonRecheckSeconds` and
+once at launch: a `task_complete` stamped after the last main-agent event is
+the lost `Stop` (`done`, with its push); a `turn_aborted` stamped after it is
+the interrupt (`idle`, dark); a `task_started` with no end keeps the session
+alive; an unreadable rollout decides nothing. An end marker that names the
+turn of the last main-agent event ends that turn however it is stamped: with
+the `Interrupt` hook lost, the aborted tool's late `PostToolUse` arrives after
+the `turn_aborted`. While the rollout says the turn runs, the 2 h backstop
+counts from its last line. A recorded path is read only when its file name
+names the session and it lies under `~/.codex/sessions/`; otherwise, and for
+a session no line gave a path, the newest `rollout-…-<session id>.jsonl`
+there is read. Only the last 64 KB of the file are read, and only its turn
+markers' types, turn ids and stamps.
+
+At launch, after the journal is replayed, the time rules run first (a
+session silent past the 2 h backstop is forgotten), then every working
+session of either agent is checked at once, with no quiet gate, before the
+strip is painted.
 
 | Situation | Signal | Result | Latency |
 |---|---|---|---|
@@ -279,6 +302,8 @@ the 2 h backstop.
 | Interrupted turn | same, but the transcript ends on an unanswered entry | `idle` (dark) | 20–35 s |
 | Same, transcript unreadable | — | `idle` after `K.abandonUndecidedDarkSeconds` (90 s) | 90 s |
 | Dialog answered with no hook | an open wait; the registry says `busy`, stamped more than `K.dialogAnswerMinStampLeadSeconds` (2 s) after the dialog | `working` | ≤ 15 s + |
+| Codex: lost `Stop` | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); the rollout's last turn marker is a `task_complete` stamped after the last main-agent event, or naming its turn | `done`, with its push | 20–35 s |
+| Codex: interrupted turn, `Interrupt` lost | same, but the marker is a `turn_aborted` | `idle` (dark), no push | 20–35 s |
 
 While the registry says `busy`, a quiet session is kept alive and stays
 `working`. The registry and open waits are re-read every
@@ -1071,8 +1096,9 @@ agent's colour while it works.
 | `staleSeconds` | 2 h | silent session forgotten |
 | `abortQuarantineSeconds` | 120 s | after an `Interrupt`, a tool or permission event without a turn id changes nothing |
 | `idleSignalMinQuietSeconds` | 50 s | quiet needed before `idle_prompt` counts as a lost Stop |
-| `abandonQuietSeconds` | 20 s | quiet before Claude's registry is consulted |
-| `abandonRecheckSeconds` | 15 s | registry / open-wait recheck |
+| `abandonQuietSeconds` | 20 s | quiet before Claude's registry or a Codex rollout is consulted |
+| `abandonRecheckSeconds` | 15 s | registry / rollout / open-wait recheck |
+| `CodexRolloutTail.tailBytes` | 64 KB | how much of a Codex rollout's end is read |
 | `abandonUndecidedDarkSeconds` | 90 s | dark when the transcript cannot decide |
 | `dialogAnswerMinStampLeadSeconds` | 2 s | busy stamp must be this much newer than the dialog |
 | `hooksSilentWarnSeconds` | 5 min | registry `busy` with no hook event → one log warning per session |

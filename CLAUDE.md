@@ -24,9 +24,11 @@ to a journal, saying which agent; the app follows the journal, folds it into a
 per-session state machine, picks one display state, and writes a small **text
 program** into `LEDS.LED` on the strip's mounted volume. The strip is a closed
 device: no firmware here, no USB or serial channel, no read-back — files on a
-volume are the whole protocol. Two side channels, both read-only and Claude's
-alone, cover what Claude's hooks miss: Claude Code's own process registry and
-the transcript tail; Codex says its interrupts itself.
+volume are the whole protocol. Read-only side channels cover what the hooks
+miss: for Claude Code, its own process registry and the transcript tail; for
+Codex, the session's rollout, whose turn markers say whether a quiet turn
+runs, finished or was aborted (the pid a Codex TUI session records is Codex's
+shared daemon, which proves nothing about the session).
 
 Two names, never to be confused: **SidePulse is the hardware** (its volumes are
 named `SidePulseDot…` / `SidePulsePro…`, which is how the LED count is read);
@@ -174,7 +176,7 @@ are `docs/functional.md`.
 | what a hook event means; a state or a transition | `Core/SessionStore.swift` (`apply`, `set`, `applyStopVerdict`), `Core/Event.swift` — pinned by `SessionStoreTests`, `GoldenReplayTests`, `CodexTests` | §4 |
 | an agent: which there are, its colour, how its sessions are told apart, what its events mean | `Core/Agent.swift` (`AgentKind`, `Agents`), `Core/LedPalette.swift` (`rollColors`), `SessionStore.apply` (`Interrupt`, `request_user_input`), `Platform/ProcWalk.swift` (`agent(of:)`, `classify(_:agent:)`), `Platform/HookCommand.swift`, `CLI/CLIMain.swift` (`hook --agent`) — `CodexTests`, `CodexPlatformTests` | §1, §3, §4, `pitfalls.md` *Detecting Codex* |
 | holds, expiry, the settle, any session timer | `SessionStore.tick` and `nextDeadline` (every timer needs both), `Core/Constants.swift` — `TimerTests`, `SettleTests` | §4, §3 *Settle*, §13 |
-| the rescues when hooks say nothing (Claude only) | `App/Engine.swift` `checkAbandonedTurns`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`; `SessionStore.finishTurn` / `abandonTurn` / `noteBusy` / `dialogAnswered` | §4 *When hooks say nothing*, `pitfalls.md` |
+| the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`, `checkCodexRollouts`, the launch check in `start`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`, `CodexRollout.swift`, `ProcWalk.isCodexDaemon`; `Core/CodexRolloutTail.swift` (the rollout's verdict and decision, which paths are trusted — `CodexRolloutTailTests`); `SessionStore.abandonCandidates` / `codexCandidates` / `finishTurn` / `abandonTurn` / `noteBusy` / `dialogAnswered` | §4 *When hooks say nothing*, *Expiry*, `pitfalls.md` |
 | which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `command(cliPath:agent:)`), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests`, `CodexPlatformTests` | §4 *Source*, §10, §11 |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
 | the precedence ladder, the split display, which agents a state names | `Core/Arbiter.swift` — `ArbiterTests`, `CodexTests` | §3 |
@@ -301,7 +303,9 @@ Full version in `docs/architecture.md`.
   `SessionStore` (the per-session state machine: `apply` folds an event, `tick`
   applies every time-based rule and returns the pushes that are due,
   `nextDeadline` says when to tick next) · `Event` + `JournalCodec` + `Trim`
-  (the journal line and its 4096-byte cap) · `Arbiter` (mode, power, sessions,
+  (the journal line and its 4096-byte cap) · `CodexRolloutTail` (what a
+  Codex rollout's tail says about a quiet turn, and which rollout paths are
+  trusted) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
   program text) · `LedPalette` (the nine colours the owner can change, which
   saved colour is trusted, and the colours a roll cycles through) ·
@@ -328,7 +332,7 @@ Full version in `docs/architecture.md`.
   `ProcWalk` (sysctl: the nearest agent process, Claude's or Codex's, its host
   app, its terminal tab) ·
   `ProcessWatcher` (kqueue exits) · `ClaudeProcessRegistry` + `TranscriptTail`
-  (the two side channels) · `TerminalTabProber` (osascript, Terminal and
+  (Claude's side channels) · `CodexRollout` (Codex's: the rollout's tail) · `TerminalTabProber` (osascript, Terminal and
   iTerm2) · **`LedWriter`** (the only code that writes `LEDS.LED`: one io queue,
   dedupe, 2 s watchdog) · `LedDevice` (identity = `st_dev`, `st_ino`) ·
   `Keepalive` · `Notifier` + `ClaudeSessions` (the only ntfy client) ·
@@ -485,10 +489,10 @@ Known limitations, in plain words — the authority is *Open issues* in
 - A Claude launched through an interpreter (`node …/cli.js`) is not recognised,
   so its death goes unnoticed until the 2 h backstop; the same for a Codex run
   that way.
-- Codex's states rest on its hooks alone: an interrupt is its own event and
-  goes dark at once, but a `Stop` that never arrives has no registry or
-  transcript rescue and stands until the process exits or the 2 h backstop.
-  Whether Codex fires `PreToolUse` for `request_user_input` is unobserved.
+- A Codex turn's lost `Stop` or `Interrupt` is read from its rollout within
+  about 35 s; a turn that ends in an error has no known rollout marker, and
+  with none it rolls until 2 h after the rollout's last line. Whether Codex
+  fires `PreToolUse` for `request_user_input` is unobserved.
 - The shared roll (both agents working: one colour per pass on the whole
   strip, one per LED under a zone), its recolour tail and its pass-end
   handover are pinned by exact text and the phase sweeps, and have not been

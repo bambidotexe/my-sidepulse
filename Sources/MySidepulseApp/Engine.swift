@@ -79,6 +79,9 @@ final class Engine {
     /// has lost its hooks (both worth exactly one loud line).
     private var warnedNoRegistry: Set<String> = []
     private var warnedHooksSilent: Set<String> = []
+    /// The same canary for a quiet Codex session whose rollout cannot be
+    /// read or holds no turn marker.
+    private var warnedNoRollout: Set<String> = []
     /// Notification delivery touches the filesystem (the sessions directory)
     /// and the network, neither of which belongs on the queue that owns the
     /// state and paints the strip.
@@ -149,15 +152,33 @@ final class Engine {
             // Everything queued by the drain has now been applied.
             self.replaying = false
             // Alive is not enough: a pid recycled while the app was down
-            // must not keep a dead session's state on the strip.
+            // must not keep a dead session's state on the strip. A Codex
+            // TUI session's pid is Codex's managed daemon, alive across
+            // every TUI, which proves nothing about the session: it is
+            // kept, and the launch check below reads its rollout.
             self.store.pruneDead { agent, pid in
-                (kill(pid, 0) == 0 || errno == EPERM) && ProcWalk.looksLike(agent, pid: pid)
+                guard kill(pid, 0) == 0 || errno == EPERM else { return false }
+                if agent == .codex, let info = ProcWalk.info(for: pid), ProcWalk.isCodexDaemon(info) {
+                    return true
+                }
+                return ProcWalk.looksLike(agent, pid: pid)
             }
             // Replayed alerts must not push again: a deadline already long
             // past either fired in the previous instance or was abandoned
             // there. Without this, every `make install` under a standing
             // alert would re-deliver its push a minute later.
             self.store.dropStaleNotifications(now: Date())
+            // The time rules first, so a session silent past the staleness
+            // backstop is dropped rather than revived by a rollout that
+            // still says its turn runs; then every working turn is checked
+            // against the registry or its rollout before the first paint,
+            // with no quiet gate: the hooks that could have ended it fired
+            // while the app was away, or never.
+            let now = Date()
+            let alerts = self.store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
+            self.jobs.tick(now: now)
+            if !alerts.isEmpty { self.deliver(alerts) }
+            self.checkAbandonedTurns(now: now, quietSeconds: 0)
             self.armProcessWatchers()
             // Hooks append while the app is away and only the app rotates, so
             // a long absence needs this catch-up — otherwise the journal only
@@ -594,8 +615,11 @@ final class Engine {
     /// (silent thinking, or dead hooks) → stay on the roll and keep the
     /// session alive. Anything else — no record, wrong session, stale
     /// stamp, unknown status — proves nothing and changes nothing.
-    private func checkAbandonedTurns(now: Date) {
-        for (sessionId, pid) in store.abandonCandidates(at: now) {
+    /// A quiet Codex turn is read from its rollout instead
+    /// (`checkCodexRollouts`). `quietSeconds` is the quiet gate: 0 for the
+    /// launch check.
+    private func checkAbandonedTurns(now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds) {
+        for (sessionId, pid) in store.abandonCandidates(at: now, quietSeconds: quietSeconds) {
             guard let record = ClaudeProcessRegistry.read(pid: pid),
                   record.sessionId == sessionId else {
                 if warnedNoRegistry.insert(sessionId).inserted {
@@ -675,6 +699,60 @@ final class Engine {
                 dialog opened — back to working
                 """)
             store.dialogAnswered(sessionId: sessionId, now: now)
+        }
+        checkCodexRollouts(now: now, quietSeconds: quietSeconds)
+    }
+
+    /// Codex has no registry, but its rollout records every turn's start
+    /// and end. `CodexRolloutTail` decides; this only reads the file (the
+    /// recorded path when Core trusts it, else the one found by session id),
+    /// maps the decision onto the store and logs identifiers, never a line
+    /// of the file.
+    private func checkCodexRollouts(now: Date, quietSeconds: TimeInterval) {
+        for (sessionId, recorded) in store.codexCandidates(at: now, quietSeconds: quietSeconds) {
+            guard let session = store.sessions[sessionId] else { continue }
+            let verdict = CodexRollout.path(recorded: recorded, sessionId: sessionId, codexHome: Paths.codexHome)
+                .flatMap(CodexRollout.read(path:))
+                .map(CodexRolloutTail.verdict(tail:)) ?? .unreadable
+            switch CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt,
+                                             lastMainTurnId: session.lastMainTurnId) {
+            case .finished:
+                Log.app.notice("""
+                    lost Stop recovered: Codex session \(sessionId, privacy: .public) — rollout \
+                    ends on task_complete — finished
+                    """)
+                store.finishTurn(sessionId: sessionId, now: now)
+            case .aborted:
+                Log.app.notice("""
+                    turn abandoned: Codex session \(sessionId, privacy: .public) — rollout ends \
+                    on turn_aborted — going dark
+                    """)
+                store.abandonTurn(sessionId: sessionId, now: now)
+            case .busy:
+                if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
+                   warnedHooksSilent.insert(sessionId).inserted {
+                    Log.app.warning("""
+                        hooks look dead for Codex session \(sessionId, privacy: .public): its \
+                        rollout says the turn runs but no hook event has arrived for over five \
+                        minutes — its finishes and questions cannot be shown until the hooks \
+                        run again
+                        """)
+                }
+                // Alive as of the rollout's last line: a turn that died with
+                // no end marker stops writing, and still meets the 2 h
+                // backstop that long after it.
+                var writtenAt = now
+                if case .running(_, let at) = verdict { writtenAt = min(at, now) }
+                store.noteBusy(sessionId: sessionId, now: writtenAt)
+            case .nothing:
+                if verdict == .unreadable, warnedNoRollout.insert(sessionId).inserted {
+                    Log.app.warning("""
+                        quiet Codex turn undecidable: session \(sessionId, privacy: .public) — \
+                        its rollout cannot be read or holds no turn marker; it stands until \
+                        the rollout says more, a hook arrives, or the 2 h staleness backstop
+                        """)
+                }
+            }
         }
     }
 

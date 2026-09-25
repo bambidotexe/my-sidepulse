@@ -66,11 +66,12 @@ public struct JournalEvent: Codable, Equatable {
     /// acknowledgement to the tab actually being looked at.
     public var tty: String?
     /// The session transcript file, recorded on the turn-boundary events
-    /// only (SessionStart, UserPromptSubmit, Stop) to keep the journal
-    /// lean. Read when a quiet turn's registry says idle, to tell an
-    /// interrupt (last entry: an unanswered user message) from a finish
-    /// whose Stop was lost (last entry: an assistant message that says
-    /// end_turn).
+    /// only (SessionStart, UserPromptSubmit, Stop, Interrupt) to keep the
+    /// journal lean. For Claude Code, read when a quiet turn's registry
+    /// says idle, to tell an interrupt (last entry: an unanswered user
+    /// message) from a finish whose Stop was lost (last entry: an assistant
+    /// message that says end_turn). For Codex it is the session's rollout,
+    /// read when a turn goes quiet (`CodexRolloutTail`).
     public var transcriptPath: String?
     public var cwd: String?
     public var permissionMode: String?

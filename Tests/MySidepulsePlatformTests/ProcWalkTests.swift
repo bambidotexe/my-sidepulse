@@ -192,6 +192,33 @@ final class ProcWalkTests: XCTestCase {
         XCTAssertNil(ProcWalk.ttyName(forDevice: UInt32.max))
     }
 
+    /// Codex's managed daemon (`codex app-server --listen unix:// --managed-daemon`,
+    /// run from `~/.codex/packages/app-server-daemon/…/bin/codex`) hosts every
+    /// TUI session's hooks, so its pid is what they record. It is told apart
+    /// by its arguments, or by its install folder when they cannot be read.
+    func testTheManagedDaemonIsRecognisedByItsArguments() throws {
+        let stand = Process()
+        stand.executableURL = URL(fileURLWithPath: "/bin/sh")
+        stand.arguments = ["-c", "sleep 30; :", "app-server", "--listen", "unix://", "--managed-daemon"]
+        try stand.run()
+        addTeardownBlock { stand.terminate() }
+        let info = try XCTUnwrap(ProcWalk.info(for: stand.processIdentifier))
+        XCTAssertEqual(ProcWalk.arguments(for: stand.processIdentifier)?.contains("app-server"), true)
+        XCTAssertTrue(ProcWalk.isCodexDaemon(info))
+
+        let me = try XCTUnwrap(ProcWalk.info(for: getpid()))
+        XCTAssertFalse(ProcWalk.isCodexDaemon(me))
+
+        func gone(_ path: String) -> ProcWalk.ProcInfo {
+            ProcWalk.ProcInfo(pid: 999_999, ppid: 1, name: "codex", path: path)
+        }
+        XCTAssertTrue(ProcWalk.isCodexDaemon(gone(
+            "/Users/u/.codex/packages/app-server-daemon/releases/0.157.0-aarch64-apple-darwin/bin/codex")))
+        XCTAssertFalse(ProcWalk.isCodexDaemon(gone(
+            "/Users/u/.codex/packages/standalone/releases/0.157.0-aarch64-apple-darwin/bin/codex")))
+        XCTAssertFalse(ProcWalk.isCodexDaemon(gone("/Applications/ChatGPT.app/Contents/Resources/codex")))
+    }
+
     func testBootDateIsPast() throws {
         let boot = try XCTUnwrap(BootTime.bootDate())
         XCTAssertLessThan(boot, Date())

@@ -33,8 +33,9 @@ public enum Trim {
         e.errorType = clamp(obj["error_type"])
         e.isInterrupt = obj["is_interrupt"] as? Bool
         // Turn boundaries only: enough for any session the app can rebuild,
-        // without paying the path on every tool event.
-        if event == .sessionStart || event == .userPromptSubmit || event == .stop {
+        // without paying the path on every tool event. Codex's `Interrupt`
+        // is one, so a session first seen at its interrupt names its rollout.
+        if event == .sessionStart || event == .userPromptSubmit || event == .stop || event == .interrupt {
             e.transcriptPath = clamp(obj["transcript_path"])
         }
         e.cwd = obj["cwd"] as? String

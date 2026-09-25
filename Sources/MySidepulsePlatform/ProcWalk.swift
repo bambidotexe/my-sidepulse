@@ -120,6 +120,44 @@ public enum ProcWalk {
         return nil
     }
 
+    /// A process's argv, from the same KERN_PROCARGS2 buffer: argc, the exec
+    /// path, its padding NULs, then argc NUL-terminated strings. Nil when
+    /// the process is gone or the buffer cannot be read.
+    public static func arguments(for pid: Int32) -> [String]? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
+            return nil
+        }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+        var argc: Int32 = 0
+        withUnsafeMutableBytes(of: &argc) { $0.copyBytes(from: buffer.prefix(MemoryLayout<Int32>.size)) }
+        var index = MemoryLayout<Int32>.size
+        while index < size, buffer[index] != 0 { index += 1 }
+        while index < size, buffer[index] == 0 { index += 1 }
+        var out: [String] = []
+        while out.count < Int(argc), index < size {
+            var end = index
+            while end < size, buffer[end] != 0 { end += 1 }
+            out.append(String(decoding: buffer[index..<end], as: UTF8.self))
+            index = end + 1
+        }
+        return out
+    }
+
+    /// Codex's managed daemon, `codex app-server --listen unix:// --managed-daemon`,
+    /// installed under `~/.codex/packages/app-server-daemon/`: one per user,
+    /// started by the first TUI and parented by launchd, alive across every
+    /// TUI. It spawns every TUI session's hooks, so the pid those hooks
+    /// record is its own, and its being alive proves nothing about any one
+    /// session. Told apart by its arguments, or by its install folder when
+    /// they cannot be read.
+    public static func isCodexDaemon(_ info: ProcInfo) -> Bool {
+        if let args = arguments(for: info.pid), args.dropFirst().contains("app-server") { return true }
+        return info.path?.contains("/app-server-daemon/") ?? false
+    }
+
     /// True for a path that belongs to a Claude Code install. Both real shapes
     /// must match: the symlink launcher `~/.local/bin/claude`, and the native
     /// installer's versioned target `~/.local/share/claude/versions/<version>`,

@@ -185,16 +185,23 @@ public enum K {
     /// CPU sampling cannot serve here instead: an idle Claude with a
     /// statusline and MCP servers burns about 4 % of a core in bursts,
     /// indistinguishable from light work by any absolute threshold.
+    ///
+    /// A quiet Codex session is checked against its rollout after the same
+    /// silence: the rollout's turn markers say running, complete or aborted
+    /// on their own, and Codex writes its end marker within milliseconds of
+    /// the hook that would have reported it (`turn_aborted` 1 ms after the
+    /// `Interrupt` was logged, session 01a0d9e4), so 20 s races nothing.
     public static let abandonQuietSeconds: TimeInterval = 20
     /// When the registry says idle but the transcript cannot say HOW the
     /// turn ended (no recorded path, unreadable file, nothing substantive
     /// in the tail), dark still happens — at this conservative distance.
     public static let abandonUndecidedDarkSeconds: TimeInterval = 90
-    /// Re-read cadence for the registry while a session stays quiet, and
-    /// therefore the detection latency on top of the gate. Also the cadence
-    /// for re-checking open waits (question/permission/plan) for having
-    /// been answered without any hook firing. Both reads are two small
-    /// files; 15 s keeps a Ctrl-C's stale roll under ~35 s end to end.
+    /// Re-read cadence for the registry, or a Codex session's rollout,
+    /// while a session stays quiet, and therefore the detection latency on
+    /// top of the gate. Also the cadence for re-checking open waits
+    /// (question/permission/plan) for having been answered without any
+    /// hook firing. The reads are small files, a rollout at most its last
+    /// 64 KB; 15 s keeps a lost end's stale roll under ~35 s end to end.
     public static let abandonRecheckSeconds: TimeInterval = 15
     /// How long a session may report `busy` in Claude Code's registry with
     /// no hook event arriving before the log warns, once per session, that

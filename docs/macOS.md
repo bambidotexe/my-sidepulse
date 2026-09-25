@@ -93,7 +93,36 @@ agent's process (the nearest Claude Code or Codex ancestor: Claude by a
 `claude` name or path component, Codex by a `codex` one, which covers the
 standalone release under `~/.codex/packages`, the `~/.local/bin` launcher and
 the copy inside `ChatGPT.app`), its host app and its terminal tab, and how the
-app reads a Claude process's `CLAUDE_CONFIG_DIR`.
+app reads a Claude process's `CLAUDE_CONFIG_DIR` and tells Codex's daemon by
+its arguments.
+
+Codex's TUI does not run its sessions' hooks itself: Codex's managed daemon
+does, `codex app-server --listen unix:// --managed-daemon`, installed under
+`~/.codex/packages/app-server-daemon/releases/<version>/bin/codex`, one per
+user, started by the first TUI, parented by launchd and alive across every
+TUI. It keeps a thread loaded for 30 min after its last
+subscriber is gone, so a killed TUI does not stop a running turn. The nearest
+`codex` in a TUI hook's ancestry is therefore the daemon, and every TUI
+session records the daemon's pid; `ProcWalk.isCodexDaemon` recognises it by an
+`app-server` argument (`KERN_PROCARGS2`) or, when the arguments cannot be
+read, by the `/app-server-daemon/` folder. `codex exec` runs in its own
+process, and the ChatGPT app's threads run under the app's own `codex`.
+
+Codex writes one rollout per session,
+`~/.codex/sessions/YYYY/MM/DD/rollout-<stamp>-<session id>.jsonl`, and names
+it in every hook payload as `transcript_path`. Each line is a JSON object with
+a `timestamp` (ISO 8601, milliseconds, UTC) and a `type`; the turn-level lines
+are `type: "event_msg"` with `payload.type` `task_started`, `task_complete` or
+`turn_aborted`, each carrying `payload.turn_id`, and they balance exactly (399
+started, 392 complete, 7 aborted across the 55 rollouts of 2026-09-25).
+`item_completed`, `token_count` and `thread_settings_applied` are item-level,
+and an `item_completed` can follow a `turn_aborted` for the same turn. The rest
+of a line is the conversation; the app reads the last 64 KB of the file, keeps
+the types, turn ids and stamps, and nothing else. Codex sends the same
+`turn_id` on every hook event but `SessionStart` and `SessionEnd`. It fires
+`SessionStart` lazily, at the first prompt rather than when the TUI opens, so a
+thread quit before any prompt sends a `SessionEnd` alone; `SessionEnd` fires at
+thread shutdown, every clean TUI exit, and its `reason` is always `other`.
 
 ## Permissions
 
@@ -145,7 +174,8 @@ Files touched outside the app's own directory: `~/.claude/settings.json`
 (read and written by `install-hooks` / `uninstall-hooks` and by Settings ›
 General › Hooks, after a backup), `~/.zshrc` (the app's own block, written and
 removed from the same Hooks rows),
-`<config>/sessions/*.json` and the session transcript (read only).
+`<config>/sessions/*.json` and the session transcript (read only), and a Codex
+session's rollout under `~/.codex/sessions/` (its last 64 KB, read only).
 
 ## launchd
 

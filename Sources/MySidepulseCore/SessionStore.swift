@@ -533,12 +533,14 @@ public struct SessionStore {
             if s.state == .done {
                 deadlines.append(s.stateSince.addingTimeInterval(K.doneVisibleSeconds))
             }
-            if s.state == .working, !s.pendingDone, s.agent == .claude, s.agentPid != nil {
+            if s.state == .working, !s.pendingDone, s.agent == .codex || s.agentPid != nil {
                 // The abandoned-turn watch: wake when the session becomes
-                // eligible for its first registry read, then keep waking on
-                // the recheck cadence while it stays eligible. See
-                // `abandonCandidates(at:)` and Engine's registry check.
-                // Claude only: the registry is Claude Code's.
+                // eligible for its first read, then keep waking on the
+                // recheck cadence while it stays eligible. See
+                // `abandonCandidates` and `codexCandidates`, and Engine's
+                // check. A Claude session is read through its pid's
+                // registry record; a Codex one through its rollout, which
+                // needs no pid.
                 let eligibleAt = s.lastEventAt.addingTimeInterval(K.abandonQuietSeconds)
                 deadlines.append(eligibleAt > now
                                  ? eligibleAt
@@ -565,7 +567,10 @@ public struct SessionStore {
 
     /// Startup prune after journal replay: drop sessions whose recorded
     /// process no longer exists, or is no longer that agent's. Sessions
-    /// without a pid are left to staleness.
+    /// without a pid are left to staleness. A live pid is not proof of a
+    /// live Codex session: a TUI session's pid is Codex's managed daemon,
+    /// alive across every TUI, so such a session is kept and the launch
+    /// check reads its rollout (`codexCandidates` with no quiet gate).
     public mutating func pruneDead(isAlive: (AgentKind, Int32) -> Bool) {
         sessions = sessions.filter { entry in
             entry.value.agentPid.map { isAlive(entry.value.agent, $0) } ?? true
@@ -592,19 +597,37 @@ public struct SessionStore {
     }
 
     /// Sessions that look abandoned — a turn with no events, no live
-    /// helpers, no background shells for `abandonQuietSeconds` — and can be
+    /// helpers, no background shells for `quietSeconds` — and can be
     /// checked against Claude Code's own process registry. The read itself
     /// touches the filesystem and lives in the app; a session only reaches
     /// it with a pid to look up, and only a Claude session does: Codex has
-    /// no registry, and says its interrupts itself (`Interrupt`).
-    public func abandonCandidates(at now: Date) -> [(sessionId: String, pid: Int32)] {
-        sessions.values.compactMap { s in
-            guard s.agent == .claude, s.state == .working, !s.pendingDone, let pid = s.agentPid,
-                  !s.hasLiveHelpers(at: now), s.backgroundIds.isEmpty,
-                  now.timeIntervalSince(s.lastEventAt) >= K.abandonQuietSeconds
+    /// no registry, and its quiet sessions are `codexCandidates`. The
+    /// launch check passes no quiet gate (0).
+    public func abandonCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
+    -> [(sessionId: String, pid: Int32)] {
+        sessions.values.sorted { $0.id < $1.id }.compactMap { s in
+            guard s.agent == .claude, let pid = s.agentPid, Self.isQuietTurn(s, at: now, quietSeconds)
             else { return nil }
             return (s.id, pid)
         }
+    }
+
+    /// The same quiet turns among Codex sessions, checked against the
+    /// session's rollout, which every Codex hook names (`transcript_path`).
+    /// No pid is needed: the file is the session's own, and the pid a TUI
+    /// session records is Codex's shared daemon. The path is nil when no
+    /// line recorded one; the app then looks the rollout up by session id.
+    public func codexCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
+    -> [(sessionId: String, transcriptPath: String?)] {
+        sessions.values.sorted { $0.id < $1.id }.compactMap { s in
+            guard s.agent == .codex, Self.isQuietTurn(s, at: now, quietSeconds) else { return nil }
+            return (s.id, s.transcriptPath)
+        }
+    }
+
+    private static func isQuietTurn(_ s: Session, at now: Date, _ quietSeconds: TimeInterval) -> Bool {
+        s.state == .working && !s.pendingDone && !s.hasLiveHelpers(at: now) && s.backgroundIds.isEmpty
+            && now.timeIntervalSince(s.lastEventAt) >= quietSeconds
     }
 
     /// The interrupt ending: Esc or Ctrl-C mid-turn fires no hook at all
@@ -612,7 +635,8 @@ public struct SessionStore {
     /// idle_prompt, nothing), so the working roll would stand until the 2 h
     /// staleness backstop. When Claude's own registry says the process is
     /// sitting idle at its prompt and the transcript shows no completed
-    /// answer, the turn is over and delivered nothing: dark.
+    /// answer, or a Codex rollout ends on `turn_aborted`, the turn is over
+    /// and delivered nothing: dark, with no alert and no push.
     public mutating func abandonTurn(sessionId: String, now: Date) {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
         set(&s, .idle, now)
@@ -627,7 +651,8 @@ public struct SessionStore {
     /// it takes the same verdict a Stop takes — green, or held behind
     /// still-live helpers — and the "Finished" push that goes with it.
     /// Works during full hook outages, where the idle_prompt rescue (a
-    /// hook itself) cannot.
+    /// hook itself) cannot. A Codex rollout that ends on `task_complete` is
+    /// the same proof.
     public mutating func finishTurn(sessionId: String, now: Date) {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
         applyStopVerdict(&s, now: now)
@@ -643,9 +668,14 @@ public struct SessionStore {
     /// it as liveness so the 2 h staleness backstop cannot delete a session
     /// that is demonstrably still working, and so the quiet gate re-arms.
     /// It re-arms nothing else: no state change, no alert, no ack churn.
+    /// `now` is when the agent was last seen working: the registry's read
+    /// time, or the last line of a Codex rollout that says its turn runs,
+    /// so a turn that died without an end marker, and so stopped writing,
+    /// still meets the backstop 2 h after its last line. Liveness never
+    /// moves backwards.
     public mutating func noteBusy(sessionId: String, now: Date) {
         guard var s = sessions[sessionId], s.state == .working else { return }
-        s.lastEventAt = now
+        s.lastEventAt = max(s.lastEventAt, now)
         sessions[sessionId] = s
     }
 

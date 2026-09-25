@@ -87,7 +87,7 @@ queue. Every input funnels into one method:
 sync():
   alerts   = store.tick(now, userPresent)      // holds, settle, expiry, due pushes
   jobs.tick(now)
-  checkAbandonedTurns(now)                     // registry + transcript rescues
+  checkAbandonedTurns(now)                     // registry + transcript rescues, Codex rollouts
   deliver(alerts)                              // → notify queue
   decision = Arbiter.decide(...)
   pre-paint acknowledgement if the user is typing in the host app
@@ -141,6 +141,7 @@ after it.
 | Agent processes, Claude's and Codex's | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
 | Claude's own registry | `<config>/sessions/<pid>.json`, read only for quiet `working` turns and open waits of Claude sessions (`ClaudeProcessRegistry`); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered` |
 | Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
+| Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read only for quiet `working` Codex sessions (`SessionStore.codexCandidates`); the recorded `transcript_path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
 | Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
 | Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
@@ -149,9 +150,13 @@ after it.
 | The onboarding's five rows | a 2 s `Timer` while the wizard is up, plus `didBecomeKey`; nothing tells an app that a grant was made in System Settings | each row's own trailing control (`OnboardingCatalog`, `GrantRow`) |
 | The Settings window | a 2 s `Timer` while it is open (`SettingsModel.windowVisible`): the engine's status and the notification permission. The hook files when the window opens, when System or Health is shown and after a hook button. The doctor and the crash reports (`CrashReports`) when Health is shown and on Check Again, never on a timer | the pages; Health's two tables are `HealthReport.checks(for:)` and `readings(for:)` of `SettingsModel.healthFacts`, built in Core |
 
-Nothing polls either agent. The registry and transcript are read on the
-engine's own deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`),
-for Claude sessions only, never on a free-running timer.
+Nothing polls either agent. The registry and transcript (Claude sessions)
+and the rollout (Codex sessions) are read on the engine's own deadlines
+(`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`), never on a free-running
+timer, and once at launch: after the replay, `pruneDead` (which keeps a Codex
+session whose pid is the managed daemon, `ProcWalk.isCodexDaemon`), then
+`dropStaleNotifications`, the stores' `tick`, `checkAbandonedTurns` with no
+quiet gate, and only then the first `sync()`.
 
 ## Threading
 

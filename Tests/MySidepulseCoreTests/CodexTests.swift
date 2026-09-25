@@ -391,9 +391,10 @@ final class CodexTests: XCTestCase {
         XCTAssertEqual(K.abortQuarantineSeconds, 120)
     }
 
-    /// Claude's rescues read Claude Code's registry and transcript, which a
-    /// Codex session has no counterpart of: it is never a candidate, and no
-    /// recheck is scheduled for it.
+    /// Claude's rescues read Claude Code's registry, which a Codex session
+    /// has no counterpart of: it is never a registry candidate, and its open
+    /// waits are not re-read. Its quiet turns are checked against its
+    /// rollout instead (`codexCandidates`).
     func testTheRegistryRescuesAreClaudesAlone() {
         var s = SessionStore()
         var prompt = ev(.userPromptSubmit, 0, pid: 77)
@@ -401,8 +402,7 @@ final class CodexTests: XCTestCase {
         s.apply(prompt)
         s.apply(ev(.preToolUse, 1, tool: "shell"))
         XCTAssertTrue(s.abandonCandidates(at: at(100)).isEmpty)
-        XCTAssertEqual(s.nextDeadline(after: at(100)), at(K.staleSeconds + 1),
-                       "nothing but the staleness backstop")
+        XCTAssertEqual(s.codexCandidates(at: at(100)).map(\.sessionId), ["s1"])
         s.apply(ev(.permissionRequest, 200, tool: "shell"))
         XCTAssertTrue(s.openWaitCandidates().isEmpty)
 

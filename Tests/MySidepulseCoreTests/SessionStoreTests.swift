@@ -921,4 +921,122 @@ final class SessionStoreTests: XCTestCase {
         }
         XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, (2..<10).map { "t\($0)" })
     }
+
+    // MARK: Codex's rollout check
+
+    /// A Codex event: the agent says who, and the pid is the one the hook
+    /// recorded, the managed daemon's for a TUI session.
+    func codex(_ name: HookEventName, _ t: TimeInterval, sid: String = "c1", tool: String? = nil,
+               pid: Int32? = 40531, turn: String? = nil, rollout: String? = nil) -> JournalEvent {
+        var e = ev(name, t, sid: sid, tool: tool, pid: pid, turn: turn)
+        e.agent = .codex
+        e.transcriptPath = rollout
+        return e
+    }
+
+    func testAQuietCodexSessionIsACandidateAndAClaudeOneIsNot() {
+        let rollout = "/Users/u/.codex/sessions/2026/09/25/rollout-2026-09-25T18-50-00-c1.jsonl"
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1", rollout: rollout))
+        s.apply(codex(.preToolUse, 1, tool: "shell", turn: "t1"))
+        s.apply(codex(.userPromptSubmit, 0, sid: "c2", pid: nil, turn: "u1"))
+        s.apply(ev(.userPromptSubmit, 0, sid: "a1", pid: 78))
+        s.apply(ev(.preToolUse, 1, sid: "a1", tool: "Bash"))
+
+        XCTAssertTrue(s.codexCandidates(at: at(5)).isEmpty, "not quiet yet")
+        let quiet = s.codexCandidates(at: at(1 + K.abandonQuietSeconds))
+        XCTAssertEqual(quiet.map(\.sessionId), ["c1", "c2"], "a pid is not needed: the rollout is the session's")
+        XCTAssertEqual(quiet.first?.transcriptPath, rollout)
+        XCTAssertNil(quiet.last?.transcriptPath)
+        XCTAssertEqual(s.abandonCandidates(at: at(100)).map(\.sessionId), ["a1"],
+                       "the registry rescue stays Claude's")
+        XCTAssertEqual(s.codexCandidates(at: at(5), quietSeconds: 0).map(\.sessionId), ["c1", "c2"],
+                       "the launch check has no quiet gate")
+        XCTAssertEqual(s.abandonCandidates(at: at(5), quietSeconds: 0).map(\.sessionId), ["a1"])
+
+        s.apply(codex(.stop, 30, turn: "t1"))
+        s.apply(codex(.subagentStart, 30, sid: "c2", pid: nil, turn: "u1"))
+        var helper = codex(.preToolUse, 31, sid: "c2", tool: "shell", pid: nil, turn: "u1")
+        helper.agentId = "h1"
+        s.apply(helper)
+        XCTAssertTrue(s.codexCandidates(at: at(100)).isEmpty,
+                      "a finished session, or one with a helper out, is not a candidate")
+    }
+
+    /// `turn_aborted` is the interrupt: dark, no alert, no push, and the
+    /// turn is closed, so the aborted tool's late event changes nothing.
+    /// `task_complete` is the lost Stop, with the push a Stop earns.
+    func testAnAbortedRolloutGoesDarkWithoutAPush() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.preToolUse, 1, tool: "shell", turn: "t1"))
+        s.abandonTurn(sessionId: "c1", now: at(30))
+        XCTAssertEqual(state(s, "c1"), .idle)
+        XCTAssertNil(s.sessions["c1"]?.notifyAt)
+        XCTAssertTrue(s.tick(now: at(30 + K.notifyDebounceSeconds + 1)).isEmpty)
+        s.apply(codex(.postToolUse, 40, tool: "shell", turn: "t1"))
+        XCTAssertEqual(state(s, "c1"), .idle, "the aborted tool's late end does not reopen the turn")
+
+        s.apply(codex(.userPromptSubmit, 100, sid: "c2", turn: "u1"))
+        s.finishTurn(sessionId: "c2", now: at(130))
+        XCTAssertEqual(state(s, "c2"), .done)
+        XCTAssertEqual(s.sessions["c2"]?.notifyAt, at(130 + K.notifyDebounceSeconds))
+        let pushed = s.tick(now: at(130 + K.notifyDebounceSeconds))
+        XCTAssertEqual(pushed.map(\.sessionId), ["c2"])
+        XCTAssertEqual(pushed.first?.agent, .codex)
+        XCTAssertEqual(pushed.first?.kind, .finished)
+    }
+
+    func testNextDeadlineCoversTheCodexRecheck() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.preToolUse, 1, tool: "shell", turn: "t1"))
+        XCTAssertEqual(s.nextDeadline(after: at(5)), at(1 + K.abandonQuietSeconds),
+                       "wake when the session becomes a candidate")
+        XCTAssertEqual(s.nextDeadline(after: at(100)), at(100 + K.abandonRecheckSeconds),
+                       "then on the recheck cadence while it stays one")
+
+        var pidless = SessionStore()
+        pidless.apply(codex(.userPromptSubmit, 0, pid: nil, turn: "t1"))
+        XCTAssertEqual(pidless.nextDeadline(after: at(100)), at(100 + K.abandonRecheckSeconds),
+                       "the rollout needs no pid")
+
+        var claude = SessionStore()
+        claude.apply(ev(.userPromptSubmit, 0))
+        XCTAssertEqual(claude.nextDeadline(after: at(100)), at(K.staleSeconds),
+                       "a Claude session without a pid has no registry to read")
+    }
+
+    /// A rollout that says the turn runs keeps the session alive as of its
+    /// last line, never earlier than the session's own last event: a turn
+    /// that died without an end marker stops writing, and the 2 h backstop
+    /// still meets it.
+    func testABusyRolloutKeepsTheSessionAliveFromItsLastLine() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.noteBusy(sessionId: "c1", now: at(600))
+        XCTAssertEqual(s.sessions["c1"]?.lastEventAt, at(600))
+        XCTAssertEqual(s.sessions["c1"]?.lastMainEventAt, at(0), "hook silence is still measured")
+        s.noteBusy(sessionId: "c1", now: at(300))
+        XCTAssertEqual(s.sessions["c1"]?.lastEventAt, at(600), "liveness never moves backwards")
+        s.tick(now: at(600 + K.staleSeconds))
+        XCTAssertNil(s.sessions["c1"], "forgotten 2 h after the rollout's last line")
+    }
+
+    /// Every TUI session's hooks record the managed daemon's pid, which
+    /// stays alive across every TUI: the prune keeps them, and the launch
+    /// check, which has no quiet gate, decides each one from its rollout.
+    /// A dead pid still drops its sessions, the daemon's included.
+    func testPruneKeepsADaemonHostedSessionForTheCodexCheck() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, sid: "c1", turn: "t1"))
+        s.apply(codex(.userPromptSubmit, 1, sid: "c2", turn: "u1"))
+        s.apply(codex(.userPromptSubmit, 2, sid: "c3", pid: 555, turn: "x1"))
+        s.pruneDead { agent, pid in agent == .codex && pid == 40531 }
+        XCTAssertEqual(s.sessions.keys.sorted(), ["c1", "c2"])
+        XCTAssertEqual(s.codexCandidates(at: at(3), quietSeconds: 0).map(\.sessionId), ["c1", "c2"])
+
+        s.processExited(pid: 40531)
+        XCTAssertTrue(s.sessions.isEmpty, "the daemon's death forgets every session it hosted")
+    }
 }
