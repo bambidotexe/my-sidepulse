@@ -67,10 +67,10 @@ struct PlaygroundPage: View {
     var body: some View {
         let t = Loc.settings.playground
         SettingsPage {
-            SettingsGroup(title: t.onTheStripTitle, notes: [stripNote]) {
+            SettingsGroup(title: t.onTheStripTitle, notes: stripNotes) {
                 SettingsRowFrame {
                     StripPreviewView(state: heroState, power: heroPower,
-                                     ledCount: ledCount, dotSize: 18)
+                                     ledCount: ledCount, dotSize: 18, palette: model.palette)
                         .frame(maxWidth: .infinity)
                 }
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -132,7 +132,7 @@ struct PlaygroundPage: View {
                          label: { title(of: $0) }) { id in
                     StripPreviewView(state: state(of: id),
                                      power: id == "glance" ? glancePower : nil,
-                                     ledCount: ledCount, dotSize: 7)
+                                     ledCount: ledCount, dotSize: 7, palette: model.palette)
                 }
             }
 
@@ -140,7 +140,8 @@ struct PlaygroundPage: View {
                           notes: [t.effectsNote]) {
                 TileGrid(options: effectCards.map(\.id), perRow: 3, selection: tileSelection,
                          label: { title(of: $0) }) { id in
-                    StripPreviewView(state: .effect(id), ledCount: ledCount, dotSize: 7)
+                    StripPreviewView(state: .effect(id), ledCount: ledCount, dotSize: 7,
+                                     palette: model.palette)
                 }
             }
         }
@@ -185,9 +186,8 @@ struct PlaygroundPage: View {
 
     private var ledCount: Int { model.status?.devices?.first?.leds ?? K.defaultLedCount }
 
-    private var stripNote: String {
-        let t = Loc.settings.playground
-        return (model.status?.devices ?? []).isEmpty ? t.stripNoteNoDevice : t.stripNotePresent
+    private var stripNotes: [String] {
+        (model.status?.devices ?? []).isEmpty ? [Loc.settings.playground.stripNoteNoDevice] : []
     }
 
     /// The hint describes the SELECTED card only: the tiles already show them all.

@@ -27,6 +27,11 @@ struct AppConfig: Codable {
     ///
     /// Optional for the same reason as every key above it.
     var onboardingDone: Bool?
+    /// The Colours page's overrides, keyed by `LedPalette.Slot` raw value. A
+    /// slot at its default is absent, never written as its own hex.
+    ///
+    /// Optional for the same reason as every key above it.
+    var colors: [String: String]?
 
     var notifyIsLive: Bool { notifyEnabled == true && notifyTopic?.isEmpty == false }
     var notifyServerOrDefault: String { notifyServer ?? K.notifyServerDefault }

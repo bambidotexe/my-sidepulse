@@ -171,7 +171,8 @@ are `docs/functional.md`.
 | which events are subscribed, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift`, `Platform/HookInstaller.swift` (shared by the CLI and the settings window), `Platform/SettingsFile.swift`; the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests` | §4 *Source*, §10, §11 |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
 | the precedence ladder, the split display | `Core/Arbiter.swift` — `ArbiterTests` | §3 |
-| what a state looks like: program text, colours, zone widths, effects | `Core/LedProgram.swift`, `LedEffects.swift`, `Constants.swift` — `ProgramTests` (exact text). The settings preview mirrors the timings: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
+| what a state looks like: program text, colours, zone widths, effects | `Core/LedProgram.swift`, `LedEffects.swift`, `Constants.swift` — `ProgramTests` (exact text). The settings preview mirrors the timings and draws the palette's own hexes: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
+| which colours can be changed, their defaults, the Colours page | `Core/LedPalette.swift` (the slots, `standard` from `K`, the overrides rule, what each slot plays — `PaletteTests`), `Core/Constants.swift` (the defaults), `App/Engine.swift` (`palette`, `setColor`), `App/AppConfig.swift` (`colors`), `App/SettingsColorsPage.swift`, `Core/StringsColorsPage.swift` | §3 *Colours*, §10, `device.md`, `architecture.md` *Persistence* |
 | acknowledgement | `SessionStore.acknowledgeAlerts`, `JobStore.acknowledge`, `Engine.acknowledge`, `App/AttentionMonitor.swift`, `Platform/TerminalTabProber.swift`, `ProcWalk.tabTTY` | §5 |
 | **when** a push fires | `SessionStore.set` (arming) and `tick` (debounce, deferral, late-drop), `Core/Presence.swift` — `NotifyTests` | §6 |
 | **what** a push says | `Core/StringsAlerts.swift` for the words, `Core/Alert.swift` (`AlertCopy`) for which body a kind gets — `NotifyTests` pins every string in both languages | §6, §15 |
@@ -183,7 +184,7 @@ are `docs/functional.md`.
 | writing to the strip, keepalive | `Platform/LedWriter.swift`, `Keepalive.swift` | `device.md`, §2 |
 | the menu | `App/MenuBarController.swift` | §9 |
 | the onboarding wizard: a page, a row, what a row's button does, who is in front | **Invoke the `macos-building-onboarding` skill first**: it holds the window's whole contract and every trap it hit. `App/OnboardingWindowController.swift` (the window, the pages, `GrantRow`), `App/OnboardingCatalog.swift` (`GrantItem`, `FocusReturnWatch`, the five rows, `OnboardingMetrics`), `App/ControlActionHandler.swift`; the words are `Core/StringsOnboarding.swift`. The flag is `AppConfig.onboardingDone`, written through `Engine.markOnboardingDone`; `AppDelegate` opens it and cross-wires `othersNeedUsActive` with `SettingsWindow` and `UpdateController`. **A permission is asked from a button and nowhere else**: a row's, or System's Allow Notifications | §10 *The onboarding wizard*, §12, `macOS.md` *Permissions*, `pitfalls.md`, the checklist's §4 |
-| a settings page, its look or its copy | **Invoke the `macos-building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the seven page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
+| a settings page, its look or its copy | **Invoke the `macos-building-settings-pages` skill first**: it holds every rule of the window's structure, numbers and wording. `App/SettingsKit.swift` (the kit: `SettingsGroup`, the rows, `StatusRow` + `StatusMark`, `SettingsMetrics` with every spacing number), `App/SettingsWindow.swift` (`SettingsPageID`: the pages, titles and symbols; the toolbar; the height that follows the page), `App/Settings*Page.swift` (one per page, structure only), `App/SettingsModel.swift`. **The words are not in the page files**: a page's copy is `Core/Strings<Page>Page.swift`, the shared status vocabulary and the eight page titles are `Core/StringsSettings.swift`, and the `Showing` sentences are `Core/StringsStatus.swift` behind `Core/StatusCopy.swift` — `StatusCopyTests`, `LocalizationTests` | §10, §15, one line in `docs/manual-test-checklist.md` |
 | a CLI command | `CLI/CLIMain.swift` (and its usage text), `Platform/Control.swift` (new fields optional), `Engine.controlResponse` | §11, `architecture.md` *Control plane* |
 | updates: the check, its schedule, the notification | `Core/UpdateCheck.swift` (versions, what a reply means — `UpdateCheckTests`), `Core/UpdateSchedule.swift`, `Core/UpdatePanel.swift` (the Updates group), the `update…` numbers in `Core/Constants.swift`; `Platform/UpdateChecker.swift` (the request — `UpdateCheckerTests`); `App/UpdateController.swift` (the one owner), `App/UpdateNotifier.swift`, the Updates group of `App/SettingsGeneralPage.swift` | §10 *Updates*, §12, §13, `macOS.md` *Updates* |
 | updates: the window, the fetch, making it ready, Install and Relaunch | `Core/UpdateSession.swift`, `Core/StagedUpdateCheck.swift`, `Core/UpdateInstallScript.swift` (the helper's text, its plan, its result — run under a real `/bin/sh` by `UpdateInstallScriptTests`); `Platform/UpdateChecker.swift` (`UpdateDownload`), `UpdateStager.swift`, `CodeSignature.swift`, `UpdateInstaller.swift`, `DetachedProcess.swift`; `App/UpdateWindow.swift`, `UpdateController.installAndRelaunch`; the words in `Core/StringsUpdateWindow.swift` and `Core/StringsUpdate.swift` | the same, plus `pitfalls.md` (the six update entries) and the checklist's §3. **Read those entries before touching the order of an install** |
@@ -212,7 +213,7 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (336, one opt-in skip) runs in about two seconds;
+  `MySidepulseCoreTests` (346, one opt-in skip) runs in about two seconds;
   `MySidepulsePlatformTests` (133) takes about 24 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
@@ -285,7 +286,9 @@ Full version in `docs/architecture.md`.
   `nextDeadline` says when to tick next) · `Event` + `JournalCodec` + `Trim`
   (the journal line and its 4096-byte cap) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
-  program text) · `Constants` (`K`: every colour and timing, with its evidence)
+  program text) · `LedPalette` (the eight colours the owner can change, and
+  which saved colour is trusted) · `Constants` (`K`: every default colour and
+  every timing, with its evidence)
   · `Alert` (`AlertCopy`, the push text) · `Presence` · `JobStore` ·
   `BatteryRules` · `EjectGuard` · `HookConfig` (edits to `settings.json`) ·
   `ShellInit` (the zsh snippet, and the text of its block in `~/.zshrc`) ·
@@ -324,7 +327,7 @@ Full version in `docs/architecture.md`.
   and the session the two windows observe, Install and Relaunch) +
   `UpdateNotifier` + `UpdateWindow` · the
   settings window (`SettingsKit` the kit, `SettingsWindow` the toolbar window
-  whose height follows the page, seven `Settings*Page`, `SettingsModel`,
+  whose height follows the page, eight `Settings*Page`, `SettingsModel`,
   `StripPreviewView`).
 - **`Sources/MySidepulseCLI`** — `CLIMain` (dispatch and usage), `RunCommand`
   (`run`, `job`, `notify`).
@@ -350,9 +353,11 @@ The app target has no automated tests. Its verification is the strip,
 - **Nothing that can block on the strip or the network runs on the main
   queue**: probing, LED writes and keepalive touches each have their own queue,
   and the touch is a separate process.
-- LED colours and timings in `Constants.swift` are calibrated by eye on the
-  real device. The names describe what the strip shows, not what the hex looks
-  like on screen. Retune only against hardware; colours are the owner's call.
+- LED timings in `Constants.swift` are calibrated by eye on the real device:
+  retune them only against hardware. The colours there are the owner's
+  defaults for the Colours page, true colours, the same hex on the strip and on
+  screen. A strip's brightness dims it, never a darker hex. Colours are the
+  owner's call.
 - **LED program text is a device contract.** Assemble it only from token
   shapes the device already accepts, inside 20 lines and 512 bytes; change it
   only together with the exact-text tests in `ProgramTests`; verify it on the
@@ -429,7 +434,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (336 + 133, one opt-in skip) at
+`swift build` is clean and `swift test` is green (346 + 133, one opt-in skip) at
 this commit. The live journal replays.
 
 Walked end to end on the owner's Mac: a drag install from the disk image, which

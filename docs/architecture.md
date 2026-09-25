@@ -215,6 +215,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 | `notifyTopic` | string? | absent | The ntfy topic. A secret. |
 | `notifyServer` | string? | absent → `https://ntfy.sh` | The ntfy server. |
 | `onboardingDone` | bool? | absent | `true` once the wizard's last button has been pressed. Absent and `false` both open it at the next launch (functional.md §10). |
+| `colors` | `{slot: "#rrggbb"}`? | absent | The Colours page's overrides, keyed by `LedPalette.Slot` raw value (`working`, `needsYou`, `done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`). A slot at its default is absent; a value that is not `#rrggbb` is ignored. `Engine.palette` applies them on every paint. |
 
 Loading falls back to defaults when the file is missing or does not decode.
 Because `Decodable` is synthesised, a non-optional key that is missing fails the

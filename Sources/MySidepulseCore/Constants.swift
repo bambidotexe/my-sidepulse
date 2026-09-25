@@ -1,22 +1,23 @@
 import Foundation
 
-/// Every value here was calibrated by eye on real SidePulse hardware.
-/// Names describe what the LED reads as on the strip, not what the hex
-/// looks like on screen (#330900 IS amber on the device).
-/// Do not retune except against the device.
+/// The timings here were calibrated by eye on real SidePulse hardware: do
+/// not retune them except against the device.
+///
+/// The colours are the owner's defaults for `LedPalette.standard`, which the
+/// Colours page overrides slot by slot. Each is a true colour, the same hex on
+/// the strip and on screen; the strip's brightness setting is what dims it,
+/// never a darker hex.
 public enum K {
-    public static let claudeWorking = "#250707"
-    /// A terminal job in flight. Chosen by eye on the strip, like every other
-    /// value here — which is why it looks like nothing in particular on
-    /// screen. Do not "correct" it from a colour picker.
-    public static let jobRunning = "#221130"
-    public static let askAmber = "#331500"
+    public static let claudeWorking = "#ff374a"
+    /// A terminal job in flight.
+    public static let jobRunning = "#ba5eff"
+    public static let askAmber = "#ff7000"
     /// "Needs you" is a double blink, not a breath: two fast pulses, a short
     /// dark gap between them, then a longer dark pause before repeating —
     /// this is the one state worth interrupting for, so it must catch the
     /// eye from across the room.
     ///
-    /// Felt values, like the colours, not derived ones — except the pause,
+    /// Felt values, not derived ones — except the pause,
     /// which is derived (see below). Retune by eye on the strip, never from
     /// the numbers. Cycle 1.5 s, shared exactly with the split's amber zone.
     ///
@@ -40,7 +41,7 @@ public enum K {
     public static let askBlinkMs = 200
     public static let askBlinkGapMs = 70
     public static let askBlinkPauseMs = 1030
-    public static let doneGreen = "#003311"
+    public static let doneGreen = "#00ff37"
     /// Done breathes, and that is the whole distinction now: "needs you" blinks
     /// twice and "finished" breathes, so the two are told apart by motion as
     /// well as colour. Deliberate — a finished turn is news you can read
@@ -52,15 +53,15 @@ public enum K {
     /// itself that way.
     public static let doneBreathSeconds = 4.5
 
-    public static let batteryCriticalRed = "#220000"
+    public static let batteryCriticalRed = "#ff0000"
     /// Slower still than done — 6 s, about 10 breaths a minute — keeping done
     /// the faster of the two breaths. It reads as heavy rather than urgent,
     /// which suits what it means: plug in soon, not right now.
     public static let batteryCriticalBreathSeconds = 6.0
     public static let batteryCriticalPercent = 15
-    public static let batteryLowRed = "#220000"
-    public static let batteryMidAmber = "#330900"
-    public static let batteryHighGreen = "#003300"
+    public static let batteryLowRed = "#ff0000"
+    public static let batteryMidAmber = "#ff7000"
+    public static let batteryHighGreen = "#00ff37"
     public static let batteryOff = "#000000"
     public static let batteryMidPercent = 50
     public static let batterySegmentTransitionMs = 360

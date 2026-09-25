@@ -29,17 +29,18 @@ import Foundation
 /// so the crossfade travels through the colour it skips rather than
 /// desaturating across it.
 ///
-/// The palettes are starter values in the same dim range as K's calibrated
-/// colours (channels ≤ 0x38); like everything the strip shows, retune them
-/// only by eye on the device.
+/// Every colour here is a hue at full scale, its largest channel at 0xff,
+/// like every other colour the strip shows: the strip's brightness setting
+/// dims an effect, never a darker hex. Retune a hue only by eye on the device.
 public enum LedEffects {
     /// Also the allowlist LedMode.parse accepts, so a typo can never reach
     /// the device as a program.
     public static let names = ["rainbow", "aurora", "ocean", "lava", "ember", "sparkle"]
 
     /// One step of a rotating effect's wheel per frame. The settings window
-    /// renders previews from this same description (via wheelIndex), so the
-    /// screen and the strip can only ever disagree in colour calibration.
+    /// renders previews from this same description and these same hexes (via
+    /// wheelIndex), so the screen and the strip can only ever disagree in how
+    /// a display and an LED render one colour.
     public struct Rotation: Equatable {
         public let wheel: [String]
         public let stepMs: Int
@@ -52,7 +53,7 @@ public enum LedEffects {
     /// Eight hues at equal code values, one per LED on the Pro, none
     /// repeating. Orange and violet are the two hues that let a two-step
     /// crossfade pass through an intervening hue: red -> yellow averages to
-    /// exactly this orange.
+    /// this orange, to within one code value.
     ///
     /// Do not "correct" these for perceived brightness. The theory is sound
     /// — at equal code values the eye sees this yellow about 13x brighter
@@ -63,13 +64,13 @@ public enum LedEffects {
     /// which desaturates the bright hues and costs the midpoint property
     /// above, since RGB interpolation is linear in code value and not in
     /// luma. Whatever the numbers say, the strip is the authority here.
-    static let rainbowWheel = ["#380000", "#381c00", "#383800", "#003800",
-                               "#003838", "#000038", "#1c0038", "#380038"]
-    static let auroraWaves = ["#003812", "#00332e", "#120038"]
-    static let oceanWaves = ["#001238", "#003038", "#002e26"]
-    static let lavaFlows = ["#380400", "#381400", "#300000"]
-    static let emberGlow = "#381200"
-    static let sparkleGlint = "#2e2e38"
+    static let rainbowWheel = ["#ff0000", "#ff8000", "#ffff00", "#00ff00",
+                               "#00ffff", "#0000ff", "#8000ff", "#ff00ff"]
+    static let auroraWaves = ["#00ff52", "#00ffe6", "#5200ff"]
+    static let oceanWaves = ["#0052ff", "#00dbff", "#00ffd3"]
+    static let lavaFlows = ["#ff1200", "#ff5b00", "#ff0000"]
+    public static let emberGlow = "#ff5200"
+    public static let sparkleGlint = "#d1d1ff"
 
     public static func rotation(for name: String) -> Rotation? {
         switch name {

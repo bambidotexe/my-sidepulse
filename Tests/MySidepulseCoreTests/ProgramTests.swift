@@ -14,7 +14,7 @@ final class ProgramTests: XCTestCase {
     func testWorkingEightLeds() {
         XCTAssertEqual(p(.working), """
         off 160ms cosine
-        0:#250707 760ms pulse 0ms; 1:#250707 760ms pulse 95ms; 2:#250707 760ms pulse 190ms; 3:#250707 760ms pulse 285ms; 4:#250707 760ms pulse 380ms; 5:#250707 760ms pulse 475ms; 6:#250707 760ms pulse 570ms; 7:#250707 760ms pulse 665ms
+        0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 95ms; 2:#ff374a 760ms pulse 190ms; 3:#ff374a 760ms pulse 285ms; 4:#ff374a 760ms pulse 380ms; 5:#ff374a 760ms pulse 475ms; 6:#ff374a 760ms pulse 570ms; 7:#ff374a 760ms pulse 665ms
         repeat
         """)
     }
@@ -22,7 +22,7 @@ final class ProgramTests: XCTestCase {
     func testWorkingDotUsesTwoLedsAndDotStagger() {
         XCTAssertEqual(p(.working, leds: 2), """
         off 160ms cosine
-        0:#250707 760ms pulse 0ms; 1:#250707 760ms pulse 260ms
+        0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 260ms
         repeat
         """)
     }
@@ -35,9 +35,9 @@ final class ProgramTests: XCTestCase {
     func testWaitingBlinksTwice() {
         XCTAssertEqual(p(.waiting), """
         off
-        #331500 200ms pulse
+        #ff7000 200ms pulse
         off 70ms
-        #331500 200ms pulse
+        #ff7000 200ms pulse
         off 1030ms
         repeat
         """)
@@ -63,14 +63,14 @@ final class ProgramTests: XCTestCase {
     }
 
     func testWaitingDoneCritical() {
-        XCTAssertEqual(p(.done), "off\n#003311 4.5s pulse\nrepeat")
-        XCTAssertEqual(p(.batteryCritical), "off\n#220000 6.0s pulse\nrepeat")
+        XCTAssertEqual(p(.done), "off\n#00ff37 4.5s pulse\nrepeat")
+        XCTAssertEqual(p(.batteryCritical), "off\n#ff0000 6.0s pulse\nrepeat")
     }
 
     func testGlanceThirtyPercent() {
         let program = p(.batteryGlance, power: PowerState(percent: 30))
         XCTAssertEqual(program,
-            "0:#330900 360ms;1:#330900 360ms;2:#140300 360ms;3:#000000 360ms;4:#000000 360ms;5:#000000 360ms;6:#000000 360ms;7:#000000 360ms")
+            "0:#ff7000 360ms;1:#ff7000 360ms;2:#652c00 360ms;3:#000000 360ms;4:#000000 360ms;5:#000000 360ms;6:#000000 360ms;7:#000000 360ms")
     }
 
     func testGlanceWithoutPowerIsOff() {
@@ -82,9 +82,9 @@ final class ProgramTests: XCTestCase {
     }
 
     func testBrightnessPrefix() {
-        XCTAssertEqual(p(.done, brightness: 128), "brightness 128\noff\n#003311 4.5s pulse\nrepeat")
-        XCTAssertEqual(p(.done, brightness: 255), "off\n#003311 4.5s pulse\nrepeat")
-        XCTAssertEqual(p(.done, brightness: 0), "brightness 1\noff\n#003311 4.5s pulse\nrepeat", "clamped to 1")
+        XCTAssertEqual(p(.done, brightness: 128), "brightness 128\noff\n#00ff37 4.5s pulse\nrepeat")
+        XCTAssertEqual(p(.done, brightness: 255), "off\n#00ff37 4.5s pulse\nrepeat")
+        XCTAssertEqual(p(.done, brightness: 0), "brightness 1\noff\n#00ff37 4.5s pulse\nrepeat", "clamped to 1")
     }
 
     /// A job in flight rolls like Claude does — motion says something is
@@ -94,19 +94,19 @@ final class ProgramTests: XCTestCase {
     func testJobPrograms() {
         XCTAssertEqual(p(.jobRunning), """
         off 160ms cosine
-        0:#221130 760ms pulse 0ms; 1:#221130 760ms pulse 95ms; 2:#221130 760ms pulse 190ms; 3:#221130 760ms pulse 285ms; 4:#221130 760ms pulse 380ms; 5:#221130 760ms pulse 475ms; 6:#221130 760ms pulse 570ms; 7:#221130 760ms pulse 665ms
+        0:#ba5eff 760ms pulse 0ms; 1:#ba5eff 760ms pulse 95ms; 2:#ba5eff 760ms pulse 190ms; 3:#ba5eff 760ms pulse 285ms; 4:#ba5eff 760ms pulse 380ms; 5:#ba5eff 760ms pulse 475ms; 6:#ba5eff 760ms pulse 570ms; 7:#ba5eff 760ms pulse 665ms
         repeat
         """)
         XCTAssertEqual(p(.jobSucceeded), p(.done))
         XCTAssertEqual(p(.jobFailed), p(.waiting))
         XCTAssertEqual(p(.jobRunning, leds: 2), """
         off 160ms cosine
-        0:#221130 760ms pulse 0ms; 1:#221130 760ms pulse 260ms
+        0:#ba5eff 760ms pulse 0ms; 1:#ba5eff 760ms pulse 260ms
         repeat
         """)
     }
 
-    /// These are hand-tuned against the hardware, so a typo is plausible and
+    /// These are chosen by hand, so a typo is plausible, and it
     /// costs more than a wrong colour: the device cannot parse the program at
     /// all and blinks red six times instead of showing anything.
     func testEveryColourConstantIsAValidProgramColour() {
@@ -138,65 +138,65 @@ final class ProgramTests: XCTestCase {
     /// "3000ms" it is 127 and only three do.
     func testRainbowRotatesTheWheelWithEveryLedOn() {
         XCTAssertEqual(p(.effect("rainbow")), """
-        0:#380000 0.2s;1:#381c00 0.2s;2:#383800 0.2s;3:#003800 0.2s;4:#003838 0.2s;5:#000038 0.2s;6:#1c0038 0.2s;7:#380038 0.2s
-        0:#383800 0.2s;1:#003800 0.2s;2:#003838 0.2s;3:#000038 0.2s;4:#1c0038 0.2s;5:#380038 0.2s;6:#380000 0.2s;7:#381c00 0.2s
-        0:#003838 0.2s;1:#000038 0.2s;2:#1c0038 0.2s;3:#380038 0.2s;4:#380000 0.2s;5:#381c00 0.2s;6:#383800 0.2s;7:#003800 0.2s
-        0:#1c0038 0.2s;1:#380038 0.2s;2:#380000 0.2s;3:#381c00 0.2s;4:#383800 0.2s;5:#003800 0.2s;6:#003838 0.2s;7:#000038 0.2s
+        0:#ff0000 0.2s;1:#ff8000 0.2s;2:#ffff00 0.2s;3:#00ff00 0.2s;4:#00ffff 0.2s;5:#0000ff 0.2s;6:#8000ff 0.2s;7:#ff00ff 0.2s
+        0:#ffff00 0.2s;1:#00ff00 0.2s;2:#00ffff 0.2s;3:#0000ff 0.2s;4:#8000ff 0.2s;5:#ff00ff 0.2s;6:#ff0000 0.2s;7:#ff8000 0.2s
+        0:#00ffff 0.2s;1:#0000ff 0.2s;2:#8000ff 0.2s;3:#ff00ff 0.2s;4:#ff0000 0.2s;5:#ff8000 0.2s;6:#ffff00 0.2s;7:#00ff00 0.2s
+        0:#8000ff 0.2s;1:#ff00ff 0.2s;2:#ff0000 0.2s;3:#ff8000 0.2s;4:#ffff00 0.2s;5:#00ff00 0.2s;6:#00ffff 0.2s;7:#0000ff 0.2s
         repeat
         """)
     }
 
     func testRainbowOnTheDotPicksComplementaryHues() {
         XCTAssertEqual(p(.effect("rainbow"), leds: 2), """
-        0:#380000 0.2s;1:#003838 0.2s
-        0:#383800 0.2s;1:#1c0038 0.2s
-        0:#003838 0.2s;1:#380000 0.2s
-        0:#1c0038 0.2s;1:#383800 0.2s
+        0:#ff0000 0.2s;1:#00ffff 0.2s
+        0:#ffff00 0.2s;1:#8000ff 0.2s
+        0:#00ffff 0.2s;1:#ff0000 0.2s
+        0:#8000ff 0.2s;1:#ffff00 0.2s
         repeat
         """)
     }
 
     func testAuroraOceanLavaRotateTheirPalettes() {
         XCTAssertEqual(p(.effect("aurora")), """
-        0:#003812 0.9s;1:#00332e 0.9s;2:#120038 0.9s;3:#003812 0.9s;4:#00332e 0.9s;5:#120038 0.9s;6:#003812 0.9s;7:#00332e 0.9s
-        0:#00332e 0.9s;1:#120038 0.9s;2:#003812 0.9s;3:#00332e 0.9s;4:#120038 0.9s;5:#003812 0.9s;6:#00332e 0.9s;7:#120038 0.9s
-        0:#120038 0.9s;1:#003812 0.9s;2:#00332e 0.9s;3:#120038 0.9s;4:#003812 0.9s;5:#00332e 0.9s;6:#120038 0.9s;7:#003812 0.9s
+        0:#00ff52 0.9s;1:#00ffe6 0.9s;2:#5200ff 0.9s;3:#00ff52 0.9s;4:#00ffe6 0.9s;5:#5200ff 0.9s;6:#00ff52 0.9s;7:#00ffe6 0.9s
+        0:#00ffe6 0.9s;1:#5200ff 0.9s;2:#00ff52 0.9s;3:#00ffe6 0.9s;4:#5200ff 0.9s;5:#00ff52 0.9s;6:#00ffe6 0.9s;7:#5200ff 0.9s
+        0:#5200ff 0.9s;1:#00ff52 0.9s;2:#00ffe6 0.9s;3:#5200ff 0.9s;4:#00ff52 0.9s;5:#00ffe6 0.9s;6:#5200ff 0.9s;7:#00ff52 0.9s
         repeat
         """)
         XCTAssertEqual(p(.effect("ocean")), """
-        0:#001238 0.8s;1:#003038 0.8s;2:#002e26 0.8s;3:#001238 0.8s;4:#003038 0.8s;5:#002e26 0.8s;6:#001238 0.8s;7:#003038 0.8s
-        0:#003038 0.8s;1:#002e26 0.8s;2:#001238 0.8s;3:#003038 0.8s;4:#002e26 0.8s;5:#001238 0.8s;6:#003038 0.8s;7:#002e26 0.8s
-        0:#002e26 0.8s;1:#001238 0.8s;2:#003038 0.8s;3:#002e26 0.8s;4:#001238 0.8s;5:#003038 0.8s;6:#002e26 0.8s;7:#001238 0.8s
+        0:#0052ff 0.8s;1:#00dbff 0.8s;2:#00ffd3 0.8s;3:#0052ff 0.8s;4:#00dbff 0.8s;5:#00ffd3 0.8s;6:#0052ff 0.8s;7:#00dbff 0.8s
+        0:#00dbff 0.8s;1:#00ffd3 0.8s;2:#0052ff 0.8s;3:#00dbff 0.8s;4:#00ffd3 0.8s;5:#0052ff 0.8s;6:#00dbff 0.8s;7:#00ffd3 0.8s
+        0:#00ffd3 0.8s;1:#0052ff 0.8s;2:#00dbff 0.8s;3:#00ffd3 0.8s;4:#0052ff 0.8s;5:#00dbff 0.8s;6:#00ffd3 0.8s;7:#0052ff 0.8s
         repeat
         """)
         XCTAssertEqual(p(.effect("lava")), """
-        0:#380400 0.8s;1:#381400 0.8s;2:#300000 0.8s;3:#380400 0.8s;4:#381400 0.8s;5:#300000 0.8s;6:#380400 0.8s;7:#381400 0.8s
-        0:#381400 0.8s;1:#300000 0.8s;2:#380400 0.8s;3:#381400 0.8s;4:#300000 0.8s;5:#380400 0.8s;6:#381400 0.8s;7:#300000 0.8s
-        0:#300000 0.8s;1:#380400 0.8s;2:#381400 0.8s;3:#300000 0.8s;4:#380400 0.8s;5:#381400 0.8s;6:#300000 0.8s;7:#380400 0.8s
+        0:#ff1200 0.8s;1:#ff5b00 0.8s;2:#ff0000 0.8s;3:#ff1200 0.8s;4:#ff5b00 0.8s;5:#ff0000 0.8s;6:#ff1200 0.8s;7:#ff5b00 0.8s
+        0:#ff5b00 0.8s;1:#ff0000 0.8s;2:#ff1200 0.8s;3:#ff5b00 0.8s;4:#ff0000 0.8s;5:#ff1200 0.8s;6:#ff5b00 0.8s;7:#ff0000 0.8s
+        0:#ff0000 0.8s;1:#ff1200 0.8s;2:#ff5b00 0.8s;3:#ff0000 0.8s;4:#ff1200 0.8s;5:#ff5b00 0.8s;6:#ff0000 0.8s;7:#ff1200 0.8s
         repeat
         """)
         XCTAssertEqual(p(.effect("aurora"), leds: 2), """
-        0:#003812 0.9s;1:#00332e 0.9s
-        0:#00332e 0.9s;1:#120038 0.9s
-        0:#120038 0.9s;1:#003812 0.9s
+        0:#00ff52 0.9s;1:#00ffe6 0.9s
+        0:#00ffe6 0.9s;1:#5200ff 0.9s
+        0:#5200ff 0.9s;1:#00ff52 0.9s
         repeat
         """)
     }
 
     func testEmberIsTheWaitingShapeAtAFiresidePace() {
-        XCTAssertEqual(p(.effect("ember")), "off\n#381200 3.2s pulse\nrepeat")
-        XCTAssertEqual(p(.effect("ember"), leds: 2), "off\n#381200 3.2s pulse\nrepeat")
+        XCTAssertEqual(p(.effect("ember")), "off\n#ff5200 3.2s pulse\nrepeat")
+        XCTAssertEqual(p(.effect("ember"), leds: 2), "off\n#ff5200 3.2s pulse\nrepeat")
     }
 
     func testSparkleScattersDeterministically() {
         XCTAssertEqual(p(.effect("sparkle")), """
         off 160ms cosine
-        0:#2e2e38 360ms pulse 0ms; 1:#2e2e38 360ms pulse 1800ms; 2:#2e2e38 360ms pulse 720ms; 3:#2e2e38 360ms pulse 2520ms; 4:#2e2e38 360ms pulse 1440ms; 5:#2e2e38 360ms pulse 360ms; 6:#2e2e38 360ms pulse 2160ms; 7:#2e2e38 360ms pulse 1080ms
+        0:#d1d1ff 360ms pulse 0ms; 1:#d1d1ff 360ms pulse 1800ms; 2:#d1d1ff 360ms pulse 720ms; 3:#d1d1ff 360ms pulse 2520ms; 4:#d1d1ff 360ms pulse 1440ms; 5:#d1d1ff 360ms pulse 360ms; 6:#d1d1ff 360ms pulse 2160ms; 7:#d1d1ff 360ms pulse 1080ms
         repeat
         """)
         XCTAssertEqual(p(.effect("sparkle"), leds: 2), """
         off 160ms cosine
-        0:#2e2e38 360ms pulse 0ms; 1:#2e2e38 360ms pulse 1440ms
+        0:#d1d1ff 360ms pulse 0ms; 1:#d1d1ff 360ms pulse 1440ms
         repeat
         """)
     }
@@ -208,7 +208,7 @@ final class ProgramTests: XCTestCase {
 
     func testEffectsTakeTheBrightnessPrefix() {
         XCTAssertEqual(p(.effect("ember"), brightness: 128),
-                       "brightness 128\noff\n#381200 3.2s pulse\nrepeat")
+                       "brightness 128\noff\n#ff5200 3.2s pulse\nrepeat")
     }
 
     /// Both hardcoded sites in Engine.sync() ask this instead of listing
@@ -236,13 +236,13 @@ final class ProgramTests: XCTestCase {
     func testSplitAlertZonePlusWorkingRoll() {
         XCTAssertEqual(p(.split(alert: .waiting, work: .working)), """
         0:#000000 160ms; 1:#000000 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
-        0:#331500 200ms pulse 0ms; 1:#331500 200ms pulse 0ms; 2:#331500 200ms pulse 0ms
-        0:#331500 200ms pulse 70ms; 1:#331500 200ms pulse 70ms; 2:#331500 200ms pulse 70ms; 3:#250707 760ms pulse 0ms; 4:#250707 760ms pulse 95ms; 5:#250707 760ms pulse 190ms; 6:#250707 760ms pulse 285ms; 7:#250707 760ms pulse 380ms
+        0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
+        0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#ff374a 760ms pulse 95ms; 5:#ff374a 760ms pulse 190ms; 6:#ff374a 760ms pulse 285ms; 7:#ff374a 760ms pulse 380ms
         repeat
         """)
         XCTAssertEqual(p(.split(alert: .done, work: .working)), """
-        0:#003311 160ms; 1:#003311 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
-        2:#250707 760ms pulse 0ms; 3:#250707 760ms pulse 95ms; 4:#250707 760ms pulse 190ms; 5:#250707 760ms pulse 285ms; 6:#250707 760ms pulse 380ms; 7:#250707 760ms pulse 475ms
+        0:#00ff37 160ms; 1:#00ff37 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
+        2:#ff374a 760ms pulse 0ms; 3:#ff374a 760ms pulse 95ms; 4:#ff374a 760ms pulse 190ms; 5:#ff374a 760ms pulse 285ms; 6:#ff374a 760ms pulse 380ms; 7:#ff374a 760ms pulse 475ms
         repeat
         """)
         // Job outcomes are byte-identical to their Claude counterparts, as
@@ -261,8 +261,8 @@ final class ProgramTests: XCTestCase {
     func testSplitOnTheDotLeavesOneLedRolling() {
         XCTAssertEqual(p(.split(alert: .waiting, work: .working), leds: 2), """
         0:#000000 160ms; 1:#000000 160ms
-        0:#331500 200ms pulse 0ms
-        0:#331500 200ms pulse 70ms; 1:#250707 760ms pulse 0ms
+        0:#ff7000 200ms pulse 0ms
+        0:#ff7000 200ms pulse 70ms; 1:#ff374a 760ms pulse 0ms
         repeat
         """)
     }

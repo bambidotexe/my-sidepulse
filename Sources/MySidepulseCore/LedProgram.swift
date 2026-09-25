@@ -52,26 +52,31 @@ public enum LedProgram {
     }
 
     public static func program(for state: DisplayState, power: PowerState?,
-                               ledCount: Int, brightness: Int) -> String {
+                               ledCount: Int, brightness: Int,
+                               palette: LedPalette = .standard) -> String {
         switch state {
         case .off:
             return "off"
         case .working:
-            return applyBrightness(rolling(color: K.claudeWorking, ledCount: ledCount), brightness)
+            return applyBrightness(rolling(color: palette.working, ledCount: ledCount), brightness)
         case .waiting, .jobFailed:
-            return applyBrightness(askBlink(), brightness)
+            return applyBrightness(askBlink(palette: palette), brightness)
         case .done, .jobSucceeded:
-            return applyBrightness("off\n\(K.doneGreen) \(K.doneBreathSeconds)s pulse\nrepeat", brightness)
+            return applyBrightness("off\n\(palette.done) \(K.doneBreathSeconds)s pulse\nrepeat", brightness)
         case .jobRunning:
-            return applyBrightness(rolling(color: K.jobRunning, ledCount: ledCount), brightness)
+            return applyBrightness(rolling(color: palette.jobRunning, ledCount: ledCount), brightness)
         case .split(let alert, let work):
-            return applyBrightness(splitProgram(alert: alert, work: work, ledCount: ledCount),
-                                   brightness)
+            return applyBrightness(
+                splitProgram(alert: alert, work: work, ledCount: ledCount, palette: palette),
+                brightness)
         case .batteryCritical:
-            return applyBrightness("off\n\(K.batteryCriticalRed) \(K.batteryCriticalBreathSeconds)s pulse\nrepeat", brightness)
+            return applyBrightness(
+                "off\n\(palette.batteryCritical) \(K.batteryCriticalBreathSeconds)s pulse\nrepeat",
+                brightness)
         case .batteryGlance:
             guard let power else { return "off" }
-            return applyBrightness(glanceBar(power: power, ledCount: ledCount), brightness)
+            return applyBrightness(glanceBar(power: power, ledCount: ledCount, palette: palette),
+                                   brightness)
         case .manualColor(let hex):
             return applyBrightness(hex, brightness)
         case .effect(let name):
@@ -93,8 +98,8 @@ public enum LedProgram {
     /// time — the gap that separates the two blinks, and the pause that
     /// separates the pairs. 6 lines, ~70 bytes: far inside the device's
     /// 20-line, 512-byte ceiling.
-    static func askBlink() -> String {
-        let blink = "\(K.askAmber) \(K.askBlinkMs)ms pulse"
+    static func askBlink(palette: LedPalette = .standard) -> String {
+        let blink = "\(palette.needsYou) \(K.askBlinkMs)ms pulse"
         return ["off", blink, "off \(K.askBlinkGapMs)ms", blink,
                 "off \(K.askBlinkPauseMs)ms", "repeat"].joined(separator: "\n")
     }
@@ -143,14 +148,15 @@ public enum LedProgram {
     /// the roll's remainder. Green shape (finished / job succeeded): the
     /// baseline sets the zone green once and only the roll pulses — two
     /// lines, no zone animation, steady by design.
-    static func splitProgram(alert: SplitAlert, work: SplitWork, ledCount: Int) -> String {
+    static func splitProgram(alert: SplitAlert, work: SplitWork, ledCount: Int,
+                             palette: LedPalette = .standard) -> String {
         let count = max(2, min(8, ledCount))
         let zone = splitZone(alert: alert, ledCount: count)
         let rest = count - zone
         let workColor: String
         switch work {
-        case .working: workColor = K.claudeWorking
-        case .jobRunning: workColor = K.jobRunning
+        case .working: workColor = palette.working
+        case .jobRunning: workColor = palette.jobRunning
         }
         let zoneIsGreen: Bool
         switch alert {
@@ -158,7 +164,7 @@ public enum LedProgram {
         case .done, .jobSucceeded: zoneIsGreen = true
         }
         let baseline = (0..<count)
-            .map { "\($0):\($0 < zone && zoneIsGreen ? K.doneGreen : "#000000") \(K.rollingFadeMs)ms" }
+            .map { "\($0):\($0 < zone && zoneIsGreen ? palette.done : "#000000") \(K.rollingFadeMs)ms" }
             .joined(separator: "; ")
         let stagger = rest <= 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs
         let rollPulses = (0..<rest).map {
@@ -168,10 +174,10 @@ public enum LedProgram {
             return baseline + "\n" + rollPulses.joined(separator: "; ") + "\nrepeat"
         }
         let firstBlink = (0..<zone)
-            .map { "\($0):\(K.askAmber) \(K.askBlinkMs)ms pulse 0ms" }
+            .map { "\($0):\(palette.needsYou) \(K.askBlinkMs)ms pulse 0ms" }
             .joined(separator: "; ")
         let secondBlink = (0..<zone).map {
-            "\($0):\(K.askAmber) \(K.askBlinkMs)ms pulse \(K.askBlinkGapMs)ms"
+            "\($0):\(palette.needsYou) \(K.askBlinkMs)ms pulse \(K.askBlinkGapMs)ms"
         }
         return baseline + "\n" + firstBlink + "\n"
             + (secondBlink + rollPulses).joined(separator: "; ") + "\nrepeat"
@@ -180,11 +186,12 @@ public enum LedProgram {
     /// Plain fill bar: one LED per eighth of charge, frontier dimmed by the
     /// remainder. No charging animation — for a seven-second glance the only
     /// question is "how full is it".
-    static func glanceBar(power: PowerState, ledCount: Int) -> String {
+    static func glanceBar(power: PowerState, ledCount: Int,
+                          palette: LedPalette = .standard) -> String {
         let count = max(1, min(8, ledCount))
         let percent = max(0, min(100, power.percent))
         let fill = BatteryRules.fill(percent: percent, ledCount: count)
-        let color = BatteryRules.color(forPercent: percent)
+        let color = BatteryRules.color(forPercent: percent, palette: palette)
         return (0..<count)
             .map { "\($0):\(BatteryRules.fillColor(index: $0, fill: fill, color: color)) \(K.batterySegmentTransitionMs)ms" }
             .joined(separator: ";")

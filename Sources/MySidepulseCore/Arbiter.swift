@@ -20,7 +20,7 @@ public enum LedMode: Equatable {
     /// `UInt32(_:radix:)`, which accepts a leading sign and would let
     /// "#+00000" through to the device, where an unparseable program makes
     /// the strip blink red six times.
-    static func isRGBHex(_ s: String) -> Bool {
+    public static func isRGBHex(_ s: String) -> Bool {
         guard s.count == 7, s.hasPrefix("#") else { return false }
         return s.dropFirst().allSatisfy { $0.isHexDigit && $0.isASCII }
     }

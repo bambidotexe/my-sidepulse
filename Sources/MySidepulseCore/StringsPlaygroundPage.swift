@@ -116,19 +116,8 @@ public struct PlaygroundPageStrings {
 
     public var stripNoteNoDevice: String {
         switch language {
-        case .en: "No strip is mounted, so a state plays on screen only. Screen "
-            + "colours are stand-ins: the strip has its own calibration."
-        case .fr: "Aucun ruban n'est monté, l'état ne s'affiche donc qu'à l'écran. "
-            + "Les couleurs à l'écran sont approximatives : le ruban a son propre "
-            + "calibrage."
-        }
-    }
-
-    public var stripNotePresent: String {
-        switch language {
-        case .en: "Screen colours are stand-ins: the strip has its own calibration."
-        case .fr: "Les couleurs à l'écran sont approximatives : le ruban a son "
-            + "propre calibrage."
+        case .en: "No strip is mounted, so a state plays on screen only."
+        case .fr: "Aucun ruban n'est monté, l'état ne s'affiche donc qu'à l'écran."
         }
     }
 

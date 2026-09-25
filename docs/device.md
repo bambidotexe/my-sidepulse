@@ -40,8 +40,12 @@ what forces a repaint: the device boots into its own program, so the host must
 not assume its last write is still showing.
 
 LEDs are addressed `0 … n−1`, left to right. Colours are `#rrggbb`, lowercase,
-sent exactly as written in `Constants.swift` — the host does no channel
-reordering and no gamma.
+sent exactly as the palette holds them (`LedPalette`: K's defaults, each slot
+replaced by the Colours page's override in `config.json`) — the host does no
+channel reordering and no gamma. A colour is a true colour: dimming is the
+`brightness` line's job (below), never a darker hex. An override that is not `#`
+and six hex digits is ignored and the slot keeps its default, since one
+malformed colour makes the whole program unreadable.
 
 ## Program text
 
@@ -91,8 +95,10 @@ each the reason a program has the shape it has:
 
 ## Programs by display state
 
-`LedProgram.program(for:power:ledCount:brightness:)` maps each `DisplayState`
-to one text. Shown for the 8-LED strip.
+`LedProgram.program(for:power:ledCount:brightness:palette:)` maps each
+`DisplayState` to one text. Shown for the 8-LED strip with the default palette;
+each colour below is a palette slot (`working`, `needsYou`, `done`,
+`jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`).
 
 **`off`** — also the idle strip, when nothing is happening:
 
@@ -105,20 +111,20 @@ pulses for 760 ms, staggered by 95 ms (260 ms on the 2-LED strip):
 
 ```
 off 160ms cosine
-0:#250707 760ms pulse 0ms; 1:#250707 760ms pulse 95ms; … 7:#250707 760ms pulse 665ms
+0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 95ms; … 7:#ff374a 760ms pulse 665ms
 repeat
 ```
 
-**`jobRunning`** — the same roll in `K.jobRunning` (`#221130`).
+**`jobRunning`** — the same roll in `K.jobRunning` (`#ba5eff`).
 
 **`waiting`, `jobFailed`** — amber double blink, 1.5 s cycle, identical on any
 LED count:
 
 ```
 off
-#331500 200ms pulse
+#ff7000 200ms pulse
 off 70ms
-#331500 200ms pulse
+#ff7000 200ms pulse
 off 1030ms
 repeat
 ```
@@ -127,7 +133,7 @@ repeat
 
 ```
 off
-#003311 4.5s pulse
+#00ff37 4.5s pulse
 repeat
 ```
 
@@ -135,17 +141,17 @@ repeat
 
 ```
 off
-#220000 6.0s pulse
+#ff0000 6.0s pulse
 repeat
 ```
 
 **`batteryGlance`** — a fill bar, one LED per eighth of charge, the frontier LED
 dimmed by the remainder (`BatteryRules.fill`, linear per-channel scaling). Bar
-colour by charge: ≤ 15 % `#220000`, ≤ 50 % `#330900`, else `#003300`; unlit
+colour by charge: ≤ 15 % `#ff0000`, ≤ 50 % `#ff7000`, else `#00ff37`; unlit
 LEDs `#000000`. At 30 % on 8 LEDs, two LEDs are full and the third is at 40 %:
 
 ```
-0:#330900 360ms;1:#330900 360ms;2:#140300 360ms;3:#000000 360ms;…;7:#000000 360ms
+0:#ff7000 360ms;1:#ff7000 360ms;2:#652c00 360ms;3:#000000 360ms;…;7:#000000 360ms
 ```
 
 **`manualColor(hex)`** — the hex alone, e.g. `#112233`.
@@ -161,8 +167,8 @@ full-strip blink (`testNeedsYouRhythmMatchesTheSplit` derives it):
 
 ```
 0:#000000 160ms; 1:#000000 160ms; … 7:#000000 160ms
-0:#331500 200ms pulse 0ms; 1:#331500 200ms pulse 0ms; 2:#331500 200ms pulse 0ms
-0:#331500 200ms pulse 70ms; 1:#331500 200ms pulse 70ms; 2:#331500 200ms pulse 70ms; 3:#250707 760ms pulse 0ms; 4:#250707 760ms pulse 95ms; … 7:#250707 760ms pulse 380ms
+0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
+0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#ff374a 760ms pulse 95ms; … 7:#ff374a 760ms pulse 380ms
 repeat
 ```
 
@@ -170,8 +176,8 @@ Green zone over the working roll — the baseline sets the zone green once and i
 holds steady; only the roll animates:
 
 ```
-0:#003311 160ms; 1:#003311 160ms; 2:#000000 160ms; … 7:#000000 160ms
-2:#250707 760ms pulse 0ms; 3:#250707 760ms pulse 95ms; … 7:#250707 760ms pulse 475ms
+0:#00ff37 160ms; 1:#00ff37 160ms; 2:#000000 160ms; … 7:#000000 160ms
+2:#ff374a 760ms pulse 0ms; 3:#ff374a 760ms pulse 95ms; … 7:#ff374a 760ms pulse 475ms
 repeat
 ```
 
@@ -183,8 +189,8 @@ When the roll has two LEDs or fewer it uses the 260 ms stagger.
 |---|---|
 | `rainbow` | 8-hue wheel, 4 frames of `i:#hex 0.2s`, advancing two hues per frame; no dark line, so the strip never goes out. |
 | `aurora`, `ocean`, `lava` | 3-hue wheels, 3 frames, 0.9 s / 0.8 s / 0.8 s per frame. |
-| `ember` | `off` / `#381200 3.2s pulse` / `repeat`. |
-| `sparkle` | `off 160ms cosine`, then `i:#2e2e38 360ms pulse <slot>ms` with slots spread over a 2880 ms cycle in the order `(i·5) mod n`. |
+| `ember` | `off` / `#ff5200 3.2s pulse` / `repeat`. |
+| `sparkle` | `off 160ms cosine`, then `i:#d1d1ff 360ms pulse <slot>ms` with slots spread over a 2880 ms cycle in the order `(i·5) mod n`. |
 
 In a rotating effect, LED `i` in frame `f` shows wheel entry
 `(i·spacing + advance·f) mod wheel.count`, with

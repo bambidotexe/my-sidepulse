@@ -23,12 +23,14 @@ public enum BatteryRules {
         return p.percent <= K.batteryCriticalPercent
     }
 
+    /// The bar's colour for a charge, from the palette's three battery slots.
     /// Thresholds inclusive: each belongs to the band beneath it, so the bar
-    /// turns red exactly when the critical alarm would start breathing.
-    public static func color(forPercent percent: Int) -> String {
-        if percent <= K.batteryCriticalPercent { return K.batteryLowRed }
-        if percent <= K.batteryMidPercent { return K.batteryMidAmber }
-        return K.batteryHighGreen
+    /// takes the low colour exactly when the critical alarm would start
+    /// breathing.
+    public static func color(forPercent percent: Int, palette: LedPalette = .standard) -> String {
+        if percent <= K.batteryCriticalPercent { return palette.batteryLow }
+        if percent <= K.batteryMidPercent { return palette.batteryMid }
+        return palette.batteryHigh
     }
 
     public struct Fill: Equatable {

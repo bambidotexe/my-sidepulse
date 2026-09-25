@@ -147,13 +147,14 @@ rejected by eye within minutes of a build whose tests were green.
 ### A colour typo is not a wrong colour, it is no program
 - **Symptom.** The strip blinks red six times and shows nothing.
 - **Why.** That is the device rejecting a program it cannot parse; one malformed `#rrggbb` is enough.
-- **Instead.** `testEveryColourConstantIsAValidProgramColour` checks every palette constant and effect colour; `LedMode.parse` accepts a manual colour only as `#` plus six ASCII hex digits.
+- **Instead.** `testEveryColourConstantIsAValidProgramColour` checks every palette constant and effect colour; `LedMode.parse` accepts a manual colour only as `#` plus six ASCII hex digits, and `LedPalette.applying(overrides:)` ignores a saved colour that is anything else, so a hand-edited `config.json` cannot reach the device as a broken program.
 - **Rule.** Six red blinks mean "unparseable program", not a hardware fault.
 
-### Colours are calibrated on the device, not on a screen
-- **Symptom.** A colour "corrected" with a picker looks wrong on the strip.
-- **Why.** The LEDs' response is nothing like a display's: `#330900` *is* amber on the device. Names in `Constants.swift` describe what the strip shows.
-- **Rule.** Retune colours only by eye against hardware. They are the owner's call, not a technical one.
+### Dim with brightness, never with a darker hex
+- **Symptom.** Colours that look nearly black on screen, pictures in the window drawn from hand-picked stand-ins instead of the real colours, and a colour picker that cannot show what the strip will do.
+- **Why.** The colours used to be dim hexes (`#330900` for amber) chosen to fake a low brightness, before the per-strip `brightness` line was known. A hex that low is a colour and a brightness mixed into one number, and a screen cannot render it as the LED does.
+- **Instead.** Every colour is a true colour, its hue at full scale, the same hex on the strip and in the window; the strip's brightness setting dims it. The Colours page plays a colour on the strip while it is picked, because an LED still renders a hue differently from a display.
+- **Rule.** Never darken a hex to dim the strip. Colours are the owner's call, judged on the strip.
 
 ### Do not flatten the rainbow by perceived brightness
 - **Symptom.** A wheel equalised to one Rec.709 luma measures even and looks worse.

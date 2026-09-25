@@ -5,13 +5,14 @@ import MySidepulseCore
 /// The window's picture of the strip: a dark housing with one dot per LED,
 /// animating whatever display state it is given on the real device cadences
 /// (roll stagger, pulse and breath timings straight from K). Colours are the
-/// screen stand-ins from DisplayState.screenColor — this view is a diagram of
-/// what the strip is doing, not a rendering of what it looks like.
+/// palette's own hexes, drawn exactly; the strip's brightness setting is not
+/// applied, so the picture always shows a colour at full.
 struct StripPreviewView: View {
     var state: DisplayState
     var power: PowerState?
     var ledCount: Int = K.defaultLedCount
     var dotSize: CGFloat = 16
+    var palette: LedPalette = .standard
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { context in
@@ -53,8 +54,28 @@ struct StripPreviewView: View {
             return splitAppearance(alert: alert, work: work, dot: index, at: t)
         }
         let level = t.map { intensity(dot: index, at: $0) } ?? staticIntensity(dot: index)
-        return (state.screenColor, level)
+        return (solidColor, level)
     }
+
+    /// The one colour of a state that paints the whole strip in one colour,
+    /// the battery bar's being the one its charge picks.
+    private var solidColor: Color {
+        switch state {
+        case .working: return screen(palette.working)
+        case .jobRunning: return screen(palette.jobRunning)
+        case .waiting, .jobFailed: return screen(palette.needsYou)
+        case .done, .jobSucceeded: return screen(palette.done)
+        case .batteryCritical: return screen(palette.batteryCritical)
+        case .batteryGlance:
+            return screen(BatteryRules.color(forPercent: power?.percent ?? 0, palette: palette))
+        case .manualColor(let hex): return screen(hex)
+        // Dark; and the two per-dot states, which appearance() paints before
+        // ever asking for one colour.
+        case .off, .split, .effect: return Color(white: 0.5)
+        }
+    }
+
+    private func screen(_ hex: String) -> Color { Color(deviceHex: hex) ?? Color(white: 0.5) }
 
     /// The split display, on the device program's own timeline as
     /// `LedProgram.splitProgram` builds it: the baseline frame, then — for
@@ -66,16 +87,14 @@ struct StripPreviewView: View {
         let count = max(2, ledCount)
         let zone = LedProgram.splitZone(alert: alert, ledCount: count)
         let rest = count - zone
-        let workColor: Color = work == .working
-            ? DisplayState.working.screenColor
-            : DisplayState.jobRunning.screenColor
+        let workColor = screen(work == .working ? palette.working : palette.jobRunning)
         let alertColor: Color
         let zoneIsGreen: Bool
         switch alert {
         case .waiting, .jobFailed:
-            alertColor = DisplayState.waiting.screenColor; zoneIsGreen = false
+            alertColor = screen(palette.needsYou); zoneIsGreen = false
         case .done, .jobSucceeded:
-            alertColor = DisplayState.done.screenColor; zoneIsGreen = true
+            alertColor = screen(palette.done); zoneIsGreen = true
         }
         guard let t else {
             return index < zone ? (alertColor, 1) : (workColor, 1)

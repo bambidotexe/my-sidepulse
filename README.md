@@ -54,7 +54,7 @@ side. That decision is what this app is.
   <img src="docs/assets/states.gif" width="720" alt="The eight-LED strip cycling through its states: a red wave rolling along it while Claude works, an amber double blink when Claude needs you, a slow green breath when Claude has finished, then two split displays where an amber or green zone on the left shares the strip with the red wave of another session still working.">
 </p>
 
-<p align="center"><sub>An illustration of the strip, playing the real programs at their real rhythm, in the colours the app's own preview uses on a screen.</sub></p>
+<p align="center"><sub>An illustration of the strip, playing the real programs at their real rhythm.</sub></p>
 
 | The strip | Means | Until |
 |---|---|---|
@@ -187,16 +187,19 @@ back to *auto*. Sessions are still followed and your phone is still told.
   7 seconds. At 15 % on battery it breathes red until you do something about it.
 - **Brightness per strip**, remembered by name, and a **Playground** that plays any state or effect on the real
   strip for 30 seconds, so you can learn what each one looks like before it matters.
+- **Your own colours** for every state, picked on the Colours page while the strip plays the state you are
+  recolouring.
 
 ## Settings
 
-A seven-page window, opened from the menu-bar item (⌘,) or by opening the app again, which is the way in when
+An eight-page window, opened from the menu-bar item (⌘,) or by opening the app again, which is the way in when
 the icon is hidden. Every change applies as you make it.
 
 | Page | What is on it |
 |---|---|
 | **General** | Open at login and reopen after a crash · Show in menu bar · Updates · Quit · Uninstall |
 | **Strip** | the live strip and a sentence saying what it shows and why · Auto, Off, a colour or one of six effects · brightness for each strip |
+| **Colours** | the colour of each state and each battery band, with a live preview on screen and on the strip · reset one or all |
 | **Notifications** | the phone switch · the ntfy server · the topic, with its QR code · a test button |
 | **Playground** | nine states and six effects to try on the real strip |
 | **System** | set up or remove the Claude Code hooks and the terminal hook, each with one button · allow notifications · show the welcome wizard again |
@@ -312,9 +315,9 @@ MySidepulse is free and carries no ads. If it saves you trouble, you can leave a
 ## Notes
 
 - Personal build: English and French, no licensing.
-- `swift test` runs 448 tests across the two library targets (317 + 131); the app target's verification is the
+- `swift test` runs 479 tests across the two library targets (346 + 133); the app target's verification is the
   strip itself, `mysidepulse doctor` and the journal replay.
-- The LED colours are calibrated by eye on the hardware; their hex values look wrong on a screen on purpose.
-  Never retune them from a colour picker.
+- Every colour is a true colour, the same hex on the strip and on screen; a strip's brightness is what dims it.
+  The defaults are the owner's, and the Colours page changes them.
 - SidePulse is the hardware and MySidepulse is this app. The name, the hardware and its photographs belong to
   their maker.

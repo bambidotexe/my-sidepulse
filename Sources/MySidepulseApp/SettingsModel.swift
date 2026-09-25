@@ -19,6 +19,7 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var power: PowerState?
     @Published private(set) var mode: LedMode = .auto
     @Published private(set) var brightnessOverrides: [String: Int] = [:]
+    @Published private(set) var palette: LedPalette = .standard
     @Published private(set) var doctor: DoctorRun?
     @Published private(set) var doctorRunning = false
     /// The raw topic, held only while the user has deliberately revealed it:
@@ -85,6 +86,7 @@ final class SettingsModel: ObservableObject {
         power = engine.power
         mode = engine.mode
         brightnessOverrides = engine.brightnessOverrides
+        palette = engine.palette
     }
 
     // MARK: general
@@ -158,6 +160,18 @@ final class SettingsModel: ObservableObject {
 
     func setBrightness(_ value: Int?, forVolumeName name: String) {
         engine?.setBrightness(value, forVolumeName: name)
+        refresh()
+    }
+
+    // MARK: colours
+
+    func setColor(_ hex: String?, for slot: LedPalette.Slot) {
+        engine?.setColor(hex, for: slot)
+        refresh()
+    }
+
+    func resetColors() {
+        engine?.resetColors()
         refresh()
     }
 

@@ -298,6 +298,25 @@ final class Engine {
         sync()
     }
 
+    /// K's colours with the Colours page's overrides applied. `sync()` reads it
+    /// on every paint, so a change reaches the strip on the next repaint.
+    var palette: LedPalette { LedPalette.standard.applying(overrides: config.colors ?? [:]) }
+
+    /// Nil puts the slot back to its default. The app is config.json's only
+    /// writer, so routing the edit through here is what lets it apply live.
+    func setColor(_ hex: String?, for slot: LedPalette.Slot) {
+        let colors = LedPalette.overrides(config.colors ?? [:], setting: slot, to: hex)
+        config.colors = colors.isEmpty ? nil : colors
+        config.save()
+        sync()
+    }
+
+    func resetColors() {
+        config.colors = nil
+        config.save()
+        sync()
+    }
+
     /// Start (or, with nil, stop) a Playground preview. Passing a state again
     /// restarts its TTL. `power` is only read by the battery-glance program.
     func setPreview(_ state: DisplayState?, power: PowerState? = nil) {
@@ -364,7 +383,8 @@ final class Engine {
         for device in devices.values {
             let program = LedProgram.program(for: decision, power: paintPower,
                                              ledCount: device.ledCount,
-                                             brightness: config.brightness(forVolumeName: device.name))
+                                             brightness: config.brightness(forVolumeName: device.name),
+                                             palette: palette)
             writer.write(program: program, to: device)
         }
         attention.setPolling(real.isAlertable)

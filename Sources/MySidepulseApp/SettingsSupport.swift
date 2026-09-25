@@ -3,35 +3,7 @@ import CoreImage
 import SwiftUI
 import MySidepulseCore
 
-/// Screen-side vocabulary for display states. The hardware hex values in K are
-/// calibrated for the strip and look like nothing on a monitor, so the window
-/// never shows them as colours: every state gets a screen-legible stand-in of
-/// its own here, and only the *cadences* are borrowed from the device programs.
 extension DisplayState {
-    var screenColor: Color {
-        switch self {
-        case .off: return Color(white: 0.5)
-        case .working: return Color(red: 1.0, green: 0.33, blue: 0.30)
-        case .jobRunning: return Color(red: 0.62, green: 0.47, blue: 1.0)
-        case .waiting, .jobFailed: return Color(red: 1.0, green: 0.70, blue: 0.16)
-        case .done, .jobSucceeded: return Color(red: 0.22, green: 0.82, blue: 0.50)
-        case .batteryCritical: return Color(red: 1.0, green: 0.23, blue: 0.23)
-        case .batteryGlance: return Color(red: 0.22, green: 0.82, blue: 0.50)
-        case .manualColor(let hex): return Color(deviceHex: hex) ?? Color(white: 0.5)
-        // Split paints per-dot in StripPreviewView (zone colour vs work
-        // colour); the single-colour fallback is the alert's, since the
-        // alert is the news.
-        case .split(let alert, _):
-            switch alert {
-            case .waiting, .jobFailed: return Color(red: 1.0, green: 0.70, blue: 0.16)
-            case .done, .jobSucceeded: return Color(red: 0.22, green: 0.82, blue: 0.50)
-            }
-        // Effects paint per-dot through EffectScreen; this is only the glow
-        // fallback anywhere a single colour is wanted.
-        case .effect: return Color(white: 0.92)
-        }
-    }
-
     /// What the strip is showing and why, as the mark of a status row. The words and their tone
     /// are `StatusCopy`'s, in Core, where they are pinned; this only picks the mark they take.
     var mark: StatusMark {
@@ -112,35 +84,26 @@ struct TileGrid<Option: Hashable, Picture: View>: View {
 }
 
 /// What an effect looks like *in the window*. The rotating effects render
-/// from the same Rotation description (frames, step, wheel indices) their
-/// device programs are generated from, LedEffects.wheelIndex on both sides,
-/// with screen-bright stand-ins for the dim device hexes, so the window
-/// shows exactly the motion the strip performs.
+/// from the same Rotation description (wheel hexes, frames, step, wheel
+/// indices) their device programs are generated from, LedEffects.wheelIndex
+/// on both sides, so the window shows exactly the colours and the motion the
+/// strip performs.
 enum EffectScreen {
-    /// Screen counterparts of the device wheels, entry for entry.
-    private static let screenWheels: [String: [(r: Double, g: Double, b: Double)]] = [
-        "rainbow": [(1.0, 0.2, 0.2), (1.0, 0.92, 0.25), (0.25, 0.9, 0.35),
-                    (0.2, 0.85, 0.9), (0.3, 0.4, 1.0), (1.0, 0.35, 0.9)],
-        "aurora": [(0.2, 0.9, 0.5), (0.2, 0.8, 0.8), (0.6, 0.4, 1.0)],
-        "ocean": [(0.15, 0.35, 1.0), (0.1, 0.7, 0.9), (0.15, 0.8, 0.6)],
-        "lava": [(1.0, 0.3, 0.1), (1.0, 0.55, 0.1), (0.85, 0.12, 0.08)],
-    ]
-
     /// Colour and intensity for one dot. `t` nil means Reduce Motion: one
     /// honest still frame (the rainbow stays a rainbow, just parked).
     static func appearance(name: String, dot: Int, count: Int,
                            at t: TimeInterval?) -> (color: Color, level: Double) {
         let n = max(1, count)
-        if let rotation = LedEffects.rotation(for: name),
-           let wheel = screenWheels[name] {
-            return rotating(rotation, wheel: wheel, dot: dot, count: n, at: t)
+        if let rotation = LedEffects.rotation(for: name) {
+            return rotating(rotation, dot: dot, count: n, at: t)
         }
         switch name {
         case "ember":
             let level = t.map { x in 0.2 + 0.8 * pow(sin(.pi * x / 3.2), 2) } ?? 1
-            return (Color(red: 1.0, green: 0.55, blue: 0.2), level)
+            return (Color(deviceHex: LedEffects.emberGlow) ?? Color(white: 0.5), level)
         case "sparkle":
-            guard let t else { return (Color(white: 0.95), 1) }
+            let glint = Color(deviceHex: LedEffects.sparkleGlint) ?? Color(white: 0.5)
+            guard let t else { return (glint, 1) }
             // The device program's slot permutation, so window and strip glint
             // in the same order.
             let cycle = 2.88
@@ -149,7 +112,7 @@ enum EffectScreen {
                 .truncatingRemainder(dividingBy: 1)
             let wrapped = phase < 0 ? phase + 1 : phase
             let level = wrapped < 0.125 ? pow(sin(.pi * wrapped / 0.125), 2) : 0.04
-            return (Color(white: 0.95), level)
+            return (glint, level)
         default:
             return (Color(white: 0.5), 0.3)
         }
@@ -159,13 +122,12 @@ enum EffectScreen {
     /// next over the step time, the frame semantics the device program has.
     /// The blend is a plain RGB lerp: honest about the muddy midpoints two
     /// crossfading hues really pass through.
-    private static func rotating(_ rotation: LedEffects.Rotation,
-                                 wheel: [(r: Double, g: Double, b: Double)],
-                                 dot: Int, count: Int,
+    private static func rotating(_ rotation: LedEffects.Rotation, dot: Int, count: Int,
                                  at t: TimeInterval?) -> (color: Color, level: Double) {
         func color(frame: Int) -> (r: Double, g: Double, b: Double) {
-            wheel[LedEffects.wheelIndex(rotation, led: dot, frame: frame,
-                                        ledCount: count) % wheel.count]
+            let hex = rotation.wheel[LedEffects.wheelIndex(rotation, led: dot, frame: frame,
+                                                           ledCount: count) % rotation.wheel.count]
+            return rgb(deviceHex: hex) ?? (0.5, 0.5, 0.5)
         }
         guard let t else { return (Color(rgb: color(frame: 0)), 1) }
         let step = Double(rotation.stepMs) / 1000
@@ -186,15 +148,21 @@ private extension Color {
     }
 }
 
+/// "#rrggbb" as the device understands it, as sRGB components in 0...1.
+/// The device's colours are true colours, so this is also how they look on
+/// screen.
+private func rgb(deviceHex hex: String) -> (r: Double, g: Double, b: Double)? {
+    guard LedMode.isRGBHex(hex), let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
+    return (Double((value >> 16) & 0xFF) / 255,
+            Double((value >> 8) & 0xFF) / 255,
+            Double(value & 0xFF) / 255)
+}
+
 extension Color {
-    /// "#rrggbb" as the device understands it. Used for the forced-colour
-    /// swatch only, the one place a raw hex is what the user picked.
+    /// A device colour on screen: the same hex, drawn exactly.
     init?(deviceHex hex: String) {
-        guard hex.count == 7, hex.hasPrefix("#"),
-              let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-        self.init(red: Double((value >> 16) & 0xFF) / 255,
-                  green: Double((value >> 8) & 0xFF) / 255,
-                  blue: Double(value & 0xFF) / 255)
+        guard let rgb = rgb(deviceHex: hex) else { return nil }
+        self.init(rgb: rgb)
     }
 }
 

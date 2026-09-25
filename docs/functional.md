@@ -85,6 +85,15 @@ reaches the strip; until then the strip keeps showing what it showed. An alert
 that is gone within that second is never seen. Going to `working` has no
 settle: it shows on the event that caused it.
 
+**Colours.** Every colour named in this section is a default. The Colours page
+(§10) sets eight of them, and the strip paints what is set: Claude working (red
+by default), needs you (amber), done (green), command running (violet), battery
+critical (red), and the battery bar's three bands (red, amber, green). A failed
+command takes the needs-you colour and a succeeded one the done colour. Every
+colour is a true colour, the same hex on the strip and in the window; a strip's
+brightness (§10, Strip) is what dims it, never a darker hex. The six effects
+follow the same rule and are not recoloured.
+
 Colours, shapes and exact program text are in [device.md](device.md).
 
 ## 4. Claude Code status
@@ -293,7 +302,8 @@ Claude works; a job *outcome* takes the alert zone over Claude's roll.
 
 Read from IOKit (internal battery only), on change and every
 `K.powerRefreshSeconds` (300 s). Critical is ≤ 15 % while not plugged, charging
-or charged. The glance bar is red ≤ 15 %, amber ≤ 50 %, green above. A reading
+or charged. The glance bar takes the Colours page's colour for its band, ≤ 15 %,
+≤ 50 % or above, red, amber and green by default (§3 *Colours*). A reading
 without a capacity value counts as no reading, never as 0 %.
 
 ## 9. Menu
@@ -415,9 +425,9 @@ bundle mid-install, never having seen the marker.
 Every title, label and sentence in this section is quoted in English. Each one
 also exists in French, in `Sources/MySidepulseCore/Strings*.swift` (§15).
 
-**Seven pages, picked from a toolbar** that draws each page's symbol above its
-title: *General*, *Strip*, *Notifications*, *Playground*, *System*, *Health*,
-*Tip*.
+**Eight pages, picked from a toolbar** that draws each page's symbol above its
+title: *General*, *Strip*, *Colours*, *Notifications*, *Playground*, *System*,
+*Health*, *Tip*.
 The window's title is the shown page's. The window is **640 pt** wide and **as
 tall as the shown page**: it resizes around its top-left corner, animated, on a
 page switch and whenever a page gains or loses a line, and never grows past the
@@ -435,6 +445,8 @@ opens on General, already at that page's height and centred.
 | Strip | What the strip shows | Auto · Off · Colour · Effect; with Colour a colour picker, with Effect six picture tiles | Auto |
 | Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider (1–255, applied on release; 255 stores nothing) | 255 |
 | Strip | Remembered brightness | the overrides of strips not plugged in, each with `Forget` | |
+| Colours | Preview | the live strip playing the picked colour's state, what is playing, and `Stop` while it plays | |
+| Colours | Colours | one row per colour (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
 | Notifications | Phone | Notify my phone when Claude finishes or needs you | off |
 | Notifications | Server | the ntfy server, applied on Return | `https://ntfy.sh` |
 | Notifications | Topic | the masked topic; `Reveal Topic and QR Code`; `New Topic…` | |
@@ -516,6 +528,27 @@ warning under the group saying the write will clear by itself or on a replug.
 With no strip, the row is `SidePulse strip` **Missing** in orange and the hint
 says to plug one into the SD card slot. Brightness of a strip that is not
 plugged in stays as `<name>` and its value, with **Forget**.
+
+**Colours** plays what it recolours. Clicking a row's name or its small strip,
+or changing its colour, selects the row and plays its state on the real strip
+for 30 s through the Playground's preview, restarted at every change: Claude
+working the working roll, needs you the double blink, done the breath, command
+running the violet roll, battery critical its breath, and the three battery
+bars the glance at 15 %, 50 % and 100 %, the top of each band. `Stop`, leaving
+the page or closing the window ends it. The large strip in Preview plays the
+selected row's state on screen, and before any row is picked shows the real
+state; under it, **Showing** and the `StatusCopy` sentence, then once a row is
+picked **Playing** with a spinner and the seconds left, then **Ended**. The hex
+field takes `#` and six hex digits, applied on Return or when the field is left;
+anything else is put back. The colour well applies once it has paused for
+0.3 s; the pictures follow it at once. `Reset` puts one colour back to its
+default and is disabled at the default; `Reset All Colours` puts back all
+eight. A colour at its default stores nothing, so it follows the default. The
+hint under the colours says which colour a failed and a succeeded command take;
+the note says brightness is set on Strip. With no strip mounted, a note under
+Preview says the colour plays on screen only. Every picture in the window, on
+Strip and Playground too, draws each colour exactly as its hex, at full
+brightness.
 
 **Notifications** shows Server, Topic and Test only while the switch is on;
 turning it on reveals the topic (§6). The note under Phone says the ntfy app
@@ -819,9 +852,10 @@ server or topic).
 
 ## 12. Settings, permissions, failure modes
 
-**Defaults:** mode `auto`; brightness 255; launch agent registered on first
-launch; notifications off; server `https://ntfy.sh`; menu-bar item shown; the
-onboarding wizard not yet walked, so a first launch opens it (§10).
+**Defaults:** mode `auto`; brightness 255; the colours of §3 *Colours*; launch
+agent registered on first launch; notifications off; server `https://ntfy.sh`;
+menu-bar item shown; the onboarding wizard not yet walked, so a first launch
+opens it (§10).
 Storage is described in [architecture.md](architecture.md#persistence).
 
 ### Handing over to launchd
@@ -921,7 +955,8 @@ belongs to on the strip.
 | `controlRetrySeconds` | 30 s | control socket bind retry |
 | `journalSoftMaxBytes` / `journalHardMaxBytes` | 5 MB / 20 MB | journal rotation |
 | `journalLineMaxBytes` / `hookStdinMaxBytes` / `messageTailMaxChars` | 4096 / 8 MB / 500 | hook and journal caps |
-| `playgroundPreviewSeconds` | 30 s | a Playground state or effect holds the strip this long, and the page's hint says the number |
+| `playgroundPreviewSeconds` | 30 s | a Playground state or effect, or a Colours row, holds the strip this long, and each page's hint says the number |
+| Colour well pause | 0.3 s | a colour dragged in the colour panel is saved and written once it has paused this long (Colours, and the Playground's A colour) |
 | Settings status refresh | 2 s | the window re-reads the engine while open (`SettingsModel`) |
 
 LED colours and animation timings are in [device.md](device.md).
@@ -956,7 +991,7 @@ setting and nothing is persisted: change the system language, or launch with
 `-AppleLanguages "(fr)"`, and the next start follows.
 
 **What is translated.** The menu-bar menu (§9), the main menu the window puts up,
-all seven Settings pages and every sentence on them (§10), the `Showing`
+all eight Settings pages and every sentence on them (§10), the `Showing`
 sentences, the doctor's detail sentences and the hook-install outcomes as the
 window shows them, and the phone push bodies (§6).
 

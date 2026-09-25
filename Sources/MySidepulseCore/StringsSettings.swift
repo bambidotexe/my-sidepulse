@@ -100,6 +100,13 @@ public struct SettingsStrings {
         }
     }
 
+    public var pageColors: String {
+        switch language {
+        case .en: "Colours"
+        case .fr: "Couleurs"
+        }
+    }
+
     public var pageNotifications: String {
         switch language {
         case .en: "Notifications"
@@ -138,6 +145,7 @@ public struct SettingsStrings {
     public var words: StatusWords { StatusWords(language) }
     public var general: GeneralPageStrings { GeneralPageStrings(language) }
     public var strip: StripPageStrings { StripPageStrings(language) }
+    public var colors: ColorsPageStrings { ColorsPageStrings(language) }
     public var notifications: NotificationsPageStrings { NotificationsPageStrings(language) }
     public var playground: PlaygroundPageStrings { PlaygroundPageStrings(language) }
     public var health: HealthPageStrings { HealthPageStrings(language) }

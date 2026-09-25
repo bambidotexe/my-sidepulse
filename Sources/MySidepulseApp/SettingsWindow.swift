@@ -12,7 +12,7 @@ import MySidepulseCore
 /// the terminal hook, the notification permission) comes as "System", then whether all of it works,
 /// as "Health", and the tip jar last.
 enum SettingsPageID: String, CaseIterable, Sendable {
-    case general, strip, notifications, playground, system, health, tip
+    case general, strip, colors, notifications, playground, system, health, tip
 
     /// The toolbar item's label, and the window's title while the page is shown. Title Case.
     var title: String {
@@ -20,6 +20,7 @@ enum SettingsPageID: String, CaseIterable, Sendable {
         switch self {
         case .general: return t.pageGeneral
         case .strip: return t.pageStrip
+        case .colors: return t.pageColors
         case .notifications: return t.pageNotifications
         case .playground: return t.pagePlayground
         case .system: return t.pageSystem
@@ -34,6 +35,7 @@ enum SettingsPageID: String, CaseIterable, Sendable {
         switch self {
         case .general: "gearshape"
         case .strip: "light.strip.2"
+        case .colors: "paintbrush"
         case .notifications: "bell.badge"
         case .playground: "paintpalette"
         case .system: "checkmark.shield"
@@ -90,6 +92,7 @@ struct SettingsRootView: View {
         switch selection.page {
         case .general: GeneralPage(model: model)
         case .strip: StripPage(model: model)
+        case .colors: ColorsPage(model: model)
         case .notifications: NotificationsPage(model: model)
         case .playground: PlaygroundPage(model: model)
         case .system: SystemPage(model: model)

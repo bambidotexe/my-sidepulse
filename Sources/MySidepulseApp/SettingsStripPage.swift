@@ -6,8 +6,7 @@ import MySidepulsePlatform
 /// What the strip is doing now, what it is told to do, and the hardware it is doing it on.
 struct StripPage: View {
     @ObservedObject var model: SettingsModel
-    /// Remembered so switching the picker to Colour has something sensible to force;
-    /// K.askAmber is calibrated for the strip.
+    /// Remembered so switching the picker to Colour has something sensible to force.
     @State private var lastHex = K.askAmber
     @State private var lastEffect = LedEffects.names[0]
 
@@ -19,7 +18,7 @@ struct StripPage: View {
             SettingsGroup(title: t.rightNowTitle) {
                 SettingsRowFrame {
                     StripPreviewView(state: model.displayState, power: model.power,
-                                     ledCount: ledCount, dotSize: 18)
+                                     ledCount: ledCount, dotSize: 18, palette: model.palette)
                         .frame(maxWidth: .infinity)
                 }
                 StatusRow(t.showingLabel, mark: model.displayState.mark)
@@ -53,7 +52,8 @@ struct StripPage: View {
                     TileGrid(options: LedEffects.names, perRow: 3,
                              selection: effectSelection(current: name),
                              label: { $0.capitalized }) { effect in
-                        StripPreviewView(state: .effect(effect), ledCount: ledCount, dotSize: 7)
+                        StripPreviewView(state: .effect(effect), ledCount: ledCount, dotSize: 7,
+                                         palette: model.palette)
                     }
                 }
             }
