@@ -83,11 +83,40 @@ public enum K {
     public static let alertZoneLedsFinished = 2
 
     /// `mysidepulse brightness cycle` without `--steps`: 25 % → 50 % → 75 % →
-    /// 100 % → off, the owner's choice.
+    /// 100 % → off, perceived (`BrightnessCurve`), the owner's choice.
     public static let brightnessCycleDefaultSteps = 4
-    /// The most steps `--steps` takes. The cycle compares brightness in whole
-    /// percent, so steps finer than 1 % could not be told apart.
-    public static let brightnessCycleMaxSteps = 100
+    /// How close, in perceived percent, a step above the current brightness
+    /// may be and still count as reached. One unit of the strip's 1…255 is
+    /// about a percent to the eye around a third of full and more below it
+    /// (27, 28 and 29 read 33 %, 33 % and 34 %), so a brightness can sit a
+    /// percent under a step, and a press must then go past it rather than move
+    /// invisibly.
+    public static let brightnessCycleSlackPercent = 1
+    /// The most steps `--steps` takes. The strip's dim end is coarse (its
+    /// lowest value already reads 6 % at γ 2, 16 % at γ 3), so past a point
+    /// the smallest steps land on the same value. Computed by walking every
+    /// step count: all steps stay more than the slack apart up to 26 at γ 2,
+    /// 20 at 2.2 and 11 at 3. Ten holds for any γ up to 3;
+    /// `testTheMostStepsAreStillToldApart` fails if a new γ breaks it.
+    public static let brightnessCycleMaxSteps = 10
+    /// The Strip page's brightness slider moves in steps of this many
+    /// perceived percent, 5 % to 100 %: twenty positions, each a change the eye
+    /// can see. At the measured γ 2 steps stay told apart up to 26 of them
+    /// (the walk behind `brightnessCycleMaxSteps`), so 5 % is the finest grid
+    /// with no position that looks like its neighbour.
+    public static let brightnessSliderStepPercent = 5
+    /// The curve from a perceived brightness to the strip's `brightness N`
+    /// (`BrightnessCurve`). Measured by the owner's eye on a white strip: a
+    /// third of full looked like `brightness 30`, two thirds like 110, which
+    /// fit γ 1.96. At 2.0 the curve gives 28 and 113, inside what an eye can
+    /// place, and the steps read back as exactly 33 % and 67 %.
+    public static let brightnessGamma = 2.0
+    /// How long LED 0 lights white on a dark strip after a `brightness cycle`
+    /// press, restarted by each press: the owner's choice, long enough to
+    /// judge the brightness between presses.
+    public static let brightnessPreviewSeconds: TimeInterval = 2
+    /// Pure white, so the LED shows the brightness itself and nothing else.
+    public static let brightnessPreviewWhite = "#ffffff"
 
     /// How long a Playground state or effect holds the strip before the engine
     /// hands it back. Long enough to watch a full cycle of the slowest effect,

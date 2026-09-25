@@ -121,10 +121,11 @@ public struct StripPageStrings {
         }
     }
 
-    public func valueOf255(_ value: Int) -> String {
+    /// A brightness, in perceived percent.
+    public func percentValue(_ percent: Int) -> String {
         switch language {
-        case .en: "\(value) of 255"
-        case .fr: "\(value) sur 255"
+        case .en: "\(percent) %"
+        case .fr: "\(percent) %"
         }
     }
 

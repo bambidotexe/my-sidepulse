@@ -12,6 +12,8 @@ final class Engine {
     private(set) var display: DisplayState = .off
     var mode: LedMode {
         didSet {
+            // Only the cycle's own steps keep the mode its off step replaced.
+            if !cyclingMode { config.ledModeBeforeOff = nil }
             config.ledMode = mode.configValue
             config.save()
             sync()
@@ -25,6 +27,12 @@ final class Engine {
     /// there. The TTL hands the strip back when a preview is forgotten.
     private var preview: (state: DisplayState, power: PowerState?)?
     private var previewUntil: Date?
+    /// Until when a dark strip shows the brightness a `brightness cycle`
+    /// press set, on LED 0. Paint-only, like the Playground preview.
+    private var brightnessPreviewUntil: Date?
+    /// Set while `cycleBrightness` changes the mode, so `mode`'s observer
+    /// keeps `config.ledModeBeforeOff`.
+    private var cyclingMode = false
     private var devices: [DeviceKey: LedDevice] = [:]
     private var config: AppConfig
     private let writer = LedWriter()
@@ -320,7 +328,8 @@ final class Engine {
     /// One press of `mysidepulse brightness cycle`, resolved here because only
     /// the app knows the mode and the strips. Every plugged-in strip moves to
     /// the same step, taken from the brightest of them; the step past the last
-    /// one is the mode `off`, and the press after it brings back `auto`.
+    /// one is the mode `off`, and the press after it brings back the mode that
+    /// step replaced.
     private func cycleBrightness(steps: Int) -> ControlResponse {
         guard (1...K.brightnessCycleMaxSteps).contains(steps) else {
             return ControlResponse(ok: false,
@@ -333,9 +342,15 @@ final class Engine {
         let brightest = names.map(config.brightness(forVolumeName:)).max() ?? 255
         switch BrightnessCycle.next(after: brightest, modeIsOff: mode == .off, steps: steps) {
         case .off:
-            mode = .off
+            brightnessPreviewUntil = nil
+            config.ledModeBeforeOff = mode.configValue
+            cyclingMode = true
+            mode = .off // saves and repaints
+            cyclingMode = false
             return ControlResponse(ok: true, mode: mode.configValue)
         case .level(let level):
+            // Set before the repaint below, so its first paint carries the white.
+            brightnessPreviewUntil = Date().addingTimeInterval(K.brightnessPreviewSeconds)
             for name in names {
                 // 255 is the default: store nothing, as the Strip page does.
                 if level == 255 {
@@ -346,7 +361,11 @@ final class Engine {
             }
             config.save()
             if mode == .off {
-                mode = .auto // saves and repaints
+                let restored = BrightnessCycle.modeAfterOff(saved: config.ledModeBeforeOff)
+                config.ledModeBeforeOff = nil
+                cyclingMode = true
+                mode = restored // saves and repaints
+                cyclingMode = false
             } else {
                 sync()
             }
@@ -418,11 +437,17 @@ final class Engine {
             paintPower = preview.power ?? power
         }
         display = decision
+        if let until = brightnessPreviewUntil, until <= now || mode == .off {
+            brightnessPreviewUntil = nil
+        }
+        let showsWhite = BrightnessCycle.previewShows(mode: mode, painted: decision,
+                                                     until: brightnessPreviewUntil, now: now)
         for device in devices.values {
-            let program = LedProgram.program(for: decision, power: paintPower,
-                                             ledCount: device.ledCount,
-                                             brightness: config.brightness(forVolumeName: device.name),
-                                             palette: palette)
+            let brightness = config.brightness(forVolumeName: device.name)
+            let program = showsWhite
+                ? LedProgram.brightnessPreview(ledCount: device.ledCount, brightness: brightness)
+                : LedProgram.program(for: decision, power: paintPower, ledCount: device.ledCount,
+                                     brightness: brightness, palette: palette)
             writer.write(program: program, to: device)
         }
         attention.setPolling(real.isAlertable)
@@ -542,6 +567,9 @@ final class Engine {
         }
         if let previewEnd = previewUntil, previewEnd > now {
             deadline = deadline.map { min($0, previewEnd) } ?? previewEnd
+        }
+        if let whiteEnd = brightnessPreviewUntil, whiteEnd > now {
+            deadline = deadline.map { min($0, whiteEnd) } ?? whiteEnd
         }
         guard let fireAt = deadline else { return }
         let timer = DispatchSource.makeTimerSource(queue: .main)

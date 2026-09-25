@@ -206,7 +206,14 @@ Per volume name, `1…255`, stored in `config.json` under `brightness` keyed by
 the lower-cased volume name; absent means 255. It is sent as the `brightness N`
 first line. `off` is never prefixed. The Strip page's slider sets it, and so does
 `mysidepulse brightness cycle` (functional.md §11), which writes the same value
-for every plugged-in strip.
+for every plugged-in strip. Both set a perceived percent and send
+`255 · fraction^γ` (`BrightnessCurve`, `K.brightnessGamma`): the value is linear
+in the LEDs' power, the eye is not.
+
+**The white LED** of `brightness cycle`, on a strip that would be dark, is one
+line with its brightness line, the baseline shape the split opens with:
+`0:#ffffff 160ms;1:#000000 160ms;…;7:#000000 160ms`
+(`LedProgram.brightnessPreview`). It is never drawn over another program.
 
 ## Writing
 

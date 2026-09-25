@@ -443,7 +443,7 @@ opens on General, already at that page's height and centred.
 | General | Uninstall | `Uninstall MySidepulse` under a hint, with a warning that always stands there | |
 | Strip | Right now | the live strip, and a `Showing` row saying what it shows and why | |
 | Strip | What the strip shows | Auto · Off · Colour · Effect; with Colour a colour picker, with Effect six picture tiles | Auto |
-| Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider (1–255, applied on release; 255 stores nothing; `brightness cycle` (§11) sets the same value) | 255 |
+| Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider in perceived percent, 5 % to 100 % in steps of 5 % (`K.brightnessSliderStepPercent`, each a change the eye can see; 5 % is the strip's lowest) (§11 *Brightness is perceived*; applied on release; 100 % stores nothing; `brightness cycle` sets the same value) | 100 % |
 | Strip | Remembered brightness | the overrides of strips not plugged in, each with `Forget` | |
 | Colours | Preview | the live strip playing the picked colour's state, what is playing, and `Stop` while it plays | |
 | Colours | Colours | one row per colour (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
@@ -845,16 +845,40 @@ rule rather than a gap (§15).
 
 With no arguments it prints usage and exits 0.
 
-**`brightness cycle`** walks the brightness of the Strip page up in `N` equal
-steps, `k/N` of full for step `k`, then off, then the first step again. `N` is
-1 to `K.brightnessCycleMaxSteps` (100), and 4 when `--steps` is left out
-(`K.brightnessCycleDefaultSteps`): 25 %, 50 %, 75 %, 100 %, off. A press goes to
-the first step brighter than now, compared in whole percent, so a brightness a
-unit under a step counts as that step; past the last step it sets the mode
-`off`, exactly as `led toggle` does, and the next press sets the first step and
-the mode `auto`, whatever mode was forced before. Every plugged-in strip takes
-the same step, counted from the brightest of them. With 3 steps from 50 %: 67 %,
-100 %, off, 33 %, 67 %. It prints `brightness: 67% (LEDs: auto)` or `LEDs: off`.
+**Brightness is perceived.** The strip's `brightness N` (1–255) scales the
+LEDs' power in a straight line, and the eye does not: a third of the power
+already looks like most of full. So every brightness the owner sets, by the
+Strip page's slider or by `brightness cycle`, is a perceived percent, and the
+strip gets `255 · (percent / 100)^γ`, never below 1 (`BrightnessCurve`).
+`K.brightnessGamma` is 2.0, measured by the owner's eye on a white strip: a
+third of full looked like `brightness 30`, two thirds like 110. What is stored is
+still the strip's 1–255. At the dim end one unit of the strip is a percent or
+more to the eye, so a value can read back a percent off the one it was set from.
+
+**`brightness cycle`** walks that brightness up in `N` steps even to the eye,
+`k/N` of full for step `k`, then off, then the first step again. `N` is 1 to
+`K.brightnessCycleMaxSteps` (10: beyond it the smallest steps land on the same
+value), and 4 when `--steps` is left out (`K.brightnessCycleDefaultSteps`):
+25 %, 50 %, 75 %, 100 %, off. A press goes to the first step brighter than now
+by more than `K.brightnessCycleSlackPercent` (1 %), so a brightness a unit under
+a step counts as that step and the press always moves visibly. Past the last
+step it sets the mode `off`, exactly as `led toggle` does, and remembers the
+mode it replaced (`config.json`, `ledModeBeforeOff`); the next press sets the
+first step and brings that mode back, a forced colour or an effect as well as
+`auto`. Any other change of mode forgets it, and with nothing remembered the
+press brings back `auto`. Every plugged-in strip takes the same step, counted
+from the brightest of them. With 3 steps from 50 %: 67 %, 100 %, off, 33 %,
+67 %. It prints `brightness: 67% (LEDs: auto)` or `LEDs: off`, the percent read
+back from the value set.
+
+**The white LED.** On a strip that shows nothing, a press that lands on a step
+lights LED 1, the leftmost, pure white at the new brightness for
+`K.brightnessPreviewSeconds` (2 s), restarted by each press, so the brightness
+can be seen between presses. While the strip shows anything else, that shows
+the new brightness itself and nothing is added: the strip only takes whole
+programs, so every press restarts its animation once, and a white LED over an
+animation would restart it a second time when it left. The white is paint
+only, like the Playground preview; the off step lights nothing.
 
 `doctor` checks: app reachable; auto-start & restart (this process is the one
 launchd supervises); hooks installed (all 15); hook binary exists; hook command
@@ -968,7 +992,11 @@ belongs to on the strip.
 | `journalSoftMaxBytes` / `journalHardMaxBytes` | 5 MB / 20 MB | journal rotation |
 | `journalLineMaxBytes` / `hookStdinMaxBytes` / `messageTailMaxChars` | 4096 / 8 MB / 500 | hook and journal caps |
 | `playgroundPreviewSeconds` | 30 s | a Playground state or effect, or a Colours row, holds the strip this long, and each page's hint says the number |
-| `brightnessCycleDefaultSteps` / `brightnessCycleMaxSteps` | 4 / 100 | `brightness cycle` without `--steps`; the most it takes, since steps are told apart in whole percent |
+| `brightnessGamma` | 2.0 | perceived brightness to the strip's `brightness N`, measured on the owner's strip |
+| `brightnessCycleDefaultSteps` / `brightnessCycleMaxSteps` | 4 / 10 | `brightness cycle` without `--steps`; the most it takes, beyond which the dim end's steps land on the same value |
+| `brightnessSliderStepPercent` | 5 % | the Strip page's brightness slider's step: twenty positions, each visibly different at the measured γ |
+| `brightnessCycleSlackPercent` | 1 % | a step this close above the current brightness counts as reached |
+| `brightnessPreviewSeconds` | 2 s | the white LED on a dark strip after a `brightness cycle` press, restarted by each press |
 | Colour well pause | 0.3 s | a colour dragged in the colour panel is saved and written once it has paused this long (Colours, and the Playground's A colour) |
 | Settings status refresh | 2 s | the window re-reads the engine while open (`SettingsModel`) |
 

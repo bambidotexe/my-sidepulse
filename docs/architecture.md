@@ -100,7 +100,8 @@ job begin / end, wake from sleep, and the deadline timer.
 
 **One timer.** There is no periodic tick. After every `sync()` the engine arms a
 single `DispatchSourceTimer` for the earliest of `SessionStore.nextDeadline`,
-`JobStore.nextDeadline`, the glance end and the preview end. It is scheduled
+`JobStore.nextDeadline`, the glance end, the preview end and the end of the
+brightness cycle's white LED. It is scheduled
 with `wallDeadline`, so time spent asleep counts.
 
 **Startup** (`Engine.start`, called from `AppDelegate`):
@@ -210,12 +211,13 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `ledMode` | string | `"auto"` | `auto`, `off`, `#rrggbb` or an effect name. |
-| `brightness` | `{volume name: 1…255}` | `{}` | Per-strip brightness; absent means 255. |
+| `brightness` | `{volume name: 1…255}` | `{}` | Per-strip brightness, the strip's own value (the window and the CLI show it as a perceived percent through `BrightnessCurve`); absent means 255. |
 | `autoRestartWanted` | bool? | absent | absent: never asked, register the agent. `true`: keep it registered. `false`: the user turned it off; stay off. |
 | `notifyEnabled` | bool? | absent | Pushes on or off. |
 | `notifyTopic` | string? | absent | The ntfy topic. A secret. |
 | `notifyServer` | string? | absent → `https://ntfy.sh` | The ntfy server. |
 | `onboardingDone` | bool? | absent | `true` once the wizard's last button has been pressed. Absent and `false` both open it at the next launch (functional.md §10). |
+| `ledModeBeforeOff` | string? | absent | The mode `brightness cycle`'s off step replaced, which its next press brings back; cleared by any other change of mode (functional.md §11). |
 | `colors` | `{slot: "#rrggbb"}`? | absent | The Colours page's overrides, keyed by `LedPalette.Slot` raw value (`working`, `needsYou`, `done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`). A slot at its default is absent; a value that is not `#rrggbb` is ignored. `Engine.palette` applies them on every paint. |
 
 Loading falls back to defaults when the file is missing or does not decode.

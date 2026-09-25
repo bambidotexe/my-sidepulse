@@ -75,7 +75,8 @@ struct StripPage: View {
                 SettingsGroup(title: t.rememberedBrightnessTitle,
                               hint: t.rememberedBrightnessHint) {
                     ForEach(orphans, id: \.key) { name, value in
-                        StatusRow(name, mark: .info(t.valueOf255(value)))
+                        StatusRow(name, mark: .info(t.percentValue(
+                            BrightnessCurve.sliderPercent(device: value))))
                         ButtonRow {
                             Button(t.forgetButton) { model.setBrightness(nil, forVolumeName: name) }
                         }
@@ -158,32 +159,38 @@ struct StripPage: View {
 
 /// Committed on release, not per tick: each commit writes config.json and repaints the strip,
 /// which is exactly one honest apply per adjustment.
+/// The slider moves in perceived percent (`BrightnessCurve`), in steps the eye can tell apart
+/// (`K.brightnessSliderStepPercent`), so its travel is even to the eye; what is stored and sent is
+/// the strip's own 1…255.
 private struct BrightnessRow: View {
     let volumeName: String
     @ObservedObject var model: SettingsModel
-    @State private var value = 255.0
+    @State private var percent = 100.0
     @State private var loaded = false
 
     var body: some View {
         SettingsRow(Loc.settings.strip.brightnessLabel) {
             HStack(spacing: 8) {
-                Slider(value: $value, in: 1...255,
+                Slider(value: $percent, in: Double(K.brightnessSliderStepPercent)...100,
+                       step: Double(K.brightnessSliderStepPercent),
                        onEditingChanged: { editing in
                            guard !editing else { return }
-                           let rounded = Int(value.rounded())
+                           let device = BrightnessCurve.device(percent: Int(percent.rounded()))
                            // 255 is the default: store nothing rather than a no-op.
-                           model.setBrightness(rounded == 255 ? nil : rounded,
+                           model.setBrightness(device == 255 ? nil : device,
                                                forVolumeName: volumeName)
                        })
                     .frame(width: 220)
-                Text(Loc.settings.strip.valueOf255(Int(value.rounded())))
+                Text(Loc.settings.strip.percentValue(Int(percent.rounded())))
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
         }
         .onAppear {
             guard !loaded else { return }
             loaded = true
-            value = Double(model.brightnessOverrides[volumeName.lowercased()] ?? 255)
+            let device = model.brightnessOverrides[volumeName.lowercased()] ?? 255
+            percent = Double(BrightnessCurve.sliderPercent(device: device))
         }
     }
 }

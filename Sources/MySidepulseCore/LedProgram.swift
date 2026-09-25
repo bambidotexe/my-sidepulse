@@ -197,6 +197,18 @@ public enum LedProgram {
             .joined(separator: ";")
     }
 
+    /// A dark strip under the brightness preview: LED 0 pure white at the
+    /// new brightness, every other LED assigned black, the baseline shape the
+    /// split opens with.
+    public static func brightnessPreview(ledCount: Int, brightness: Int) -> String {
+        let count = max(1, min(8, ledCount))
+        let fade = "\(K.rollingFadeMs)ms"
+        let line = (0..<count).map { led in
+            "\(led):\(led == 0 ? K.brightnessPreviewWhite : "#000000") \(fade)"
+        }.joined(separator: ";")
+        return applyBrightness(line, brightness)
+    }
+
     static func applyBrightness(_ program: String, _ brightness: Int) -> String {
         let b = max(1, min(255, brightness))
         guard b < 255, program != "off" else { return program }

@@ -32,6 +32,11 @@ struct AppConfig: Codable {
     ///
     /// Optional for the same reason as every key above it.
     var colors: [String: String]?
+    /// The mode `brightness cycle`'s off step replaced, which the next press
+    /// brings back. Any other change of mode clears it.
+    ///
+    /// Optional for the same reason as every key above it.
+    var ledModeBeforeOff: String?
 
     var notifyIsLive: Bool { notifyEnabled == true && notifyTopic?.isEmpty == false }
     var notifyServerOrDefault: String { notifyServer ?? K.notifyServerDefault }

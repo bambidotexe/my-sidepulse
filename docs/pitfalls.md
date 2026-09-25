@@ -120,6 +120,18 @@ The strip is closed; everything below was learned by watching it. The tests pin
 the text, and the text is necessary but not sufficient: two of these were
 rejected by eye within minutes of a build whose tests were green.
 
+### An overlay on an animation restarts it
+- **Symptom.** A white LED over the running animation, shown for two seconds after a brightness press, made the strip look like it flickered.
+- **Why.** The strip only takes whole programs, and a new program restarts its animation from the start: a breath caught halfway drops back to dark. Brightness is itself a program line, so a press restarts the animation once whatever is done; the overlay restarted it again when it left. Doing it at all also meant rewriting every whole-strip line per LED (`off`, `#hex` and a whole-strip pulse paint every LED), and the needs-you blink rewritten that way was over 512 bytes on 8 LEDs.
+- **Instead.** The white LED shows only on a strip that would be dark, where its leaving cannot be seen; an animation shows the new brightness itself.
+- **Rule.** Anything added to the strip for a moment costs a restart of what it shows when it goes. Add it only where nothing is playing.
+
+### Brightness is linear in power, not in what the eye sees
+- **Symptom.** Brightness steps of 33 %, 67 % and 100 % of `brightness N` that look almost the same.
+- **Why.** The eye's response to light is close to a cube root: a third of the power already looks like most of full.
+- **Instead.** Every brightness the owner sets is a perceived percent through `BrightnessCurve` (`255 · fraction^γ`).
+- **Rule.** Never step or slide `brightness N` linearly.
+
 ### A per-LED pulse returns to its pre-pulse value, not to black
 - **Symptom.** In a split display the gaps show the previous program's colours.
 - **Why.** Whole-strip programs always opened with `off`, which hid it.

@@ -156,7 +156,7 @@ Everything the menu does, the `mysidepulse` command line does, which makes it ea
 mysidepulse led auto|off|toggle            # toggle flips the strip between off and auto
 mysidepulse led '#ff6a00'                  # any colour
 mysidepulse led rainbow                    # an effect: rainbow aurora ocean lava ember sparkle
-mysidepulse brightness cycle [--steps N]   # one step brighter, off after 100 %, then the first step again
+mysidepulse brightness cycle [--steps N]   # steps even to the eye, off after 100 %, then the first step again
 mysidepulse status [--json]                # mode, strip, battery, every session and command
 mysidepulse doctor                         # nine health checks; the exit code is the number of failures
 mysidepulse notify [on|off|test|topic new] # phone notifications
@@ -317,7 +317,7 @@ MySidepulse is free and carries no ads. If it saves you trouble, you can leave a
 ## Notes
 
 - Personal build: English and French, no licensing.
-- `swift test` runs 489 tests across the two library targets (355 + 134); the app target's verification is the
+- `swift test` runs 501 tests across the two library targets (367 + 134); the app target's verification is the
   strip itself, `mysidepulse doctor` and the journal replay.
 - Every colour is a true colour, the same hex on the strip and on screen; a strip's brightness is what dims it.
   The defaults are the owner's, and the Colours page changes them.
