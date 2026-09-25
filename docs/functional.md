@@ -198,10 +198,12 @@ lines.
 
 | Event | Result |
 |---|---|
-| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: `working`, and they are kept. |
+| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept — the mid-flight marker of a compaction already under way. |
 | `UserPromptSubmit` | `working` |
 | `PreToolUse` | `AskUserQuestion` or Codex's `request_user_input` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
-| `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `PreCompact`, `PostCompact` | `working` |
+| `PostToolUse`, `PostToolUseFailure`, `PermissionDenied` | `working` |
+| `PreCompact` | `working`, remembering the state it found |
+| `PostCompact` | the state `PreCompact` found, or `working` when it found none: a compaction inside a turn leaves it working, one at the prompt leaves it idle or finished, its debounce and finish time untouched |
 | `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
 | `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan` |
 | `Notification` `idle_prompt`, `agent_needs_input` | Never an alert. See "lost Stop" below. |

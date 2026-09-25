@@ -68,6 +68,14 @@ public struct Session: Equatable {
     /// When the last `Interrupt` arrived, until a prompt opens a turn: the
     /// start of the quarantine for tool events that name no turn.
     public var interruptedAt: Date?
+    /// The state `PreCompact` found, restored by `PostCompact`: a
+    /// compaction is work while it runs, and afterwards the session goes
+    /// back to what it was, not to `working`.
+    public var stateBeforeCompaction: SessionState?
+    /// The alert bookkeeping `PreCompact` found, restored beside a `.done`
+    /// `stateBeforeCompaction` so `PostCompact` does not re-arm a push for a
+    /// standing finish.
+    var compactionSnapshot: CompactionSnapshot?
     public static let closedTurnsKept = 8
 
     /// What arbitration acts on, as opposed to what the machine records.
@@ -93,6 +101,16 @@ public struct Session: Equatable {
         self.id = id; self.stateSince = stateSince; self.lastEventAt = lastEventAt
         self.lastMainEventAt = lastEventAt
     }
+}
+
+/// The alert fields `PostCompact` copies back verbatim when the state it is
+/// restoring is `.done`, so a standing finish does not re-arm its debounce
+/// through `set`.
+struct CompactionSnapshot: Equatable {
+    var state: SessionState
+    var stateSince: Date
+    var acknowledged: Bool
+    var notifyAt: Date?
 }
 
 /// A session acknowledgement worth persisting: keyed by the state-entry time
@@ -190,13 +208,15 @@ public struct SessionStore {
             // A start that is not mid-turn compaction is a process boundary:
             // no helper recorded before it can still be running, and no
             // background shell survived it either. Compaction is NOT one: it
-            // happens inside a turn, with helpers possibly out.
+            // happens inside a turn, with helpers possibly out. It is also
+            // not a state of its own — `PreCompact` already went `working`,
+            // and this mid-flight marker changes nothing.
             if e.source != "compact" {
                 s.liveAgents.removeAll()
                 s.backgroundIds.removeAll()
             }
             clearPending(&s)
-            set(&s, e.source == "compact" ? .working : .idle, now)
+            if e.source != "compact" { set(&s, .idle, now) }
         case .userPromptSubmit:
             // A prompt always opens a turn, even one that names a closed
             // turn: its events count again, its Stop and Interrupt included.
@@ -209,10 +229,38 @@ public struct SessionStore {
             // the 4-minute silence expiry.
             clearPending(&s)
             set(&s, .working, now)
-        case .postToolUse, .postToolUseFailure, .permissionDenied,
-             .preCompact, .postCompact:
+        case .postToolUse, .postToolUseFailure, .permissionDenied:
             clearPending(&s)
             set(&s, .working, now)
+        case .preCompact:
+            // Work while it runs, remembering the state it found so
+            // `PostCompact` can go back to it rather than to `working`.
+            s.stateBeforeCompaction = s.state
+            s.compactionSnapshot = CompactionSnapshot(
+                state: s.state, stateSince: s.stateSince,
+                acknowledged: s.acknowledged, notifyAt: s.notifyAt)
+            clearPending(&s)
+            set(&s, .working, now)
+        case .postCompact:
+            // A compaction inside a turn leaves it working (no state was
+            // found before it — none ran); one at the prompt leaves it idle
+            // or finished. Restoring `.done` through `set` would re-arm its
+            // push as a fresh alert and its settle as a fresh transition, so
+            // the original stateSince, acknowledged and notifyAt are copied
+            // back over it and no settle is left standing: a standing green
+            // must not blink or push again just because a compaction ran.
+            let restored = s.stateBeforeCompaction ?? .working
+            clearPending(&s)
+            set(&s, restored, now)
+            if restored == .done, let snap = s.compactionSnapshot {
+                s.stateSince = snap.stateSince
+                s.acknowledged = snap.acknowledged
+                s.notifyAt = snap.notifyAt
+                s.settlingFrom = nil
+                s.settlingUntil = nil
+            }
+            s.stateBeforeCompaction = nil
+            s.compactionSnapshot = nil
         case .preToolUse:
             clearPending(&s)
             switch e.toolName {

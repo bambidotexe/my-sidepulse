@@ -174,15 +174,63 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(state(s), .waiting(.error))
     }
 
-    func testCompactionStaysWorking() {
+    /// A compaction is work while it runs, and afterwards the session goes
+    /// back to the state it found — a finished turn's green included,
+    /// without pushing "finished" again (the same `stateSince`,
+    /// `acknowledged` and `notifyAt`, not a fresh alert).
+    func testCompactionKeepsTheStateItFound() {
+        // idle -> working during -> idle after: a compaction at the prompt.
+        var idleCase = SessionStore()
+        idleCase.apply(ev(.sessionStart, 0, source: "startup"))
+        XCTAssertEqual(state(idleCase), .idle)
+        idleCase.apply(ev(.preCompact, 1))
+        XCTAssertEqual(state(idleCase), .working)
+        idleCase.apply(ev(.sessionStart, 2, source: "compact"))
+        XCTAssertEqual(state(idleCase), .working, "SessionStart(compact) happens mid-flight")
+        idleCase.apply(ev(.postCompact, 3))
+        XCTAssertEqual(state(idleCase), .idle)
+
+        // done -> working during -> done after, with the debounce untouched.
+        var doneCase = SessionStore()
+        doneCase.apply(ev(.userPromptSubmit, 0))
+        doneCase.apply(ev(.stop, 1))
+        let before = doneCase.sessions["s1"]!
+        XCTAssertEqual(before.state, .done)
+        doneCase.apply(ev(.preCompact, 2))
+        XCTAssertEqual(state(doneCase), .working)
+        doneCase.apply(ev(.postCompact, 3))
+        let after = doneCase.sessions["s1"]!
+        XCTAssertEqual(after.state, .done)
+        XCTAssertEqual(after.stateSince, before.stateSince, "no fresh finish time")
+        XCTAssertEqual(after.acknowledged, before.acknowledged)
+        XCTAssertEqual(after.notifyAt, before.notifyAt, "no re-armed push")
+        XCTAssertNil(after.settlingFrom, "no re-armed settle")
+        XCTAssertNil(after.settlingUntil, "no re-armed settle")
+
+        // working -> working: a compaction inside a turn.
+        var workingCase = SessionStore()
+        workingCase.apply(ev(.userPromptSubmit, 0))
+        workingCase.apply(ev(.preToolUse, 1, tool: "Bash"))
+        XCTAssertEqual(state(workingCase), .working)
+        workingCase.apply(ev(.preCompact, 2))
+        XCTAssertEqual(state(workingCase), .working)
+        workingCase.apply(ev(.postCompact, 3))
+        XCTAssertEqual(state(workingCase), .working)
+    }
+
+    /// `SessionStart(compact)` alone, with no `PreCompact` before it, changes
+    /// nothing: it is the mid-flight marker, not a state of its own, and it
+    /// keeps the helpers and background shells a plain `SessionStart` would
+    /// forget.
+    func testACompactSessionStartAloneChangesNothing() {
         var s = SessionStore()
-        s.apply(ev(.userPromptSubmit, 0))
-        s.apply(ev(.preCompact, 1))
-        XCTAssertEqual(state(s), .working)
+        s.apply(ev(.sessionStart, 0, source: "startup"))
+        XCTAssertEqual(state(s), .idle)
+        s.apply(ev(.subagentStart, 1, agent: "a1"))
+        XCTAssertEqual(s.sessions["s1"].map { Set($0.liveAgents.keys) }, ["a1"])
         s.apply(ev(.sessionStart, 2, source: "compact"))
-        XCTAssertEqual(state(s), .working, "SessionStart(compact) happens mid-flight")
-        s.apply(ev(.postCompact, 3))
-        XCTAssertEqual(state(s), .working)
+        XCTAssertEqual(state(s), .idle, "SessionStart(compact) alone forces no state")
+        XCTAssertEqual(s.sessions["s1"].map { Set($0.liveAgents.keys) }, ["a1"], "compact keeps helpers")
     }
 
     func testSubagentEventsNeverSetDisplayButRegister() {
