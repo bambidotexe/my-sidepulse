@@ -354,9 +354,12 @@ then `~/.claude`. Transcript entries marked `isSidechain` are ignored.
 The app records its own verdicts in the journal — a turn abandoned, a finish
 recovered, a dialog answered, whether the registry, a rollout or Codex's
 daemon gave it — each stamped when it took effect, so a relaunch replays
-them and never resurrects a turn it had already closed. A recorded verdict
-changes nothing when a main-agent event of its session came after it, and
-never brings a session back. A replayed finish is a replayed `Stop`: it
+them and never resurrects a turn it had already closed: a replayed verdict
+applies the outcome it recorded as of its stamp, and is not decided again. A
+finish held behind a helper still out is not recorded; the hold rules end it,
+and a relaunch checks that turn afresh. A recorded verdict changes nothing
+when a main-agent event of its session came after it, and never brings a
+session back. A replayed finish is a replayed `Stop`: it
 pushes again only while its push is still inside
 `K.notifyMaxLatenessSeconds`.
 

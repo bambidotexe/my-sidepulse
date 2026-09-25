@@ -40,8 +40,11 @@ public enum ClaudeProcessRegistry {
     /// the last `projects` folder that sits at least two levels above the
     /// file (`<config>/projects/<slug>/<session>.jsonl`). The last one, so a
     /// config directory inside a folder called `projects` is still found.
-    /// Nil for a path with no such folder.
+    /// Nil for a path with no such folder, and for a path that is not
+    /// absolute, which would name a folder under the app's own working
+    /// directory and hide the fallbacks.
     public static func configDir(fromTranscriptPath path: String) -> URL? {
+        guard path.hasPrefix("/") else { return nil }
         let components = (path as NSString).pathComponents
         guard components.count >= 4,
               let index = components[..<(components.count - 2)].lastIndex(of: "projects"),

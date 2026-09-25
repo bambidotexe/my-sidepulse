@@ -65,6 +65,9 @@ final class ClaudeProcessRegistryTests: XCTestCase {
                        "the last projects folder that holds a slug folder is the config's")
         XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/tmp/projects/a.jsonl"),
                      "a projects folder right above the file holds no slug")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "~/.claude/projects/s/a.jsonl"),
+                     "only an absolute path names a directory; the fallbacks answer otherwise")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "cfg/projects/s/a.jsonl"))
     }
 
     func testReadFollowsTheTranscriptsConfigDir() throws {

@@ -305,8 +305,8 @@ final class Engine {
     /// goes into the journal as one `MySidepulseVerdict` line, stamped when
     /// it took effect, so a relaunch replays the same verdict as of the same
     /// instant instead of the turn it ended. The tailer delivers the line
-    /// back, where it changes nothing. Nil means the verdict changed nothing
-    /// and there is nothing to record.
+    /// back, where it changes nothing. Nil means there is no outcome to
+    /// record: nothing changed, or a finish is held behind a helper.
     private func persist(_ verdict: TurnVerdict, sessionId: String, at stamp: Date?) {
         guard let stamp else { return }
         var event = JournalEvent(loggedAt: stamp, event: .verdict)

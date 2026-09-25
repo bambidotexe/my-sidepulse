@@ -1128,6 +1128,27 @@ final class SessionStoreTests: XCTestCase {
         green.apply(greenLine)
         XCTAssertEqual(green.sessions["s1"], finished)
 
+        // The lost Stop with a lost SubagentStop: the helper last reported
+        // 10 s before the turn ended and was stale when the check ran. The
+        // line records the finish, and replay applies it as it was, not
+        // re-decided behind a helper that is still fresh at the stamp.
+        let helped = turn + [ev(.preToolUse, 30, tool: "Read", agent: "h1", turn: "p1")]
+        var late = replay(helped)
+        let lateAt = late.finishTurn(sessionId: "s1", now: at(400), endedAt: at(40))
+        XCTAssertEqual(lateAt, at(40))
+        let replayed = replay(helped + [verdictLine("turn-finished", 40)])
+        XCTAssertEqual(replayed.sessions["s1"], late.sessions["s1"])
+        XCTAssertEqual(replayed.sessions["s1"]?.state, .done)
+        XCTAssertEqual(replayed.sessions["s1"]?.stateSince, at(40))
+        XCTAssertEqual(replayed.sessions["s1"]?.pendingDone, false)
+        XCTAssertEqual(replayed.sessions["s1"]?.notifyAt, late.sessions["s1"]?.notifyAt)
+
+        // A finish held behind a helper still out is the hold rules' to end,
+        // not an outcome: nothing is recorded, and a relaunch decides afresh.
+        var held = replay(turn + [ev(.preToolUse, 30, tool: "Read", agent: "h1", turn: "p1")])
+        XCTAssertNil(held.finishTurn(sessionId: "s1", now: at(60), endedAt: at(40)))
+        XCTAssertEqual(held.sessions["s1"]?.pendingDone, true)
+
         let dialog = [ev(.userPromptSubmit, 0, pid: 42, turn: "p1"),
                       ev(.preToolUse, 5, tool: "ExitPlanMode", turn: "p1")]
         var answered = replay(dialog)

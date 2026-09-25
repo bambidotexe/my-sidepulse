@@ -344,20 +344,29 @@ public struct SessionStore {
     }
 
     /// The app's own verdict, replayed after a relaunch or read back by the
-    /// tailer: the same call the live check made, as of the line's stamp,
-    /// which is when the verdict took effect. It never creates a session and
-    /// never refreshes liveness. A main-agent event after the stamp means the
-    /// session moved on since, and the line changes nothing; each verdict
-    /// refuses a state it does not apply to, so the live store reading its
-    /// own line back changes nothing either. An unknown verdict is ignored.
+    /// tailer. A line records an outcome, so replay applies that outcome as
+    /// of the line's stamp, which is when it took effect: dark, finished or
+    /// back to work, never decided again (a helper that was stale when the
+    /// live check ran can still be fresh at the stamp). It never creates a
+    /// session and never refreshes liveness. A main-agent event after the
+    /// stamp means the session moved on since, and the line changes nothing;
+    /// each outcome refuses a state it does not apply to, so the live store
+    /// reading its own line back changes nothing either. An unknown verdict
+    /// is ignored.
     private mutating func applyVerdict(_ e: JournalEvent, sessionId sid: String) {
-        guard let s = sessions[sid], e.loggedAt >= s.lastMainEventAt,
+        guard var s = sessions[sid], e.loggedAt >= s.lastMainEventAt,
               let verdict = e.verdict.flatMap(TurnVerdict.init(rawValue:)) else { return }
+        let at = e.loggedAt
         switch verdict {
-        case .turnAbandoned: abandonTurn(sessionId: sid, now: e.loggedAt, endedAt: e.loggedAt)
-        case .turnFinished: finishTurn(sessionId: sid, now: e.loggedAt, endedAt: e.loggedAt)
-        case .dialogAnswered: dialogAnswered(sessionId: sid, now: e.loggedAt)
+        case .turnAbandoned, .turnFinished:
+            guard s.state == .working, !s.pendingDone else { return }
+            set(&s, verdict == .turnFinished ? .done : .idle, at)
+            closeTurn(&s, byInterrupt: false, now: at)
+        case .dialogAnswered:
+            guard s.state.isOpenWaiting else { return }
+            set(&s, .working, at)
         }
+        sessions[sid] = s
     }
 
     /// Claude Code 2.1 routes the blocking dialogs through the permission
@@ -706,17 +715,19 @@ public struct SessionStore {
     /// hook itself) cannot. A Codex rollout that ends on `task_complete` is
     /// the same proof.
     /// `endedAt` dates the finish as `abandonTurn`'s does; helpers still out
-    /// hold it as of now. Returns the instant the verdict took effect, or
-    /// nil when it changed nothing.
+    /// hold it as of now. Returns the instant the finish took effect, for
+    /// the journal, or nil when it changed nothing or was held: a held
+    /// finish is the hold rules' to end, not an outcome to record, and a
+    /// relaunch decides that turn afresh.
     @discardableResult
     public mutating func finishTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
-        let stamp: Date
+        var stamp: Date?
         if !s.hasLiveHelpers(at: now) && s.backgroundIds.isEmpty {
-            stamp = Self.rescueStamp(endedAt, in: s, now: now)
-            set(&s, .done, stamp)
+            let finishedAt = Self.rescueStamp(endedAt, in: s, now: now)
+            set(&s, .done, finishedAt)
+            stamp = finishedAt
         } else {
-            stamp = now
             applyStopVerdict(&s, now: now)
         }
         closeTurn(&s, byInterrupt: false, now: now)

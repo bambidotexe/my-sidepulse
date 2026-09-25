@@ -300,7 +300,8 @@ rejected by eye within minutes of a build whose tests were green.
 ### A verdict that lives in memory dies with a relaunch
 - **Symptom (potential).** A turn the registry had already closed rolls again after a relaunch, until the first check.
 - **Why.** The journal holds only hook lines; the rescues' verdicts are the app's own conclusions and no hook repeats them.
-- **Instead.** Every verdict is appended as a `MySidepulseVerdict` line stamped when it took effect; replay applies it through the same call, and the tailer's delivery of the app's own line changes nothing. The line is written after the fact, so its stamp can be older than the line before it.
+- **Instead.** Every verdict is appended as a `MySidepulseVerdict` line stamped when it took effect; replay applies the outcome it records, never the live decision again: a finish found after a helper had gone stale would otherwise be held behind that helper, fresh at the stamp, and push again once it released. The tailer's delivery of the app's own line changes nothing. The line is written after the fact, so its stamp can be older than the line before it.
+- **Race.** A hook line logged after the verdict's stamp but delivered after the check replays ahead of the verdict and voids it, and a `dialog-answered` read back can clear a dialog whose hook arrived late; the next hook or the 2 h backstop ends such a session. The window is the tailer's delivery delay, milliseconds.
 - **Rule.** Anything that reads the journal for "the last hook event" filters out the app's lines (`MySidepulseAck`, `MySidepulseVerdict`), or a verdict written after the fact reads as hook traffic.
 
 ### Walk the process chain from the parent
