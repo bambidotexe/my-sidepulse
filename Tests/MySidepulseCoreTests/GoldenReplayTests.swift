@@ -422,4 +422,28 @@ final class GoldenReplayTests: XCTestCase {
         XCTAssertEqual(display(busy), .working,
                        "seen, but a helper is still running: back on the work, not dark")
     }
+
+    /// Codex session 01a0d9e4 on 2026-09-25: a Bash call, the user's Ctrl+C,
+    /// and 13 s later the `PostToolUse` Codex fires for the call it aborted,
+    /// for the same turn. No `Stop` follows an aborted turn, so a session
+    /// put back to working there rolled until the user quit Codex. Event
+    /// names, timestamps and ids only.
+    func testTheLatePostToolUseOfTheAbortedCodexTurnLeavesTheStripDark() {
+        let sid = "01a0d9e4-1902-7a61-a142-b1d9f240b1dc"
+        let lines = """
+        {"logged_at":"2026-09-25T18:52:28.263Z","event":"PreToolUse","agent":"codex","session_id":"01a0d9e4-1902-7a61-a142-b1d9f240b1dc","turn_id":"01a0d9e8-a902-70b1-a2ad-3146896b400b"}
+        {"logged_at":"2026-09-25T18:52:28.353Z","event":"PostToolUse","agent":"codex","session_id":"01a0d9e4-1902-7a61-a142-b1d9f240b1dc","turn_id":"01a0d9e8-a902-70b1-a2ad-3146896b400b"}
+        {"logged_at":"2026-09-25T18:52:34.701Z","event":"Interrupt","agent":"codex","session_id":"01a0d9e4-1902-7a61-a142-b1d9f240b1dc","turn_id":"01a0d9e8-a902-70b1-a2ad-3146896b400b"}
+        {"logged_at":"2026-09-25T18:52:47.372Z","event":"PostToolUse","agent":"codex","session_id":"01a0d9e4-1902-7a61-a142-b1d9f240b1dc","turn_id":"01a0d9e8-a902-70b1-a2ad-3146896b400b"}
+        """.split(separator: "\n").map(String.init)
+        let working = replay(lines.prefix(2).joined(separator: "\n"))
+        XCTAssertEqual(working.sessions[sid]?.state, .working)
+        XCTAssertEqual(display(working), .working(.codex))
+        let store = replay(lines.joined(separator: "\n"))
+        XCTAssertEqual(store.sessions[sid]?.state, .idle, "the aborted turn stays closed")
+        XCTAssertEqual(store.sessions[sid]?.lastEventAt.timeIntervalSince1970 ?? 0,
+                       t("2026-09-25T18:52:47.372Z").timeIntervalSince1970, accuracy: 0.001,
+                       "the late line proves the hook alive")
+        XCTAssertEqual(display(store), .off)
+    }
 }

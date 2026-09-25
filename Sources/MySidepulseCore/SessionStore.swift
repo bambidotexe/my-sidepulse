@@ -58,6 +58,19 @@ public struct Session: Equatable {
     /// state being left. Cleared by `tick` once the window passes.
     public var settlingFrom: SessionState?
     public var settlingUntil: Date?
+    /// The turn the last main-agent prompt opened, when its line named one.
+    public var openTurnId: String?
+    /// The turn the last main-agent event named: what a close takes when
+    /// no prompt was seen, the session having been followed from mid-turn.
+    public var lastMainTurnId: String?
+    /// The turns an `Interrupt` or a verdict closed, the most recent last,
+    /// at most `Session.closedTurnsKept` of them. An event of one of these
+    /// turns proves the hook alive and changes nothing else.
+    public var closedTurnIds: [String] = []
+    /// When the last `Interrupt` arrived, until a prompt opens a turn: the
+    /// start of the quarantine for tool events that name no turn.
+    public var interruptedAt: Date?
+    public static let closedTurnsKept = 8
 
     /// What arbitration acts on, as opposed to what the machine records.
     public var presentedState: SessionState { settlingFrom ?? state }
@@ -129,6 +142,10 @@ public struct SessionStore {
         if let tty = e.tty { s.tty = tty }
         if let path = e.transcriptPath { s.transcriptPath = path }
         if let cwd = e.cwd { s.cwd = cwd }
+        if Self.changesNothing(e, in: s, now: now) {
+            sessions[sid] = s
+            return
+        }
 
         if let agentId = e.agentId {
             // Helper events maintain the registry and never speak for the
@@ -168,6 +185,7 @@ public struct SessionStore {
         // set re-arms a hold that the parent's own Stop is trying to release.
         if let bg = e.backgroundTaskIds { s.backgroundIds = Set(bg) }
         if e.event != .notification { s.lastMainEventAt = now }
+        if let id = e.turnId { s.lastMainTurnId = id }
 
         switch e.event {
         case .sessionStart:
@@ -182,6 +200,11 @@ public struct SessionStore {
             clearPending(&s)
             set(&s, e.source == "compact" ? .working : .idle, now)
         case .userPromptSubmit:
+            // A prompt always opens a turn, even one that names a closed
+            // turn: its events count again.
+            s.openTurnId = e.turnId
+            if let id = e.turnId { s.closedTurnIds.removeAll { $0 == id } }
+            s.interruptedAt = nil
             // NOT a helper boundary: Claude Code 2.1 accepts a prompt while
             // a previous turn's background helper still runs, so clearing
             // the registry here would green-light a Stop over a
@@ -237,14 +260,20 @@ public struct SessionStore {
         case .interrupt:
             // Codex says so itself when the user stops a turn, dialog or
             // not: the turn is over and delivered nothing, so the strip goes
-            // dark. Claude Code has no such event; its interrupts are read
-            // from the registry and the transcript instead.
+            // dark. The interrupt ends the turn's helpers and background
+            // shells with it. Claude Code has no such event; its interrupts
+            // are read from the registry and the transcript instead.
             clearPending(&s)
+            s.liveAgents.removeAll()
+            s.backgroundIds.removeAll()
             set(&s, .idle, now)
+            closeTurn(&s, byInterrupt: true, now: now)
         case .stop:
             // A Stop is a finish, full stop: a trailing question in prose is
             // a finished turn, not a request for attention — AskUserQuestion
-            // is the request path, and it has its own event.
+            // is the request path, and it has its own event. It ends the
+            // turn without closing it: a Stop hook that blocks the Stop
+            // keeps the same turn running, and its later events count.
             clearPending(&s)
             applyStopVerdict(&s, now: now)
         case .sessionEnd, .parseError, .ack, .subagentStart, .subagentStop:
@@ -267,6 +296,45 @@ public struct SessionStore {
         case "ExitPlanMode": return .plan
         default: return .permission
         }
+    }
+
+    /// Whether an event belongs to a turn that is over, and so only proves
+    /// the hook alive. Codex reports the end of a tool it aborted seconds or
+    /// minutes after the `Interrupt`, for the same turn, and no `Stop` ever
+    /// follows an aborted turn: an event that reopened it would roll for
+    /// hours. An event of a closed turn changes nothing, a helper's included
+    /// (the interrupt or the verdict ended the helpers), except a prompt,
+    /// which opens a turn, and a session's start. A tool or permission
+    /// event that names no turn changes nothing for
+    /// `K.abortQuarantineSeconds` after an `Interrupt`, until a prompt.
+    static func changesNothing(_ e: JournalEvent, in s: Session, now: Date) -> Bool {
+        let ofAClosedTurn = e.turnId.map { s.closedTurnIds.contains($0) } ?? false
+        if e.agentId != nil { return ofAClosedTurn }
+        switch e.event {
+        case .sessionStart, .sessionEnd, .userPromptSubmit, .ack: return false
+        default: break
+        }
+        if ofAClosedTurn { return true }
+        guard e.turnId == nil, let interruptedAt = s.interruptedAt,
+              now.timeIntervalSince(interruptedAt) < K.abortQuarantineSeconds else { return false }
+        switch e.event {
+        case .preToolUse, .postToolUse, .postToolUseFailure, .permissionRequest, .permissionDenied:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// An `Interrupt` or a verdict that the turn is over closes the turn a
+    /// prompt opened or, with no prompt seen, the turn the last main-agent
+    /// event named: the session followed from mid-turn, or the closing
+    /// `Interrupt` itself.
+    func closeTurn(_ s: inout Session, byInterrupt: Bool, now: Date) {
+        if let id = s.openTurnId ?? s.lastMainTurnId, !s.closedTurnIds.contains(id) {
+            s.closedTurnIds = Array((s.closedTurnIds + [id]).suffix(Session.closedTurnsKept))
+        }
+        s.openTurnId = nil
+        s.interruptedAt = byInterrupt ? now : nil
     }
 
     /// The finish line, shared by Stop and the lost-Stop rescue: done if
@@ -492,6 +560,7 @@ public struct SessionStore {
     public mutating func abandonTurn(sessionId: String, now: Date) {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
         set(&s, .idle, now)
+        closeTurn(&s, byInterrupt: false, now: now)
         sessions[sessionId] = s
     }
 
@@ -506,6 +575,7 @@ public struct SessionStore {
     public mutating func finishTurn(sessionId: String, now: Date) {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
         applyStopVerdict(&s, now: now)
+        closeTurn(&s, byInterrupt: false, now: now)
         updateHoldRelease(&s, now: now)
         sessions[sessionId] = s
     }

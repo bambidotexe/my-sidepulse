@@ -226,10 +226,12 @@ final class CodexTests: XCTestCase {
         s.apply(ev(.interrupt, 5))
         XCTAssertEqual(s.sessions["s1"]?.state, .idle, "Codex says it was stopped: dark, no alert")
         XCTAssertNil(s.sessions["s1"]?.notifyAt)
+        s.apply(ev(.userPromptSubmit, 9))
         s.apply(ev(.permissionRequest, 10, tool: "shell"))
         XCTAssertEqual(s.sessions["s1"]?.state, .waiting(.permission))
         s.apply(ev(.interrupt, 12))
         XCTAssertEqual(s.sessions["s1"]?.state, .idle, "an interrupted dialog is over too")
+        s.apply(ev(.userPromptSubmit, 19))
         s.apply(ev(.preToolUse, 20, tool: "request_user_input"))
         XCTAssertEqual(s.sessions["s1"]?.state, .waiting(.question), "Codex's question tool")
         s.apply(ev(.postToolUse, 30, tool: "request_user_input"))
@@ -238,6 +240,116 @@ final class CodexTests: XCTestCase {
         let fired = s.tick(now: at(40 + K.notifyDebounceSeconds))
         XCTAssertEqual(fired.map(\.agent), [.codex], "the push names Codex")
         XCTAssertEqual(fired.map(\.kind), [.finished])
+    }
+
+    func codex(_ name: HookEventName, _ t: TimeInterval, tool: String? = nil, agent: String? = nil,
+               bg: [String]? = nil, turn: String? = nil) -> JournalEvent {
+        var e = ev(name, t, tool: tool, bg: bg, agent: agent, pid: 77, turn: turn)
+        e.agent = .codex
+        return e
+    }
+
+    /// The ghost of 2026-09-25: Codex reports the end of a tool it aborted
+    /// 13 s after the `Interrupt`, for the same turn, and no `Stop` ever
+    /// follows an aborted turn. The strip stays dark, with no alert.
+    func testALatePostToolUseOfAnAbortedCodexTurnStaysDark() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.preToolUse, 1, tool: "Bash", turn: "t1"))
+        s.apply(codex(.interrupt, 10, turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle)
+        XCTAssertEqual(s.sessions["s1"]?.interruptedAt, at(10))
+        s.apply(codex(.postToolUse, 23, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle, "the aborted turn stays closed")
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(23), "the hook is alive")
+        XCTAssertEqual(s.sessions["s1"]?.lastMainEventAt, at(10))
+        XCTAssertNil(s.sessions["s1"]?.notifyAt)
+        XCTAssertEqual(s.tick(now: at(23 + K.notifyDebounceSeconds)), [])
+    }
+
+    /// Followed from mid-turn, the session has seen no prompt: the interrupt
+    /// closes the turn its last main-agent event named, and that turn's late
+    /// tool events stay dark past the quarantine.
+    func testAnInterruptClosesTheTurnEvenWhenNoPromptWasSeen() {
+        var s = SessionStore()
+        s.apply(codex(.preToolUse, 0, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working)
+        s.apply(codex(.interrupt, 10))
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["t1"])
+        s.apply(codex(.postToolUse, 23, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle)
+        s.apply(codex(.postToolUse, 10 + K.abortQuarantineSeconds + 60, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle, "the turn's id settles it, whatever the delay")
+    }
+
+    /// A prompt always opens a turn, whatever id it carries: a new one, or
+    /// the one the interrupt closed.
+    func testANewPromptOpensANewTurnAfterAnInterrupt() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.interrupt, 10, turn: "t1"))
+        s.apply(codex(.userPromptSubmit, 12, turn: "t2"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working)
+        XCTAssertEqual(s.sessions["s1"]?.openTurnId, "t2")
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["t1"])
+        XCTAssertNil(s.sessions["s1"]?.interruptedAt)
+        s.apply(codex(.preToolUse, 13, tool: "Bash", turn: "t2"))
+        s.apply(codex(.postToolUse, 14, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working)
+        s.apply(codex(.stop, 20, turn: "t2"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .done)
+
+        var same = SessionStore()
+        same.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        same.apply(codex(.interrupt, 10, turn: "t1"))
+        same.apply(codex(.userPromptSubmit, 12, turn: "t1"))
+        same.apply(codex(.postToolUse, 13, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(same.sessions["s1"]?.state, .working, "the prompt reopened the turn it names")
+        XCTAssertEqual(same.sessions["s1"]?.closedTurnIds, [])
+    }
+
+    /// The interrupt ends the helpers and the background shells with the
+    /// turn: the session forgets them, and a helper event of that turn
+    /// arriving later changes nothing.
+    func testAHelperEventOfAnInterruptedTurnIsIgnored() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, bg: ["sh-1"], turn: "t1"))
+        s.apply(codex(.subagentStart, 1, agent: "a1", turn: "t1"))
+        s.apply(codex(.interrupt, 10, turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle)
+        XCTAssertEqual(s.sessions["s1"]?.liveAgents, [:])
+        XCTAssertEqual(s.sessions["s1"]?.backgroundIds, [])
+        s.apply(codex(.postToolUse, 20, tool: "Bash", agent: "a1", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle)
+        XCTAssertEqual(s.sessions["s1"]?.liveAgents, [:], "the helper is not brought back")
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(20))
+        s.apply(codex(.permissionRequest, 21, tool: "Bash", agent: "a1", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle, "nor raises a wait")
+    }
+
+    /// For a Codex that sends no turn id, a tool or permission event in the
+    /// two minutes after an `Interrupt` changes nothing either; past them,
+    /// or after a new prompt, the ordinary rules apply.
+    func testToolEventsWithoutAnIdInTheQuarantineAfterAnInterruptChangeNothing() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0))
+        s.apply(codex(.preToolUse, 1, tool: "Bash"))
+        s.apply(codex(.interrupt, 10))
+        s.apply(codex(.permissionRequest, 30, tool: "Bash"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle, "no wait raised in the quarantine")
+        s.apply(codex(.postToolUse, 10 + 60, tool: "Bash"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle)
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(70))
+        s.apply(codex(.postToolUse, 10 + K.abortQuarantineSeconds + 1, tool: "Bash"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working, "the quarantine is over")
+
+        var prompt = SessionStore()
+        prompt.apply(codex(.userPromptSubmit, 0))
+        prompt.apply(codex(.interrupt, 10))
+        prompt.apply(codex(.userPromptSubmit, 12))
+        prompt.apply(codex(.preToolUse, 13, tool: "Bash"))
+        XCTAssertEqual(prompt.sessions["s1"]?.state, .working, "a prompt ends the quarantine")
+        XCTAssertEqual(K.abortQuarantineSeconds, 120)
     }
 
     /// Claude's rescues read Claude Code's registry and transcript, which a

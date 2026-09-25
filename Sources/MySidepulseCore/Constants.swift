@@ -150,6 +150,16 @@ public enum K {
     /// still runs; too long wedges the strip on working, bounded at 30 min.
     public static let agentStaleSeconds: TimeInterval = 240
     public static let staleSeconds: TimeInterval = 2 * 3600
+    /// After an `Interrupt`, how long a tool or permission event that names
+    /// no turn changes nothing. Codex reports the end of a tool it aborted
+    /// after the abort: 13 s later in the recorded journal (session
+    /// 01a0d9e4, `Interrupt` 18:52:34.701, `PostToolUse` 18:52:47.372), and a
+    /// stubborn process can take minutes. Codex sends `turn_id` on those
+    /// events, which settles them whatever the delay; this window only
+    /// covers a line without one. 120 s is about nine times the one delay
+    /// seen, and short enough that a turn which really goes on without a
+    /// prompt shows again within two minutes.
+    public static let abortQuarantineSeconds: TimeInterval = 120
 
     /// How quiet the main agent must have been before an `idle_prompt` (or
     /// `agent_needs_input`) notification is believed to mean "the turn is

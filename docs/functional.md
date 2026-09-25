@@ -208,17 +208,31 @@ lines.
 | other `Notification` types | nothing |
 | `Stop` | `done` — or held, see below |
 | `StopFailure` | `waiting(error)` |
-| `Interrupt` (Codex only) | `idle`: the user stopped the turn, dialog or not; the turn delivered nothing and the strip goes dark, with no alert |
+| `Interrupt` (Codex only) | `idle`: the user stopped the turn, dialog or not; the turn delivered nothing, its helpers and background shells are forgotten, and the strip goes dark with no alert |
 | `SubagentStart`, other subagent events | mark that subagent live |
 | `SubagentStop` | that subagent is no longer live |
 | `SessionEnd` | the session is forgotten |
+
+Every event of a turn carries the turn's id: Claude Code's `prompt_id`,
+Codex's `turn_id`. An `Interrupt`, or a verdict that the turn is over (*When
+hooks say nothing*), closes the turn: the one the last prompt opened, or,
+when no prompt was seen, the one the session's last event named. An event
+that arrives for a closed turn, as the end of a tool Codex aborted does
+seconds or minutes later, only proves the hook alive and changes nothing, and
+so does a helper event of a closed turn. A `Stop` ends the turn but does not
+close it: a Stop hook that blocks it keeps the turn running, and its later
+events count. A prompt always opens a turn, whatever id it carries. For
+`K.abortQuarantineSeconds` (120 s) after an `Interrupt`, and until a prompt, a
+tool or permission event without a turn id changes nothing either. A line
+without a turn id otherwise follows the rules above.
 
 A turn that ends in prose is **finished**, questions included: "Want me to
 commit?" is green. Amber is raised only by the explicit signals above.
 
 Subagent events (those carrying an `agent_id`) never speak for the main agent,
 with two exceptions: a subagent's permission request blocks the turn and shows
-amber, and subagent activity after `done` re-opens the turn as `working`.
+amber, and subagent activity after `done` re-opens the turn as `working`, unless
+that turn is closed.
 
 ### Finishing, and holds
 
@@ -1050,6 +1064,7 @@ agent's colour while it works.
 | `holdTTLSeconds` | 30 min | longest hold without an event |
 | `agentStaleSeconds` | 240 s | silent subagent stops counting |
 | `staleSeconds` | 2 h | silent session forgotten |
+| `abortQuarantineSeconds` | 120 s | after an `Interrupt`, a tool or permission event without a turn id changes nothing |
 | `idleSignalMinQuietSeconds` | 50 s | quiet needed before `idle_prompt` counts as a lost Stop |
 | `abandonQuietSeconds` | 20 s | quiet before Claude's registry is consulted |
 | `abandonRecheckSeconds` | 15 s | registry / open-wait recheck |

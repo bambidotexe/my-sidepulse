@@ -27,6 +27,17 @@ final class CodecTests: XCTestCase {
         XCTAssertFalse(text.contains("notification_type"), "nil fields must be omitted")
     }
 
+    func testTheTurnIdRoundTripsUnderItsKey() throws {
+        var e = JournalEvent(loggedAt: Date(timeIntervalSince1970: 1_787_652_000), event: .postToolUse)
+        e.sessionId = "s1"; e.agent = .codex; e.turnId = "01a0d9e8-a902"
+        let data = try JournalCodec.encodeLine(e)
+        XCTAssertEqual(JournalCodec.decodeLine(data), e)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains(#""turn_id":"01a0d9e8-a902""#))
+        let old = #"{"logged_at":"2026-08-21T10:00:00Z","event":"PostToolUse","session_id":"s1"}"#
+        XCTAssertNil(try XCTUnwrap(JournalCodec.decodeLine(Data(old.utf8))).turnId,
+                     "a line written before the field reads as one without a turn")
+    }
+
     func testDateWithoutFractionAccepted() throws {
         let line = #"{"logged_at":"2026-08-21T10:00:00Z","event":"UserPromptSubmit","session_id":"s1"}"#
         XCTAssertNotNil(JournalCodec.decodeLine(Data(line.utf8)))

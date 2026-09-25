@@ -281,6 +281,13 @@ installed; without the flag the nearest agent process says, and Claude is the
 fallback. `MYSIDEPULSE_DISABLE=1` makes it return at once. Tool inputs, tool
 outputs and prompts never reach the journal.
 
+Each line names the turn it belongs to as `turn_id`: the payload's `turn_id`
+(Codex) or, without one, its `prompt_id` (Claude Code, which also stays under
+its own key). `SessionStore` keys the closing of a turn on it
+(`changesNothing`, `closeTurn`), so a late event of a turn an `Interrupt` or a
+verdict closed changes nothing; a line written before the field reads as one
+without a turn.
+
 Lines stay under 4096 bytes through three shrink passes (`Trim.cappedLine`), so
 concurrent hook processes appending with `O_APPEND` cannot interleave.
 

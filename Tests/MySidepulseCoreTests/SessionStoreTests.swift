@@ -4,11 +4,11 @@ import XCTest
 func ev(_ name: HookEventName, _ t: TimeInterval, sid: String? = "s1", tool: String? = nil,
         ntype: String? = nil, tail: String? = nil, bg: [String]? = nil, agent: String? = nil,
         source: String? = nil, pid: Int32? = nil, host: String? = nil, tty: String? = nil,
-        ackSince: TimeInterval? = nil) -> JournalEvent {
+        ackSince: TimeInterval? = nil, turn: String? = nil) -> JournalEvent {
     var e = JournalEvent(loggedAt: Date(timeIntervalSince1970: 1_787_652_000 + t), event: name)
     e.sessionId = sid; e.toolName = tool; e.notificationType = ntype; e.lastMessageTail = tail
     e.backgroundTaskIds = bg; e.agentId = agent; e.source = source
-    e.agentPid = pid; e.hostBundleId = host; e.tty = tty
+    e.agentPid = pid; e.hostBundleId = host; e.tty = tty; e.turnId = turn
     e.ackStateSince = ackSince.map { Date(timeIntervalSince1970: 1_787_652_000 + $0) }
     return e
 }
@@ -692,5 +692,121 @@ final class SessionStoreTests: XCTestCase {
         fresh.dropStaleNotifications(now: at(5))
         XCTAssertNotNil(fresh.sessions["s1"]?.notifyAt,
                         "a deadline still in its window kept its chance")
+    }
+
+    // MARK: turn identity
+
+    /// A verdict closes the turn. A tool event of that turn arriving later
+    /// proves the hook alive and nothing else: the state stands, and the
+    /// quiet-turn clock does not move.
+    func testAToolEventOfAClosedTurnRefreshesLivenessOnly() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "t1"))
+        s.apply(ev(.preToolUse, 1, tool: "Bash", turn: "t1"))
+        s.abandonTurn(sessionId: "s1", now: at(30))
+        XCTAssertEqual(state(s), .idle)
+        s.apply(ev(.postToolUse, 40, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(state(s), .idle, "a closed turn stays closed")
+        XCTAssertEqual(s.sessions["s1"]?.stateSince, at(30))
+        XCTAssertEqual(s.sessions["s1"]?.lastMainEventAt, at(1))
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(40), "the hook is alive")
+        XCTAssertNil(s.sessions["s1"]?.notifyAt)
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["t1"])
+        XCTAssertNil(s.sessions["s1"]?.openTurnId)
+        s.apply(ev(.permissionRequest, 41, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(state(s), .idle, "nor does a permission ask of that turn")
+    }
+
+    /// A Stop ends the turn without closing it: a Stop hook that blocks the
+    /// Stop keeps the same turn running under the same id, and that work
+    /// counts. So does the work after the lost-Stop rescue.
+    func testALateToolEventAfterAStopStillCountsBecauseAStopHookMayBlockIt() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(ev(.stop, 10, tail: "Done.", turn: "t1"))
+        XCTAssertEqual(state(s), .done)
+        s.apply(ev(.postToolUse, 12, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(state(s), .working)
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, [])
+
+        var n = SessionStore()
+        n.apply(ev(.userPromptSubmit, 0, turn: "p1"))
+        n.apply(ev(.notification, 60, ntype: "idle_prompt", turn: "p1"))
+        XCTAssertEqual(state(n), .done, "the lost-Stop rescue")
+        n.apply(ev(.postToolUse, 70, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(n), .working, "does not close the turn either")
+    }
+
+    /// A helper still out after a Stop is the hold, and a helper active after
+    /// `done` means the turn was not over.
+    func testAHelperOfAStoppedTurnStillHoldsIt() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(ev(.stop, 10, tail: "Done.", turn: "t1"))
+        XCTAssertEqual(state(s), .done)
+        s.apply(ev(.preToolUse, 20, tool: "Read", agent: "a1", turn: "t1"))
+        XCTAssertEqual(state(s), .working, "the helper re-opens the finish")
+        XCTAssertEqual(s.sessions["s1"]?.pendingDone, true)
+        XCTAssertEqual(s.sessions["s1"]?.liveAgents["a1"], at(20))
+    }
+
+    /// The registry's verdicts close the turn, the finish as well as the
+    /// interrupt, and a session followed from mid-turn closes the turn its
+    /// last main-agent event named.
+    func testARegistryVerdictClosesTheTurn() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        s.apply(ev(.preToolUse, 1, tool: "Bash", turn: "p1"))
+        s.abandonTurn(sessionId: "s1", now: at(30))
+        s.apply(ev(.postToolUse, 40, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(s), .idle, "a straggler of the abandoned turn changes nothing")
+        s.apply(ev(.preToolUse, 41, tool: "Read", agent: "a1", turn: "p1"))
+        XCTAssertEqual(state(s), .idle, "nor does a helper of it")
+        XCTAssertEqual(s.sessions["s1"]?.liveAgents, [:])
+
+        var f = SessionStore()
+        f.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        f.apply(ev(.preToolUse, 1, tool: "Bash", turn: "p1"))
+        f.finishTurn(sessionId: "s1", now: at(30))
+        XCTAssertEqual(state(f), .done)
+        f.apply(ev(.postToolUse, 40, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(f), .done)
+        XCTAssertEqual(f.sessions["s1"]?.stateSince, at(30))
+
+        var mid = SessionStore()
+        mid.apply(ev(.preToolUse, 0, tool: "Bash", pid: 42, turn: "p1"))
+        mid.abandonTurn(sessionId: "s1", now: at(30))
+        mid.apply(ev(.postToolUse, 40, tool: "Bash", turn: "p1"))
+        XCTAssertEqual(state(mid), .idle, "no prompt seen: the last turn named is the one closed")
+    }
+
+    /// A line without a turn id is never ignored for want of one: Claude
+    /// lines written before the field follow the rules they always had.
+    func testLinesWithoutATurnIdKeepTodaysRules() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42))
+        s.apply(ev(.preToolUse, 1, tool: "Bash"))
+        s.abandonTurn(sessionId: "s1", now: at(30))
+        XCTAssertEqual(state(s), .idle)
+        s.apply(ev(.postToolUse, 40, tool: "Bash"))
+        XCTAssertEqual(state(s), .working, "no id, no closed turn to belong to")
+        XCTAssertEqual(s.sessions["s1"]?.lastMainEventAt, at(40))
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, [])
+
+        var other = SessionStore()
+        other.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "t1"))
+        other.abandonTurn(sessionId: "s1", now: at(30))
+        other.apply(ev(.postToolUse, 40, tool: "Bash", turn: "t2"))
+        XCTAssertEqual(state(other), .working, "an id no close named is no closed turn")
+    }
+
+    /// Only the last eight closed turns are remembered.
+    func testTheClosedTurnsAreBounded() {
+        var s = SessionStore()
+        for i in 0..<10 {
+            s.apply(ev(.userPromptSubmit, Double(i * 10), turn: "t\(i)"))
+            s.apply(ev(.interrupt, Double(i * 10 + 5), turn: "t\(i)"))
+        }
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, (2..<10).map { "t\($0)" })
     }
 }

@@ -323,6 +323,12 @@ rejected by eye within minutes of a build whose tests were green.
 - **Instead.** Nothing the app can do: the System page's note says it. The canary is Codex sessions absent from the journal while Codex runs.
 - **Rule.** After `install-hooks`, trust the hooks in Codex before reading anything into their silence.
 
+### Codex reports a tool's end after the turn was aborted
+- **Symptom.** A Codex session rolling for minutes after the user stopped it with Ctrl+C, until they quit Codex; with nothing to end it, it would have rolled for the 2 h backstop. Session `01a0d9e4`, 2026-09-25: `Interrupt` 18:52:34.701, `PostToolUse` Bash 18:52:47.372, then nothing but `SessionEnd` at 18:55:28.
+- **Why.** Codex aborts the turn at once (`turn_aborted` in its rollout) but fires `PostToolUse` for the aborted call when that call's process finally ends, 13 s later here and minutes for a stubborn one, under the aborted turn's `turn_id`. `Stop` runs only on a normal completion, so no event ever follows to end the turn again. Seen once in seven aborts that day.
+- **Instead.** Every line keeps the turn's id (`turn_id`, else `prompt_id`). An `Interrupt` or a verdict closes the turn, and an event of a closed turn only refreshes liveness (`SessionStore.changesNothing`); the interrupt also forgets the turn's helpers and background shells. A line with no id is quarantined for `K.abortQuarantineSeconds` after an `Interrupt` instead. A `Stop` does not close a turn: a Stop hook that blocks it keeps the same turn running.
+- **Rule.** An event does not reopen a turn because it arrived: ask which turn it belongs to. Only a prompt opens one.
+
 ### Codex says its interrupts; Claude Code does not
 - Codex fires `Interrupt` when the user stops a turn, dialog or not, and the session goes dark on it. It has no registry and no transcript the app reads, so the registry and transcript rescues are Claude's alone (`SessionStore.abandonCandidates`, `openWaitCandidates`), and a Codex `Stop` that never arrives stands until the process exits or the 2 h backstop.
 

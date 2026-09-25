@@ -38,6 +38,11 @@ public struct JournalEvent: Codable, Equatable {
     public var agent: AgentKind?
     public var sessionId: String?
     public var promptId: String?
+    /// The turn the event belongs to: Codex's `turn_id`, else Claude Code's
+    /// `prompt_id`. Both agents send it on the events of a turn, never on
+    /// `SessionStart`. What lets the store tell an event of the running turn
+    /// from one of a turn already closed (`SessionStore.changesNothing`).
+    public var turnId: String?
     public var agentId: String?
     public var agentType: String?
     public var toolName: String?
@@ -84,6 +89,7 @@ public struct JournalEvent: Codable, Equatable {
         case event, agent
         case sessionId = "session_id"
         case promptId = "prompt_id"
+        case turnId = "turn_id"
         case agentId = "agent_id"
         case agentType = "agent_type"
         case toolName = "tool_name"

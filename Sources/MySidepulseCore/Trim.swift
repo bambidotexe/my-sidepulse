@@ -22,6 +22,7 @@ public enum Trim {
         var e = JournalEvent(loggedAt: loggedAt, event: event)
         e.sessionId = clamp(obj["session_id"])
         e.promptId = clamp(obj["prompt_id"])
+        e.turnId = clamp(obj["turn_id"]) ?? e.promptId
         e.agentId = clamp(obj["agent_id"])
         e.agentType = clamp(obj["agent_type"])
         e.toolName = clamp(obj["tool_name"])

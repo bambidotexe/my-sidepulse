@@ -152,4 +152,19 @@ final class TrimTests: XCTestCase {
         ]), loggedAt: t0)
         XCTAssertNil(tool.transcriptPath)
     }
+
+    /// The turn's id is Codex's `turn_id` or Claude Code's `prompt_id`,
+    /// whichever the payload carries, clamped like every other id.
+    func testTheTurnIdIsKeptFromTurnIdOrPromptId() {
+        func turn(_ extra: [String: Any]) -> String? {
+            Trim.journalEvent(fromHookPayload: payload(
+                ["hook_event_name": "PostToolUse", "session_id": "s1"].merging(extra) { $1 }),
+                              loggedAt: t0).turnId
+        }
+        XCTAssertEqual(turn(["turn_id": "01a0d9e8-a902"]), "01a0d9e8-a902")
+        XCTAssertEqual(turn(["prompt_id": "p1"]), "p1")
+        XCTAssertEqual(turn(["turn_id": "t1", "prompt_id": "p1"]), "t1")
+        XCTAssertNil(turn([:]))
+        XCTAssertEqual(turn(["turn_id": String(repeating: "x", count: 8000)])?.count, 200)
+    }
 }
