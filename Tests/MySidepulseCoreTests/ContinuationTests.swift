@@ -3,11 +3,29 @@ import XCTest
 
 final class ContinuationTests: XCTestCase {
     static let looping: [DisplayState] = [.working, .waiting, .done, .jobRunning, .batteryCritical,
+                                          .working(.codex), .working(.both),
                                           .split(alert: .waiting, work: .working),
                                           .split(alert: .done, work: .working),
                                           .split(alert: .jobFailed, work: .jobRunning),
-                                          .split(alert: .jobSucceeded, work: .jobRunning)]
+                                          .split(alert: .jobSucceeded, work: .jobRunning),
+                                          .split(alert: .waiting(.codex), work: .working(.both)),
+                                          .split(alert: .done(.claude), work: .working(.both))]
         + LedEffects.names.map { .effect($0) }
+
+    /// Where the pass under way at `phase` ends: the loop's end, or on a loop
+    /// of several passes the start of the next whole-strip dark line.
+    static func passEnd(of loop: String, at phase: Int) -> Int {
+        let parsed = LedContinuation.parse(loop)!
+        var start = 0
+        var ends: [Int] = []
+        for (index, line) in parsed.lines.enumerated() {
+            let isPassStart = line.segments.count == 1 && line.segments[0].led == nil && line.segments[0].color == "off"
+            if index > 0, isPassStart { ends.append(start) }
+            start += line.lengthMs
+        }
+        ends.append(parsed.loopMs)
+        return ends.first { $0 > phase } ?? parsed.loopMs
+    }
 
     func p(_ s: DisplayState, leds: Int = 8, brightness: Int = 255) -> String {
         LedProgram.program(for: s, power: PowerState(percent: 42), ledCount: leds, brightness: brightness)
@@ -164,7 +182,12 @@ final class ContinuationTests: XCTestCase {
                         let label = "\(state) \(leds) LEDs at \(phase) ms\(fromDark ? " from dark" : "")"
                         XCTAssertLessThanOrEqual(tail.program.utf8.count, 512, label)
                         XCTAssertLessThanOrEqual(tail.program.split(separator: "\n").count, 20, label)
-                        XCTAssertEqual(tail.lengthMs, loopMs - phase, label)
+                        // The loop's remainder; or, on the roll both agents
+                        // share, the pass's when the whole rest would not fit
+                        // beside the bridge.
+                        let passEnd = Self.passEnd(of: loop, at: phase)
+                        XCTAssertTrue(tail.lengthMs == loopMs - phase || tail.lengthMs == passEnd - phase,
+                                      "\(label): \(tail.lengthMs) is neither \(loopMs - phase) nor \(passEnd - phase)")
                         XCTAssertFalse(tail.program.contains("repeat"), label)
                         guard let parsed = LedContinuation.parse(tail.program) else {
                             XCTFail("\(label): the tail does not read back"); continue

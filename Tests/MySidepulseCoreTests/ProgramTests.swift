@@ -119,7 +119,7 @@ final class ProgramTests: XCTestCase {
     /// all and blinks red six times instead of showing anything.
     func testEveryColourConstantIsAValidProgramColour() {
         let palette: [(String, String)] = [
-            ("claudeWorking", K.claudeWorking),
+            ("claudeWorking", K.claudeWorking), ("codexWorking", K.codexWorking),
             ("jobRunning", K.jobRunning), ("askAmber", K.askAmber), ("doneGreen", K.doneGreen),
             ("batteryCriticalRed", K.batteryCriticalRed), ("batteryLowRed", K.batteryLowRed),
             ("batteryMidAmber", K.batteryMidAmber), ("batteryHighGreen", K.batteryHighGreen),
@@ -278,10 +278,14 @@ final class ProgramTests: XCTestCase {
         var states: [DisplayState] = [.off, .working, .waiting, .done, .batteryCritical,
                                       .batteryGlance, .manualColor("#123456"),
                                       .jobRunning, .jobSucceeded, .jobFailed,
+                                      .working(.codex), .working(.both),
                                       .split(alert: .waiting, work: .working),
                                       .split(alert: .done, work: .working),
                                       .split(alert: .jobFailed, work: .jobRunning),
-                                      .split(alert: .jobSucceeded, work: .jobRunning)]
+                                      .split(alert: .jobSucceeded, work: .jobRunning),
+                                      .split(alert: .waiting(.both), work: .working(.both)),
+                                      .split(alert: .done(.both), work: .working(.both)),
+                                      .split(alert: .jobFailed, work: .working(.codex))]
         states += LedEffects.names.map { .effect($0) }
         for state in states {
             let program = p(state, power: PowerState(percent: 42), brightness: 200)

@@ -12,7 +12,7 @@ final class HookCommandTests: XCTestCase {
         let url = tempJournal()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let payload = #"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"Bash","tool_input":{"command":"ls"}}"#
-        let origin = ProcWalk.Origin(claudePid: 4242, hostAppPid: 99, hostBundlePath: nil)
+        let origin = ProcWalk.Origin(agentPid: 4242, hostAppPid: 99, hostBundlePath: nil)
         let code = HookCommand.run(input: Data(payload.utf8), environment: [:],
                                    journalURL: url, now: Date(), origin: origin)
         XCTAssertEqual(code, 0)
@@ -20,7 +20,7 @@ final class HookCommandTests: XCTestCase {
         let e = try XCTUnwrap(JournalCodec.decodeLine(Data(String(line!).utf8)))
         XCTAssertEqual(e.event, .preToolUse)
         XCTAssertEqual(e.toolName, "Bash")
-        XCTAssertEqual(e.claudePid, 4242)
+        XCTAssertEqual(e.agentPid, 4242)
         XCTAssertFalse(String(line!).contains("tool_input"), "bodies must be dropped")
     }
 
@@ -39,10 +39,10 @@ final class HookCommandTests: XCTestCase {
             let raw = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").first
             return try XCTUnwrap(JournalCodec.decodeLine(Data(String(raw!).utf8)))
         }
-        let tab = try line(origin: ProcWalk.Origin(claudePid: 4242, hostAppPid: 99,
+        let tab = try line(origin: ProcWalk.Origin(agentPid: 4242, hostAppPid: 99,
                                                    hostBundlePath: nil, tabTTY: "ttys002"))
         XCTAssertEqual(tab.tty, "ttys002")
-        let pty = try line(origin: ProcWalk.Origin(claudePid: 25408, hostAppPid: 5713,
+        let pty = try line(origin: ProcWalk.Origin(agentPid: 25408, hostAppPid: 5713,
                                                    hostBundlePath: nil, tabTTY: nil))
         XCTAssertNil(pty.tty, "a pty with no window behind it is no tab")
     }

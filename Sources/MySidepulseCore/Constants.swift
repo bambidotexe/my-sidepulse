@@ -9,6 +9,9 @@ import Foundation
 /// never a darker hex.
 public enum K {
     public static let claudeWorking = "#ff374a"
+    /// Codex at work: the owner's blue. A roll shared by both agents takes
+    /// this colour on one pass and `claudeWorking` on the next.
+    public static let codexWorking = "#0a00ff"
     /// A terminal job in flight.
     public static let jobRunning = "#ba5eff"
     public static let askAmber = "#ff7000"

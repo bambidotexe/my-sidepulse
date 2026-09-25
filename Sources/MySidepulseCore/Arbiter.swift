@@ -65,8 +65,9 @@ public enum Arbiter {
         // visible even while another session still runs. Alone, either
         // takes the whole strip.
         //
-        // Within each, Claude outranks a job at every matching rung, and
-        // needs-you outranks finished.
+        // Within each, an agent outranks a job at every matching rung, and
+        // needs-you outranks finished. Claude and Codex share every rung: the
+        // strip says that an agent wants the user, not which one.
         // Callers pass JobStore.displayable, which has already dropped jobs
         // still inside their show-after — that gate needs a clock. So does
         // exactly one thing here: whether an ACKNOWLEDGED wait still has
@@ -77,23 +78,35 @@ public enum Arbiter {
         // waiting(error) is never work — that turn is dead.
         // presentedState, not state: an alert that has not yet proved it
         // will stick still shows as whatever it is replacing.
+        // Which agents are asking, which have finished and which are working,
+        // each answered as a set: an alert names the agents behind it and a
+        // roll shared by both agents takes both colours.
+        var waiting = Agents(), finished = Agents(), working = Agents()
+        for s in sessions {
+            let agent = Agents(s.agent)
+            if s.presentedState.isWaiting, !s.acknowledged { waiting.insert(agent) }
+            if s.presentedState == .done, !s.acknowledged { finished.insert(agent) }
+            if s.presentedState == .working
+                || (s.acknowledged && s.presentedState.isOpenWaiting
+                    && (s.hasLiveHelpers(at: now) || !s.backgroundIds.isEmpty)) {
+                working.insert(agent)
+            }
+        }
         let alert: SplitAlert?
-        if sessions.contains(where: { $0.presentedState.isWaiting && !$0.acknowledged }) {
-            alert = .waiting
+        if !waiting.isEmpty {
+            alert = .waiting(waiting)
         } else if jobs.contains(where: { $0.presentedState == .failed && !$0.acknowledged }) {
             alert = .jobFailed
-        } else if sessions.contains(where: { $0.presentedState == .done && !$0.acknowledged }) {
-            alert = .done
+        } else if !finished.isEmpty {
+            alert = .done(finished)
         } else if jobs.contains(where: { $0.presentedState == .succeeded && !$0.acknowledged }) {
             alert = .jobSucceeded
         } else {
             alert = nil
         }
         let work: SplitWork?
-        if sessions.contains(where: { $0.presentedState == .working
-            || ($0.acknowledged && $0.presentedState.isOpenWaiting
-                && ($0.hasLiveHelpers(at: now) || !$0.backgroundIds.isEmpty)) }) {
-            work = .working
+        if !working.isEmpty {
+            work = .working(working)
         } else if jobs.contains(where: { $0.presentedState == .running }) {
             work = .jobRunning
         } else {
@@ -102,11 +115,11 @@ public enum Arbiter {
         switch (alert, work) {
         case (let alert?, let work?):
             return .split(alert: alert, work: work)
-        case (.waiting, nil): return .waiting
+        case (.waiting(let agents), nil): return .waiting(agents)
         case (.jobFailed, nil): return .jobFailed
-        case (.done, nil): return .done
+        case (.done(let agents), nil): return .done(agents)
         case (.jobSucceeded, nil): return .jobSucceeded
-        case (nil, .working): return .working
+        case (nil, .working(let agents)): return .working(agents)
         case (nil, .jobRunning): return .jobRunning
         case (nil, nil): return .off
         }

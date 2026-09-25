@@ -9,10 +9,13 @@ public enum AlertKind: Equatable {
 
 public struct Alert: Equatable {
     public let sessionId: String
+    /// Whose session: the push is titled with the agent's name and its click
+    /// lands on that agent's web app.
+    public let agent: AgentKind
     public let kind: AlertKind
     public let at: Date
-    public init(sessionId: String, kind: AlertKind, at: Date) {
-        self.sessionId = sessionId; self.kind = kind; self.at = at
+    public init(sessionId: String, agent: AgentKind = .claude, kind: AlertKind, at: Date) {
+        self.sessionId = sessionId; self.agent = agent; self.kind = kind; self.at = at
     }
 }
 
@@ -21,7 +24,11 @@ public struct Alert: Equatable {
 /// are: nothing else checks them. The title is the product's name and the tag
 /// is a wire value, so neither is translated.
 public enum AlertCopy {
-    public static let title = "Claude Code"
+    /// The push's title: which agent is talking.
+    public static func title(for agent: AgentKind) -> String { agent.productName }
+
+    /// The bodies are the same words for either agent: the title already
+    /// says who.
     public static func message(for kind: AlertKind) -> String {
         let t = Loc.alerts
         switch kind {

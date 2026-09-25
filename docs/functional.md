@@ -13,13 +13,17 @@ anything is changed. The workflow is in `CLAUDE.md`.
 
 MySidepulse is a macOS menu-bar app that drives a SidePulse LED strip — an
 LED bar in SD-card form factor sitting in the Mac's card slot — so that three
-things are visible at a glance: Claude Code is **working**, Claude Code has
-**finished**, Claude Code **needs you**. When nobody is at the machine, the
-same finished / needs-you alerts go to a phone through ntfy. Around that core
-it also shows terminal jobs, the battery, and a few decorative effects. It
-reads Claude Code through hooks; it never talks to Claude Code and sends
-nothing but the ntfy pushes off the machine. Everything it shows, and everything
-it pushes, is in English or French, chosen from the system language (§15).
+things are visible at a glance: an agent is **working**, an agent has
+**finished**, an agent **needs you**. The agents are Claude Code and Codex.
+Each works in a colour of its own (Claude red, Codex blue, and a wave that
+takes one colour per pass when both work); finished and needs you are one
+colour whoever raised them, because they say that the Mac wants the user, not
+which agent does. When nobody is at the machine, the same finished / needs-you
+alerts go to a phone through ntfy, titled with the agent's name. Around that
+core it also shows terminal jobs, the battery, and a few decorative effects. It
+reads both agents through hooks; it never talks to either and sends nothing
+but the ntfy pushes off the machine. Everything it shows, and everything it
+pushes, is in English or French, chosen from the system language (§15).
 
 ## 2. The strip: insert, remove, missing
 
@@ -61,21 +65,30 @@ it pushes, is in English or French, chosen from the system language (§15).
 
 **Alert** is the first of these that exists and has not been acknowledged:
 
-1. a Claude session waiting for you → amber double blink;
+1. an agent session, Claude's or Codex's, waiting for you → amber double blink;
 2. a terminal job that failed → amber double blink;
-3. a Claude session that finished → green breath, 4.5 s;
+3. an agent session that finished → green breath, 4.5 s;
 4. a terminal job that succeeded → green breath.
 
 **Work** is the first of these that exists:
 
-1. a Claude session working — or an *acknowledged* open wait that still has
-   subagents or background shells running behind it → rolling red wave;
+1. an agent session working — or an *acknowledged* open wait that still has
+   subagents or background shells running behind it → the rolling wave, in
+   Claude's red when Claude works, in Codex's blue when Codex works, and when
+   **both work at once, one pass in Claude's colour and the next in Codex's**,
+   the rhythm unchanged;
 2. a terminal job running → rolling violet wave.
+
+Claude and Codex share every rung: the strip says that an agent wants the user,
+not which one. The Showing sentence (§10) and the push (§6) name the agent.
 
 In a split, a needs-you alert takes `K.alertZoneLedsNeedsYou` (3) LEDs and a
 finished alert `K.alertZoneLedsFinished` (2); at least one LED always stays
 with the work. The amber zone blinks in the same 1.5 s rhythm as the full-strip
-blink; the green zone holds steady.
+blink; the green zone holds steady. A roll shared by both agents under a zone
+alternates its colour **by LED** rather than by pass, Claude's first: two passes
+of blink lines and roll lines would not fit in the strip's program
+([device.md](device.md)).
 
 With several sessions the strip does not say which one: the most urgent alert
 and the most active work win. `mysidepulse status` lists them individually.
@@ -86,9 +99,11 @@ that is gone within that second is never seen. Going to `working` has no
 settle: it shows on the event that caused it.
 
 **Colours.** Every colour named in this section is a default. The Colours page
-(§10) sets eight of them, and the strip paints what is set: Claude working (red
-by default), needs you (amber), done (green), command running (violet), battery
-critical (red), and the battery bar's three bands (red, amber, green). A failed
+(§10) sets nine of them, and the strip paints what is set: Claude working (red
+by default), Codex working (blue, `#0a00ff`), needs you (amber), done (green),
+command running (violet), battery critical (red), and the battery bar's three
+bands (red, amber, green). Needs you and done are the same colours for both
+agents. A failed
 command takes the needs-you colour and a succeeded one the done colour. Every
 colour is a true colour, the same hex on the strip and in the window; a strip's
 brightness (§10, Strip) is what dims it, never a darker hex. The six effects
@@ -116,13 +131,24 @@ the loop's end:
    dark, its lit LEDs fading in from black. Later than that, or another
    animation, starts from scratch.
 
+4. **The full-strip roll changing colour**: Claude's roll becoming the shared
+   one when Codex starts, the shared one becoming Codex's when Claude
+   finishes, and every other change of agents. The wave carries on from where
+   it is and takes the new colours at its next pass. Under a zone the roll's
+   agents changing starts the split anew.
+
+On the shared roll a tail ends at the loop's end when it fits in the strip's
+program, and otherwise at the end of the pass under way, where every LED is
+dark; the loop then starts with Claude's pass, so a brightness change during
+Claude's pass can show that colour twice in a row, once.
+
 A change of animation (working → done alone, a different roll) starts the
 new one from its first line: there is nothing to carry on. The exact cut, and
 what a mid-pulse cut costs, are in [device.md](device.md).
 
 Colours, shapes and exact program text are in [device.md](device.md).
 
-## 4. Claude Code status
+## 4. Agent status: Claude Code and Codex
 
 ### Source
 
@@ -133,6 +159,19 @@ matcher `*`, timeout 5 s — to 15 Claude Code events in
 `PermissionDenied`, `Notification`, `Stop`, `StopFailure`, `SubagentStart`,
 `SubagentStop`, `PreCompact`, `PostCompact`.
 
+The same command subscribes `<bundle>/Contents/MacOS/mysidepulse hook --agent codex`
+to the 12 Codex events in `~/.codex/hooks.json`, which holds the same shape
+under the same `hooks` key: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+`PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop`, `SubagentStart`,
+`SubagentStop`, `PreCompact`, `PostCompact`, `Interrupt`. Codex is on this Mac
+when `~/.codex` exists; when it is not, `install-hooks` says so and sets up
+Claude Code's hooks alone, and `uninstall-hooks` removes both agents' entries
+whether Codex is there or not. The `--agent` flag is how a journal line says
+who fired the hook; a hook without it records the nearest agent process in its
+ancestry, and Claude Code when there is none. **Codex runs a hook only once it
+has been trusted in Codex itself**, which MySidepulse cannot do for it; the
+group's note says so.
+
 Settings › System › Claude Code does the same from the window: `Set Up Hooks`
 subscribes, `Remove Hooks` unsubscribes. The `Claude Code hooks` row reads
 `Enabled` only when all 15 events run the CLI of the app showing the window;
@@ -140,11 +179,17 @@ hooks that run another copy of it count as `Disabled`, and `Set Up Hooks`
 replaces them. A `settings.json` that cannot be parsed reads `Invalid` in red,
 with a warning naming the file, and is never written. Claude Code re-reads
 `settings.json` while it runs: sessions already open follow a change within
-seconds, without a restart, which the group's note says.
+seconds, without a restart, which the group's note says. Settings › System ›
+Codex is the same group for Codex, shown only while Codex is on this Mac or
+its hooks are set up; its `Codex hooks` row reads `Enabled` when all 12 events
+run this CLI with `--agent codex`, `Disabled` in orange otherwise (Codex is
+optional), and `Invalid` in orange when `hooks.json` cannot be parsed.
 
-Each event becomes one trimmed line in the journal, enriched with the Claude
-process id, the hosting app's bundle id, and the terminal tab's tty. The app
-follows the journal. Every session id seen gets its own state.
+Each event becomes one trimmed line in the journal, enriched with the agent
+(`claude` or `codex`; a line without it is Claude's), the agent's process id,
+the hosting app's bundle id, and the terminal tab's tty. The app follows the
+journal. Every session id seen gets its own state, and keeps the agent of its
+lines.
 
 ### States
 
@@ -155,14 +200,15 @@ follows the journal. Every session id seen gets its own state.
 |---|---|
 | `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: `working`, and they are kept. |
 | `UserPromptSubmit` | `working` |
-| `PreToolUse` | `AskUserQuestion` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
+| `PreToolUse` | `AskUserQuestion` or Codex's `request_user_input` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
 | `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `PreCompact`, `PostCompact` | `working` |
-| `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
+| `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
 | `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan` |
 | `Notification` `idle_prompt`, `agent_needs_input` | Never an alert. See "lost Stop" below. |
 | other `Notification` types | nothing |
 | `Stop` | `done` — or held, see below |
 | `StopFailure` | `waiting(error)` |
+| `Interrupt` (Codex only) | `idle`: the user stopped the turn, dialog or not; the turn delivered nothing and the strip goes dark, with no alert |
 | `SubagentStart`, other subagent events | mark that subagent live |
 | `SubagentStop` | that subagent is no longer live |
 | `SessionEnd` | the session is forgotten |
@@ -194,14 +240,18 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
 - `done` stays lit for `K.doneVisibleSeconds` (20 min), then the session is
   `idle`.
 - A session silent for `K.staleSeconds` (2 h) is forgotten.
-- A session whose Claude process exits is forgotten at once (kqueue on the
-  pid). At launch, sessions whose pid is dead or is no longer a Claude process
-  are dropped.
+- A session whose agent process exits is forgotten at once (kqueue on the
+  pid). At launch, sessions whose pid is dead or is no longer that agent's
+  process are dropped.
 
 ### When hooks say nothing
 
-Esc and Ctrl-C end a turn without any hook, and hook delivery can stop
-mid-session. These rescues cover it:
+Esc and Ctrl-C end a Claude Code turn without any hook, and hook delivery can
+stop mid-session. These rescues cover it, **for Claude Code sessions only**:
+they read Claude Code's own registry and transcript, which Codex has no
+counterpart of. Codex says its interrupts itself (`Interrupt`, above); a Codex
+`Stop` that never arrives leaves the roll until the session's process exits or
+the 2 h backstop.
 
 | Situation | Signal | Result | Latency |
 |---|---|---|---|
@@ -251,13 +301,14 @@ Publish only. One HTTP `POST` per alert to `<server>/<topic>`:
 
 | Part | Value |
 |---|---|
-| `Title` header | `Claude Code` |
+| `Title` header | `Claude Code` for a Claude session, `Codex` for a Codex session |
 | `Tags` header | `white_check_mark` (finished), `speech_balloon` (question), `lock` (permission), `clipboard` (plan), `rotating_light` (turn failed) |
-| `Click` header | `https://claude.ai/code/<bridgeSessionId>` when Claude's session record has one, else `https://claude.ai/code` |
+| `Click` header | `https://claude.ai/code/<bridgeSessionId>` when Claude's session record has one, else `https://claude.ai/code`; `https://chatgpt.com/codex` for a Codex session |
 | Body | English: `Finished`, `Asking you something`, `Needs permission`, `Plan ready`, `Turn failed`. French: `Terminé`, `Vous pose une question`, `Demande une permission`, `Plan prêt`, `Échec du tour` |
 
 The title and the tags are protocol values and are never translated; only the
-body is (§15). No priority, actions or authorization header. The topic is the only secret: a
+body is (§15). The bodies are the same words for either agent: the title says
+who. No priority, actions or authorization header. The topic is the only secret: a
 generated `cc-` plus 32 hex characters, stored in `config.json` (mode `0600`),
 masked to its first six characters everywhere except `mysidepulse notify` and the
 Notifications page's reveal.
@@ -277,8 +328,9 @@ comes due:
 
 A held finish pushes about 105 s after its hold clears (90 s grace + 15 s).
 
-**Muted:** sessions whose Claude record has kind `bg`, `daemon` or
-`daemon-worker` light the strip but never push. Terminal jobs never push.
+**Muted:** Claude sessions whose Claude record has kind `bg`, `daemon` or
+`daemon-worker` light the strip but never push; Codex has no such record, so
+every Codex session pushes. Terminal jobs never push.
 
 **Failure.** Timeout `K.notifyTimeoutSeconds` (5 s); up to
 `K.notifyMaxAttempts` (3) attempts `K.notifyRetryDelaySeconds` (2 s) apart, for
@@ -321,8 +373,9 @@ whose owner process dies is removed; a job that never reports back expires
 after `K.jobStaleSeconds` (2 h). If the app is not running, the command runs
 all the same.
 
-Claude outranks a job at every rung, so a running job's colour is hidden while
-Claude works; a job *outcome* takes the alert zone over Claude's roll.
+An agent outranks a job at every rung, so a running job's colour is hidden
+while Claude or Codex works; a job *outcome* takes the alert zone over the
+agents' roll.
 
 ## 8. Battery
 
@@ -472,14 +525,15 @@ opens on General, already at that page's height and centred.
 | Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider in perceived percent, 5 % to 100 % in steps of 5 % (`K.brightnessSliderStepPercent`, each a change the eye can see; 5 % is the strip's lowest) (§11 *Brightness is perceived*; applied on release; 100 % stores nothing; `brightness cycle` sets the same value) | 100 % |
 | Strip | Remembered brightness | the overrides of strips not plugged in, each with `Forget` | |
 | Colours | Preview | the live strip playing the picked colour's state, what is playing, and `Stop` while it plays | |
-| Colours | Colours | one row per colour (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
-| Notifications | Phone | Notify my phone when Claude finishes or needs you | off |
+| Colours | Colours | one row per colour, nine (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
+| Notifications | Phone | Notify my phone when Claude or Codex finishes or needs you | off |
 | Notifications | Server | the ntfy server, applied on Return | `https://ntfy.sh` |
 | Notifications | Topic | the masked topic; `Reveal Topic and QR Code`; `New Topic…` | |
 | Notifications | Test | `Send a Test Notification`, and its result | |
 | Playground | On the strip | the live strip, what is playing, `Keep It` and `Stop` | |
-| Playground | States, Effects | nine state tiles and six effect tiles | |
+| Playground | States, Effects | eleven state tiles and six effect tiles | |
 | System | Claude Code | `Claude Code hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*) | |
+| System | Codex | `Codex hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*); the group is there only while Codex is on this Mac or its hooks are set up | |
 | System | Terminal | `Terminal hook`, `Set Up Terminal Hook` or `Remove Terminal Hook` (§7) | |
 | System | Notifications | `Notifications permission`, and `Allow Notifications` while it is not granted | |
 | System | Welcome | `Show Onboarding Again`, which opens the wizard at page one (above) | |
@@ -558,9 +612,10 @@ plugged in stays as `<name>` and its value, with **Forget**.
 **Colours** plays what it recolours. Clicking a row's name or its small strip,
 or changing its colour, selects the row and plays its state on the real strip
 for 30 s through the Playground's preview, restarted at every change: Claude
-working the working roll, needs you the double blink, done the breath, command
-running the violet roll, battery critical its breath, and the three battery
-bars the glance at 15 %, 50 % and 100 %, the top of each band. `Stop`, leaving
+working the working roll, Codex working Codex's roll, needs you the double
+blink, done the breath, command running the violet roll, battery critical its
+breath, and the three battery bars the glance at 15 %, 50 % and 100 %, the top
+of each band. `Stop`, leaving
 the page or closing the window ends it. The large strip in Preview plays the
 selected row's state on screen, and before any row is picked shows the real
 state; under it, **Showing** and the `StatusCopy` sentence, then once a row is
@@ -569,9 +624,10 @@ field takes `#` and six hex digits, applied on Return or when the field is left;
 anything else is put back. The colour well applies once it has paused for
 0.3 s; the pictures follow it at once. `Reset` puts one colour back to its
 default and is disabled at the default; `Reset All Colours` puts back all
-eight. A colour at its default stores nothing, so it follows the default. The
-hint under the colours says which colour a failed and a succeeded command take;
-the note says brightness is set on Strip. With no strip mounted, a note under
+nine. A colour at its default stores nothing, so it follows the default. The
+hint under the colours says that needs you and done are one colour for both
+agents and which colour a failed and a succeeded command take; the note says
+brightness is set on Strip. With no strip mounted, a note under
 Preview says the colour plays on screen only. Every picture in the window, on
 Strip and Playground too, draws each colour exactly as its hex, at full
 brightness.
@@ -611,6 +667,7 @@ where it is installed.
 | Health line | When | Reads |
 |---|---|---|
 | Claude Code hooks | always, once the hook files are read | Enabled; Disabled in red; Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
+| Codex hooks | once the hook files are read, while Codex is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional); Invalid in orange when `~/.codex/hooks.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
 | Terminal hook | always, once read | Enabled, or Disabled in orange |
 | Notifications permission | always, once read | Granted, or Denied in orange |
 | SidePulse strip | always, once the engine has answered | Available (each strip's name, LEDs and mount path as the tooltip); Missing in orange with none plugged in; Stalled in orange |
@@ -619,12 +676,13 @@ where it is installed.
 | The mysidepulse command | only while a command cannot reach the app over its socket | Failed in orange |
 | Crashes in the last 7 days | only while there is one (`K.healthCrashWindow`, read from `~/Library/Logs/DiagnosticReports`) | the count in orange, the last one's date as the tooltip |
 
-Five lines on a Mac where everything works, eight at most (`HealthLimits`).
+Five lines on a Mac where everything works, six with Codex, nine at most
+(`HealthLimits`).
 
 | Information line | When | Reads |
 |---|---|---|
-| Last hook event | while either hook is set up | `12 s ago`, `5 min ago`, or `None yet` |
-| Claude sessions | while the Claude Code hooks are set up | how many, or **None**; each session's state in the user's words and since when as the tooltip |
+| Last hook event | while any hook is set up | `12 s ago`, `5 min ago`, or `None yet` |
+| Agent sessions | while the Claude Code or the Codex hooks are set up | how many, or **None**; each session's agent, its state in the user's words and since when as the tooltip |
 | Terminal commands | while the terminal hook is set up | how many, or **None**; each command's state as the tooltip |
 | Showing | while a strip is plugged in | the `StatusCopy` sentence |
 
@@ -637,7 +695,11 @@ open, the hook files, and the crash reports, read with the doctor.
 button that gives it. `Claude Code hooks` is **Enabled** in green, **Disabled**
 in red with a warning to press Set Up Hooks, or **Invalid** in red when
 `~/.claude/settings.json` cannot be read; the note says open sessions pick new
-hooks up on their own. `Terminal hook` is **Enabled** in green or **Disabled**
+hooks up on their own. `Codex hooks`, in its own group while Codex is on this
+Mac or its hooks are set up, is **Enabled** in green, **Disabled** in orange
+with a warning to press Set Up Hooks, or **Invalid** in orange when
+`~/.codex/hooks.json` cannot be read; the note says Codex runs new hooks only
+once they have been trusted in Codex. `Terminal hook` is **Enabled** in green or **Disabled**
 in orange with a warning to press Set Up Terminal Hook; the note says to open a
 new terminal window after setting it up. A set-up or removal that fails shows
 the installer's message as a warning under its group. `Notifications
@@ -858,12 +920,12 @@ rule rather than a gap (§15).
 
 | Command | Does | Exit |
 |---|---|---|
-| `hook` | Claude Code's hook entry; reads the payload on stdin | always 0 |
+| `hook [--agent claude\|codex]` | the hook entry Claude Code and Codex run; reads the payload on stdin. The flag says who fired it; without it, the nearest agent process in the ancestry, else Claude | always 0 |
 | `led auto\|off\|toggle\|#RRGGBB\|<effect>` | sets the mode; `toggle` flips off ↔ auto | 0; 1 app down; 2 bad argument |
 | `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
-| `status [--json]` | mode, display, battery, strips, sessions, jobs, notifications (topic masked) | 0; 1 app down |
-| `doctor` | nine health checks | number of failures |
-| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`; foreign hooks and shapes it does not recognise are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any of the 15 events was declined, or on error |
+| `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
+| `doctor` | ten health checks | number of failures |
+| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists (`uninstall-hooks` always); foreign hooks and shapes it does not recognise are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, or on error |
 | `run …`, `job begin\|end …` | terminal jobs | the command's status; 2 bad usage |
 | `notify [on\|off\|topic new\|topic T\|server URL\|test]` | notification settings; bare `notify` prints them, **including the full topic** | 0; 1; 2 |
 | `autostart [on\|off]` | the launch agent | 0; 1; 2 |
@@ -910,9 +972,10 @@ the off step lights nothing.
 
 `doctor` checks: app reachable; auto-start & restart (this process is the one
 launchd supervises); hooks installed (all 15); hook binary exists; hook command
-(informational); journal writable; last event age (informational); strips
-(informational, shows `STALLED`); notifications (fails only on an unusable
-server or topic).
+(informational); codex hooks (a word when Codex is not installed; with it, all
+12 subscribed to a binary that exists); journal writable; last event age
+(informational); strips (informational, shows `STALLED`); notifications (fails
+only on an unusable server or topic).
 
 ## 12. Settings, permissions, failure modes
 
@@ -972,9 +1035,10 @@ but the reply to an update check and the download a click on Update asked
 for; fetch or install an update by itself (an automatic check only announces a
 release);
 read prompts, tool inputs or tool outputs (the hook drops them before writing);
-change anything in Claude Code beyond its own hook entries, or in `~/.zshrc`
-beyond its own block; push for terminal jobs; identify which session an alert
-belongs to on the strip.
+change anything in Claude Code or in Codex beyond its own hook entries, or in
+`~/.zshrc` beyond its own block; trust its hooks in Codex; push for terminal
+jobs; identify which session an alert belongs to on the strip, beyond the
+agent's colour while it works.
 
 ## 13. Every delay and threshold
 
@@ -1043,6 +1107,10 @@ LED colours and animation timings are in [device.md](device.md).
   standing dialog is cancelled with Esc is not established. If it does not,
   that amber stays up until the next prompt or the 2 h backstop
   ([pitfalls.md](pitfalls.md)).
+- Whether Codex fires `PreToolUse` for its `request_user_input` tool, and so
+  whether a Codex question shows amber, is not established: the tool is
+  mapped, and nothing has been observed. Neither is the exact way Codex asks
+  for a hook to be trusted.
 - `Download and open…` has never met a real release: none is published, and
   the repository is private, which the anonymous check cannot see into.
   Whether macOS opens the app from a DMG this app downloaded without a
@@ -1074,9 +1142,9 @@ window shows them, and the phone push bodies (§6).
 |---|---|
 | Every word `mysidepulse` prints in a terminal (§11) | The CLI is English by rule, not by omission. The same code produces the doctor's details for both, and the language is read where the sentence is built, so the window is French while the terminal stays English. |
 | The doctor's nine check names (`app`, `hooks installed`, `device`, …) | Identifiers the CLI prints and the Health page matches on, not prose. |
-| The push `Title` header (`Claude Code`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
+| The push `Title` header (`Claude Code` or `Codex`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
 | The block in `~/.zshrc` and the shell snippet | Shell code, read by zsh. |
-| `MySidepulse`, `SidePulse`, `Claude Code`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |
+| `MySidepulse`, `SidePulse`, `Claude Code`, `Claude`, `Codex`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |
 | The log | Written for a bug report, in one language so it can be searched. |
 
 **Where the words live.** `Sources/MySidepulseCore/Strings*.swift`, one table per

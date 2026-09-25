@@ -12,6 +12,7 @@ hardware, this macOS, or this Claude Code. **Instead** — what the code does.
 Contents: [The card slot and macOS](#the-card-slot-and-macos) ·
 [The LED protocol](#the-led-protocol) ·
 [Detecting Claude Code](#detecting-claude-code) ·
+[Detecting Codex](#detecting-codex) ·
 [Acknowledgement](#acknowledgement) · [ntfy](#ntfy) ·
 [Launch, install, signing](#launch-install-signing) ·
 [Hooks, CLI, shell](#hooks-cli-shell) · [Open issues](#open-issues)
@@ -202,6 +203,18 @@ rejected by eye within minutes of a build whose tests were green.
 - **Why.** The working roll's single-pulse shape is ~50 % duty.
 - **Instead.** Frames of per-LED assignments, each crossfading into the next, with no dark line.
 
+### Two passes of the shared roll fit the strip; two passes under a zone do not
+- **Symptom.** A roll both agents share that alternates its colour by pass on the whole strip and by LED under an alert zone.
+- **Why.** The device takes 512 bytes. Two passes of the roll are 496 bytes on 8 LEDs; add the split's baseline and its two blink lines per pass and the program is over 700 bytes, with no token to drop: the delays and durations are the shape the strip has proven.
+- **Instead.** `LedProgram.rolling(colors:)` writes one pass per colour on the whole strip; `splitProgram` gives each roll LED a colour in turn.
+- **Rule.** Count bytes before adding a pass. A third agent would not fit as passes on the whole strip either (three passes are over 700 bytes): it would alternate by LED everywhere.
+
+### A tail of the shared roll ends at the pass, not the loop, when the bridge would not fit
+- **Symptom.** After a brightness press during Claude's pass of the shared roll, Claude's colour twice in a row, once.
+- **Why.** The bridge line and the whole rest of the two-pass loop are over 512 bytes as soon as five or six LEDs are lit. Dropping the bridge leaves a hole in the wave, which the owner rejected on the single roll.
+- **Instead.** `LedContinuation.tail` keeps the bridge and ends the tail where the pass under way ends, every LED dark, and `Engine.paint` hands over at the tail's own length. A zone opening over the shared roll (`transition`) always ends at the pass.
+- **Rule.** A tail's `lengthMs` is the boundary. Nothing else may compute it from the loop.
+
 ### The blink pair is a rhythm, and the split must share it
 - **Symptom.** Four separate flashes instead of two pairs; or a full-strip blink and a split zone drifting against each other.
 - **Why.** The gap must be far shorter than the pause (under a third) or the pair falls apart; below about 50 ms the two blinks merge. The split's pause is pinned by its roll line, so the full-strip pause (1030 ms) is derived, not free.
@@ -293,6 +306,28 @@ rejected by eye within minutes of a build whose tests were green.
 - **Symptom.** A brief green still flashes.
 - **Why.** `alertSettleSeconds` is 1 s by preference. Replaying 803 recorded events, the shortest real flash held 2.59 s and the next 8.97 s — so 1 s does not suppress the case that prompted it; it shortens it.
 - **Rule.** A minimum on-time would close the gap and was rejected: it shows green while Claude is already working again.
+
+---
+
+## Detecting Codex
+
+### Codex copies Claude Code's hooks into its own file, bare
+- **Symptom.** `~/.codex/hooks.json` holding `mysidepulse hook` on eleven events that nothing of ours wrote; a Codex session that would be journaled as Claude's, with no agent process found.
+- **Why.** Codex's own import of Claude Code's settings (`Migrate hooks from ~/.claude to ~/.codex/hooks.json` in its global state) copies every hook entry as it is.
+- **Instead.** Codex's hooks are installed as `mysidepulse hook --agent codex`, so the journal line says who fired it whatever process did; `HookConfig.install` replaces every entry carrying the marker, migrated ones included. A hook with no flag falls back to the nearest agent process in its ancestry, then to Claude.
+- **Rule.** A hook must say who it is for. Never read the agent from the payload's shape: both agents send the same fields.
+
+### Codex runs a hook only once it is trusted in Codex
+- **Symptom.** Hooks set up, `doctor` green, and no Codex line in the journal.
+- **Why.** Codex keeps a trust status per hook (`Untrusted`, `Trusted`, `Modified`, by a hash of the entry) and runs the untrusted ones only behind its own `--dangerously-bypass-hook-trust`. A set-up, and every re-install that rewrites the entry, is a change Codex has to be told to trust.
+- **Instead.** Nothing the app can do: the System page's note says it. The canary is Codex sessions absent from the journal while Codex runs.
+- **Rule.** After `install-hooks`, trust the hooks in Codex before reading anything into their silence.
+
+### Codex says its interrupts; Claude Code does not
+- Codex fires `Interrupt` when the user stops a turn, dialog or not, and the session goes dark on it. It has no registry and no transcript the app reads, so the registry and transcript rescues are Claude's alone (`SessionStore.abandonCandidates`, `openWaitCandidates`), and a Codex `Stop` that never arrives stands until the process exits or the 2 h backstop.
+
+### One agent can run the other
+- A Codex started by Claude's shell tool fires Codex's hooks from a chain that holds both agents. `ProcWalk.classify` takes the nearest agent process, and the `--agent` flag names which one to look for. The pid recorded is that agent's, so the process watch and the startup prune ask about the right process (`ProcWalk.looksLike(_:pid:)`).
 
 ---
 
@@ -468,3 +503,7 @@ Known, bounded, and left alone.
 - **`reconcile()` re-stats every known mount** when an unrelated disappear arrives without a description, so a transient stat failure can briefly report a live strip as gone.
 - **Wake forces no rescan**, and the safety-net timers pause during sleep.
 - **A transition tail's chords are one shape the strip has not been sent before**: a per-LED crossfade behind a delay (`4:#3a0c11 120ms 40ms`), which the vendor's grammar lists (`duration delay`) but this app had never written. A refused shape shows as six red blinks at the moment a zone opens over the roll. Every other tail shape is one the programs already use.
+- **A Codex `Stop` that never arrives has no rescue**: the roll stands until Codex's process exits or the 2 h backstop. Claude's registry and transcript have no counterpart in Codex.
+- **Whether Codex fires `PreToolUse` for `request_user_input` is unobserved**, so a Codex question may show nothing until the turn ends. A permission request has its own event and shows amber.
+- **The shared roll's programs and tails have not been seen on the strip**: the two-pass loop, the by-LED split, the pass-end handover and the recolour tail are pinned by text and by the sweeps, and judged by nobody's eye yet.
+- **Codex sessions hosted by the ChatGPT app** are acknowledged at app level: the app is their host and they hold no tab. The app-server daemon's sessions have no host at all and acknowledge on any input.

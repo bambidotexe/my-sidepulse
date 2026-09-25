@@ -147,13 +147,13 @@ public struct GeneralPageStrings {
         switch language {
         case .en: "Removes everything MySidepulse set up outside its own folder: "
             + "what starts it at login and reopens it after a crash, what it added "
-            + "to Claude Code and to the shell, and its settings, its journal and "
-            + "your notification topic. The strip goes dark, MySidepulse moves "
+            + "to Claude Code, to Codex and to the shell, and its settings, its journal "
+            + "and your notification topic. The strip goes dark, MySidepulse moves "
             + "itself to the Trash and quits."
         case .fr: "Retire tout ce que MySidepulse a installé hors de son propre "
             + "dossier : ce qui le lance à l'ouverture de session et le rouvre "
-            + "après un plantage, ce qu'il a ajouté à Claude Code et au shell, "
-            + "ainsi que ses réglages, son journal et votre sujet de "
+            + "après un plantage, ce qu'il a ajouté à Claude Code, à Codex et au "
+            + "shell, ainsi que ses réglages, son journal et votre sujet de "
             + "notification. Le ruban s'éteint, MySidepulse se met à la corbeille "
             + "et quitte."
         }
@@ -163,10 +163,10 @@ public struct GeneralPageStrings {
         switch language {
         case .en: "Do not drag MySidepulse to the Trash. All of that stays behind: "
             + "macOS goes on trying to start an app that is gone at every login, "
-            + "and the Claude Code hooks fire at a missing command on every event."
+            + "and the Claude Code and Codex hooks fire at a missing command on every event."
         case .fr: "Ne mettez pas MySidepulse à la corbeille vous-même. Tout cela "
             + "resterait en place : macOS essaierait de lancer une app disparue à "
-            + "chaque ouverture de session, et les hooks Claude Code appelleraient "
+            + "chaque ouverture de session, et les hooks Claude Code et Codex appelleraient "
             + "une commande absente à chaque événement."
         }
     }
@@ -188,12 +188,12 @@ public struct GeneralPageStrings {
     public var uninstallConfirmBody: String {
         switch language {
         case .en: "MySidepulse turns the strip off, removes what starts it at "
-            + "login, what it added to Claude Code and to the shell, and its "
+            + "login, what it added to Claude Code, to Codex and to the shell, and its "
             + "settings, its journal and your notification topic. It then moves "
             + "itself to the Trash and quits."
         case .fr: "MySidepulse éteint le ruban, retire ce qui le lance à "
-            + "l'ouverture de session, ce qu'il a ajouté à Claude Code et au "
-            + "shell, ainsi que ses réglages, son journal et votre sujet de "
+            + "l'ouverture de session, ce qu'il a ajouté à Claude Code, à Codex et "
+            + "au shell, ainsi que ses réglages, son journal et votre sujet de "
             + "notification. Il se met ensuite à la corbeille et quitte."
         }
     }
@@ -241,10 +241,10 @@ public struct GeneralPageStrings {
         }
     }
 
-    public func uninstallHooksFailed(_ reason: String) -> String {
+    public func uninstallHooksFailed(_ agent: AgentKind, _ reason: String) -> String {
         switch language {
-        case .en: "The Claude Code hooks could not be removed: \(reason)"
-        case .fr: "Les hooks Claude Code n'ont pas pu être retirés : \(reason)"
+        case .en: "The \(agent.productName) hooks could not be removed: \(reason)"
+        case .fr: "Les hooks \(agent.productName) n'ont pas pu être retirés : \(reason)"
         }
     }
 

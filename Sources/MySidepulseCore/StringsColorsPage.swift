@@ -74,9 +74,11 @@ public struct ColorsPageStrings {
 
     public var coloursHint: String {
         switch language {
-        case .en: "A command that fails takes the Needs you colour, and one that succeeds "
+        case .en: "Needs you and Done are the same colours for Claude and for Codex. A "
+            + "command that fails takes the Needs you colour, and one that succeeds "
             + "takes the Done colour."
-        case .fr: "Une commande qui échoue prend la couleur A besoin de vous, et une "
+        case .fr: "A besoin de vous et Terminé sont les mêmes couleurs pour Claude et pour "
+            + "Codex. Une commande qui échoue prend la couleur A besoin de vous, et une "
             + "commande qui réussit prend la couleur Terminé."
         }
     }
@@ -94,6 +96,11 @@ public struct ColorsPageStrings {
             switch language {
             case .en: "Claude working"
             case .fr: "Claude au travail"
+            }
+        case .codexWorking:
+            switch language {
+            case .en: "Codex working"
+            case .fr: "Codex au travail"
             }
         case .needsYou:
             switch language {

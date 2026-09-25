@@ -12,10 +12,10 @@ third-party dependency, no firmware in this repository.
 
 | Target | Kind | Imports | Role |
 |---|---|---|---|
-| `MySidepulseCore` | library | Foundation only | Every rule: session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
+| `MySidepulseCore` | library | Foundation only | Every rule: the two agents (`AgentKind`, `Agents`), session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits for both agents, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
 | `MySidepulsePlatform` | library | Foundation, Darwin, MachO | Headless, testable I/O: journal append and tail, process inspection, LED file writer, keepalive, ntfy client, control socket, doctor, the hook installer, and the update's I/O: the GitHub check, the download held against GitHub's digest, the stager (disk image, copy, signature), the installer and the detached helper process. |
 | `MySidepulseApp` | executable | AppKit, SwiftUI, IOKit, DiskArbitration, ServiceManagement, UserNotifications | The menu-bar app: `Engine`, device/power/attention monitors, launch agent, the settings window and the onboarding wizard. |
-| `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code runs. |
+| `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code and Codex run. |
 | `MySidepulseCoreTests`, `MySidepulsePlatformTests` | tests | XCTest | |
 
 Dependencies point one way: Core ← Platform ← App and CLI. `PurityTests` fails
@@ -28,7 +28,8 @@ Both executables ship in one bundle, `MySidepulse.app/Contents/MacOS/`:
 ## The three layers
 
 ```
-Claude Code ─hook─▶ mysidepulse hook ─append─▶ journal.jsonl
+Claude Code ─hook─▶ mysidepulse hook ──────────┐
+Codex ─hook─▶ mysidepulse hook --agent codex ──┴─append─▶ journal.jsonl
                                                      │
                                                JournalTailer ─┐
 zsh hooks / mysidepulse run ─── control socket ───────────────┤
@@ -45,11 +46,13 @@ PowerMonitor · DeviceMonitor · AttentionMonitor ──────────
 ```
 
 **Status layer (Core).** `SessionStore` folds journal events into per-session
-state and owns every time-based rule through `tick(now:userPresent:)`.
-`JobStore` does the same for terminal jobs. `Arbiter.decide` reduces mode,
-power, sessions and jobs to one `DisplayState`. None of it reads a clock: `now`
-is always passed in, which is what lets the tests and the journal replay drive
-it.
+state, each session carrying its agent, and owns every time-based rule through
+`tick(now:userPresent:)`. `JobStore` does the same for terminal jobs.
+`Arbiter.decide` reduces mode, power, sessions and jobs to one `DisplayState`,
+whose agent states carry the set of agents behind them (`Agents`: Claude,
+Codex, or both), which is what the roll's colours and the sentences follow.
+None of it reads a clock: `now` is always passed in, which is what lets the
+tests and the journal replay drive it.
 
 **Device layer (Platform + App).** `DeviceMonitor` finds strips, `LedProgram`
 turns a `DisplayState` into program text, `LedWriter` writes it, `Keepalive`
@@ -133,10 +136,11 @@ after it.
 | Source | Mechanism | Feeds |
 |---|---|---|
 | Claude Code | 15 hooks → `mysidepulse hook` → one line appended to the journal | `JournalTailer` → `Engine.handle` |
+| Codex | 12 hooks → `mysidepulse hook --agent codex` → the same journal, the line saying `codex` | the same |
 | Journal | kqueue on the file (`DispatchSourceFileSystemObject`: write, extend, rename, delete); follows rotation, retries a failed reopen every 0.5 s | `SessionStore.apply` |
-| Claude processes | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
-| Claude's own registry | `<config>/sessions/<pid>.json`, read only for quiet `working` turns and open waits (`ClaudeProcessRegistry`) | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered` |
-| Transcript | last 256 KB of the session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
+| Agent processes, Claude's and Codex's | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
+| Claude's own registry | `<config>/sessions/<pid>.json`, read only for quiet `working` turns and open waits of Claude sessions (`ClaudeProcessRegistry`); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered` |
+| Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
 | Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
 | Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
 | Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
@@ -145,9 +149,9 @@ after it.
 | The onboarding's five rows | a 2 s `Timer` while the wizard is up, plus `didBecomeKey`; nothing tells an app that a grant was made in System Settings | each row's own trailing control (`OnboardingCatalog`, `GrantRow`) |
 | The Settings window | a 2 s `Timer` while it is open (`SettingsModel.windowVisible`): the engine's status and the notification permission. The hook files when the window opens, when System or Health is shown and after a hook button. The doctor and the crash reports (`CrashReports`) when Health is shown and on Check Again, never on a timer | the pages; Health's two tables are `HealthReport.checks(for:)` and `readings(for:)` of `SettingsModel.healthFacts`, built in Core |
 
-Nothing polls Claude Code. The registry and transcript are read on the
+Nothing polls either agent. The registry and transcript are read on the
 engine's own deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`),
-never on a free-running timer.
+for Claude sessions only, never on a free-running timer.
 
 ## Threading
 
@@ -208,7 +212,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 
 | File | Writer | Content |
 |---|---|---|
-| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. |
+| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude` or `codex`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is: the key kept its name. |
 | `journal.1.jsonl` | the app, by rename | The previous journal. Rotation at 20 MB, or at 5 MB when no session is active. |
 | `config.json` | the app only, mode `0600`, atomic | `AppConfig`, below. |
 | `control.sock` | the app | The control socket. |
@@ -225,7 +229,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 | `notifyServer` | string? | absent → `https://ntfy.sh` | The ntfy server. |
 | `onboardingDone` | bool? | absent | `true` once the wizard's last button has been pressed. Absent and `false` both open it at the next launch (functional.md §10). |
 | `ledModeBeforeOff` | string? | absent | The mode `brightness cycle`'s off step replaced, which its next press brings back; cleared by any other change of mode (functional.md §11). |
-| `colors` | `{slot: "#rrggbb"}`? | absent | The Colours page's overrides, keyed by `LedPalette.Slot` raw value (`working`, `needsYou`, `done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`). A slot at its default is absent; a value that is not `#rrggbb` is ignored. `Engine.palette` applies them on every paint. |
+| `colors` | `{slot: "#rrggbb"}`? | absent | The Colours page's overrides, keyed by `LedPalette.Slot` raw value (`working`, `codexWorking`, `needsYou`, `done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`). A slot at its default is absent; a value that is not `#rrggbb` is ignored. `Engine.palette` applies them on every paint. |
 
 Loading falls back to defaults when the file is missing or does not decode.
 Because `Decodable` is synthesised, a non-optional key that is missing fails the
@@ -256,20 +260,26 @@ Not persisted: jobs and their acknowledgements, the Playground preview, the
 battery glance, stalled-device state.
 
 Outside the app's own directory, `HookInstaller` — behind both
-`install-hooks` / `uninstall-hooks` and the settings window's Hooks rows —
+`install-hooks` / `uninstall-hooks` and the settings window's hook rows —
 edits `~/.claude/settings.json` (after copying it to
-`settings.json.backup-mysidepulse`) and the app's block in `~/.zshrc`; both
-paths are resolved first, so a symlinked dotfile stays a symlink. The launch
-agent lives at `~/Library/LaunchAgents/io.mysidepulse.agent.plist`.
+`settings.json.backup-mysidepulse`), `~/.codex/hooks.json` (after copying it
+to `hooks.json.backup-mysidepulse`; Codex is on the Mac when `~/.codex` is a
+directory) and the app's block in `~/.zshrc`; every path is resolved first, so
+a symlinked dotfile stays a symlink. The launch agent lives at
+`~/Library/LaunchAgents/io.mysidepulse.agent.plist`.
 
 ## The hook path
 
-`mysidepulse hook` runs inside every Claude Code turn, so it is built to be
-harmless: it drains stdin to EOF (keeping at most 8 MB), walks its ancestry
-with `sysctl` (no subprocess), trims the payload to a bounded `JournalEvent`,
-appends one line, and returns 0 on every path — including unreadable input,
-which becomes a `ParseError` line. `MYSIDEPULSE_DISABLE=1` makes it return at
-once. Tool inputs, tool outputs and prompts never reach the journal.
+`mysidepulse hook` runs inside every Claude Code and Codex turn, so it is
+built to be harmless: it drains stdin to EOF (keeping at most 8 MB), walks its
+ancestry with `sysctl` (no subprocess) for the nearest agent process, its
+host app and its tab, trims the payload to a bounded `JournalEvent`, appends
+one line, and returns 0 on every path — including unreadable input, which
+becomes a `ParseError` line, and an unknown `--agent` value, which is ignored.
+`--agent codex` names the agent outright, which is how Codex's hooks are
+installed; without the flag the nearest agent process says, and Claude is the
+fallback. `MYSIDEPULSE_DISABLE=1` makes it return at once. Tool inputs, tool
+outputs and prompts never reach the journal.
 
 Lines stay under 4096 bytes through three shrink passes (`Trim.cappedLine`), so
 concurrent hook processes appending with `O_APPEND` cannot interleave.

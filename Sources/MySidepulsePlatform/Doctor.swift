@@ -5,15 +5,22 @@ public enum Doctor {
     public struct Probes {
         public var appResponse: () -> ControlResponse?
         public var settingsRoot: () -> [String: Any]?
+        /// Codex's `hooks.json`, nil when it is missing or unreadable, and
+        /// whether Codex is on this Mac at all.
+        public var codexHooksRoot: () -> [String: Any]?
+        public var codexInstalled: () -> Bool
         public var binaryExists: (String) -> Bool
         public var journalWritable: () -> Bool
         public var lastEventAge: () -> TimeInterval?
         public init(appResponse: @escaping () -> ControlResponse?,
                     settingsRoot: @escaping () -> [String: Any]?,
+                    codexHooksRoot: @escaping () -> [String: Any]? = { nil },
+                    codexInstalled: @escaping () -> Bool = { false },
                     binaryExists: @escaping (String) -> Bool,
                     journalWritable: @escaping () -> Bool,
                     lastEventAge: @escaping () -> TimeInterval?) {
             self.appResponse = appResponse; self.settingsRoot = settingsRoot
+            self.codexHooksRoot = codexHooksRoot; self.codexInstalled = codexInstalled
             self.binaryExists = binaryExists; self.journalWritable = journalWritable
             self.lastEventAge = lastEventAge
         }
@@ -68,8 +75,7 @@ public enum Doctor {
                     missing.append(event)
                     continue
                 }
-                let binary = String(command.dropLast(" hook".count))
-                if !p.binaryExists(binary) { staleBinary = true }
+                if !p.binaryExists(HookConfig.binary(ofCommand: command)) { staleBinary = true }
             }
             r.check(missing.isEmpty, "hooks installed",
                     missing.isEmpty ? t.allEventsSubscribed(HookConfig.events.count)
@@ -86,6 +92,28 @@ public enum Doctor {
             r.check(false, "hooks installed", t.settingsMissingOrUnparseable)
             r.check(false, "hook binary", t.settingsUnreadable)
             r.check(true, "hook command", t.hookCommandUnknown)
+        }
+        // Codex is optional: a Mac without it passes with a word. With it,
+        // the same bar as Claude Code's hooks, on one line: every event
+        // subscribed, to a binary that exists.
+        if !p.codexInstalled() {
+            r.check(true, "codex hooks", t.codexNotInstalled)
+        } else if let root = p.codexHooksRoot() {
+            var missing: [String] = []
+            var staleBinary = false
+            for event in HookConfig.codexEvents {
+                guard let command = HookConfig.installedCommand(in: root, event: event) else {
+                    missing.append(event)
+                    continue
+                }
+                if !p.binaryExists(HookConfig.binary(ofCommand: command)) { staleBinary = true }
+            }
+            let detail = !missing.isEmpty ? t.missingEvents(missing.joined(separator: ", "))
+                : staleBinary ? t.hookPointsAtMissingBinary
+                : t.allEventsSubscribed(HookConfig.codexEvents.count)
+            r.check(missing.isEmpty && !staleBinary, "codex hooks", detail)
+        } else {
+            r.check(false, "codex hooks", t.codexHooksMissingOrUnparseable)
         }
 
         r.check(p.journalWritable(), "journal", t.journalAppend)
@@ -140,6 +168,11 @@ public enum Doctor {
                 guard let loaded = try? SettingsFile.load(at: Paths.claudeSettings) else { return nil }
                 return loaded
             },
+            codexHooksRoot: {
+                guard let loaded = try? SettingsFile.load(at: Paths.codexHooks) else { return nil }
+                return loaded
+            },
+            codexInstalled: { HookInstaller.codexInstalled() },
             binaryExists: { FileManager.default.isExecutableFile(atPath: $0) },
             journalWritable: {
                 // Probe the directory with a scratch file — never the real

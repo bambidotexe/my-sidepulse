@@ -5,6 +5,7 @@ import Foundation
 /// darker hex. `standard` is K's, and a slot with no saved override paints it.
 public struct LedPalette: Equatable {
     public var working: String
+    public var codexWorking: String
     public var needsYou: String
     public var done: String
     public var jobRunning: String
@@ -14,19 +15,21 @@ public struct LedPalette: Equatable {
     public var batteryHigh: String
 
     public static let standard = LedPalette(
-        working: K.claudeWorking, needsYou: K.askAmber, done: K.doneGreen,
-        jobRunning: K.jobRunning, batteryCritical: K.batteryCriticalRed,
+        working: K.claudeWorking, codexWorking: K.codexWorking, needsYou: K.askAmber,
+        done: K.doneGreen, jobRunning: K.jobRunning, batteryCritical: K.batteryCriticalRed,
         batteryLow: K.batteryLowRed, batteryMid: K.batteryMidAmber,
         batteryHigh: K.batteryHighGreen)
 
     /// One recolourable colour. The raw value is its key in `config.json`,
     /// so renaming a case is a migration. Declared in the page's order.
     ///
-    /// A failed command shares `needsYou` and a succeeded one shares `done`:
-    /// they are the same alert on the strip, and the ladder already tells
-    /// them apart by precedence, not by colour.
+    /// Needs you and done are one colour for Claude and for Codex: the strip
+    /// says that the Mac wants the user, not which agent does. A failed
+    /// command shares `needsYou` and a succeeded one shares `done` for the
+    /// same reason: they are the same alert on the strip, and the ladder
+    /// already tells them apart by precedence, not by colour.
     public enum Slot: String, CaseIterable, Sendable {
-        case working, needsYou, done, jobRunning
+        case working, codexWorking, needsYou, done, jobRunning
         case batteryCritical, batteryLow, batteryMid, batteryHigh
 
         /// What the Colours page plays for this slot: the state the colour
@@ -34,9 +37,10 @@ public struct LedPalette: Equatable {
         /// the bar lights as many LEDs as that colour ever does.
         public var preview: (state: DisplayState, power: PowerState?) {
             switch self {
-            case .working: return (.working, nil)
-            case .needsYou: return (.waiting, nil)
-            case .done: return (.done, nil)
+            case .working: return (.working(.claude), nil)
+            case .codexWorking: return (.working(.codex), nil)
+            case .needsYou: return (.waiting(.claude), nil)
+            case .done: return (.done(.claude), nil)
             case .jobRunning: return (.jobRunning, nil)
             case .batteryCritical: return (.batteryCritical, nil)
             case .batteryLow: return (.batteryGlance, PowerState(percent: K.batteryCriticalPercent))
@@ -50,6 +54,7 @@ public struct LedPalette: Equatable {
         get {
             switch slot {
             case .working: return working
+            case .codexWorking: return codexWorking
             case .needsYou: return needsYou
             case .done: return done
             case .jobRunning: return jobRunning
@@ -62,6 +67,7 @@ public struct LedPalette: Equatable {
         set {
             switch slot {
             case .working: working = newValue
+            case .codexWorking: codexWorking = newValue
             case .needsYou: needsYou = newValue
             case .done: done = newValue
             case .jobRunning: jobRunning = newValue
@@ -71,6 +77,21 @@ public struct LedPalette: Equatable {
             case .batteryHigh: batteryHigh = newValue
             }
         }
+    }
+
+    /// The colour an agent rolls in.
+    public func working(_ kind: AgentKind) -> String {
+        switch kind {
+        case .claude: return working
+        case .codex: return codexWorking
+        }
+    }
+
+    /// The colours a roll shared by `agents` cycles through, Claude's first.
+    /// Never empty: a roll with no agent named takes Claude's colour.
+    public func rollColors(_ agents: Agents) -> [String] {
+        let colors = agents.kinds.map(working)
+        return colors.isEmpty ? [working] : colors
     }
 
     /// This palette with the saved overrides applied. An override that is

@@ -150,8 +150,8 @@ final class Engine {
             self.replaying = false
             // Alive is not enough: a pid recycled while the app was down
             // must not keep a dead session's state on the strip.
-            self.store.pruneDead { pid in
-                (kill(pid, 0) == 0 || errno == EPERM) && ProcWalk.looksLikeClaude(pid: pid)
+            self.store.pruneDead { agent, pid in
+                (kill(pid, 0) == 0 || errno == EPERM) && ProcWalk.looksLike(agent, pid: pid)
             }
             // Replayed alerts must not push again: a deadline already long
             // past either fired in the previous instance or was abandoned
@@ -484,11 +484,12 @@ final class Engine {
 
     /// One strip's write. An animation that carries on is not restarted: the
     /// same animation at another brightness gets the rest of what it is
-    /// playing at the new brightness, a roll that continues under a zone
-    /// that opens, closes or changes gets the transition tail, and the same
-    /// animation painted again within `K.resumeFromDarkSeconds` of going dark
-    /// resumes where it would have been; the loop itself is written when the
-    /// tail ends. A brightness tail ends at the loop's own boundary, so a
+    /// playing at the new brightness, a full-strip roll that changes colour
+    /// gets the rest of its pass and the new loop at the boundary, a roll
+    /// that continues under a zone that opens, closes or changes gets the
+    /// transition tail, and the same animation painted again within
+    /// `K.resumeFromDarkSeconds` of going dark resumes where it would have
+    /// been; the loop itself is written when the tail ends. A brightness tail ends at the loop's own boundary, so a
     /// second change during it cuts the tail again and keeps that boundary.
     /// Anything else is written at once. `program` is unscaled.
     private func paint(_ program: String, showing state: DisplayState, brightness: Int,
@@ -518,15 +519,19 @@ final class Engine {
                     return
                 }
             }
-            if current.loop == program,
+            // The same loop at another brightness, or the full-strip roll
+            // changing colour (Claude's becoming the shared one, or back):
+            // the rest of what plays, then the loop at its own boundary.
+            if current.loop == program || LedProgram.rollRecolour(from: current.state, to: state),
                let tail = LedContinuation.tail(of: current.playing, elapsedMs: elapsed, brightness: brightness) {
+                // The tail says when it ends: the loop's own boundary, or
+                // the current pass's on the roll both agents share. A cut of
+                // a tail already playing keeps the boundary it was given.
                 let boundary: Date
                 if let pending = current.boundary, current.handover != nil {
                     boundary = pending
                 } else {
-                    let loopMs = LedContinuation.loopMs(of: current.loop) ?? tail.lengthMs
-                    boundary = current.playingSince
-                        .addingTimeInterval(Double((elapsed / loopMs + 1) * loopMs) / 1000)
+                    boundary = now.addingTimeInterval(Double(tail.lengthMs) / 1000)
                 }
                 carryOn(key, device: device, tail: tail, loop: program, state: state,
                         brightness: brightness, now: now, boundary: boundary)
@@ -713,7 +718,7 @@ final class Engine {
         if !warnedMissingPid, store.trackedPids.isEmpty, !store.sessions.isEmpty {
             warnedMissingPid = true
             Log.app.warning("""
-                no session carries a claude pid: process-death detection is \
+                no session carries an agent pid: process-death detection is \
                 inactive and a killed session will hold the strip until the \
                 staleness backstop — check the hook's origin walk
                 """)
@@ -741,16 +746,24 @@ final class Engine {
         let server = config.notifyServerOrDefault
         notifyQueue.async {
             for alert in alerts {
-                let record = ClaudeSessions.find(sessionId: alert.sessionId,
-                                                 in: Paths.claudeSessions)
-                // A background, daemon or teammate session is an agent of its
-                // own: it lights the strip but must not ring a phone.
-                if ClaudeSessions.isSilent(record) { continue }
+                // Claude's session record says whether the session is an
+                // agent of its own (a background, daemon or teammate
+                // session lights the strip but must not ring a phone) and
+                // carries the claude.ai link. Codex has neither: its push
+                // lands on Codex's web app.
+                let click: String
+                switch alert.agent {
+                case .claude:
+                    let record = ClaudeSessions.find(sessionId: alert.sessionId, in: Paths.claudeSessions)
+                    if ClaudeSessions.isSilent(record) { continue }
+                    click = ClaudeSessions.link(for: record)
+                case .codex:
+                    click = AgentKind.codex.homeLink
+                }
                 let tag = AlertCopy.tag(for: alert.kind)
                 guard let request = Notifier.request(
-                    server: server, topic: topic, title: AlertCopy.title, tag: tag,
-                    click: ClaudeSessions.link(for: record),
-                    message: AlertCopy.message(for: alert.kind))
+                    server: server, topic: topic, title: AlertCopy.title(for: alert.agent), tag: tag,
+                    click: click, message: AlertCopy.message(for: alert.kind))
                 else {
                     Log.app.error("notification not sent: unusable server or topic")
                     continue
@@ -758,7 +771,7 @@ final class Engine {
                 // notice so the attempt survives into `log show`: a push the
                 // phone never received is only debuggable if the send is on
                 // record. This is once per alert, not per tick.
-                Log.app.notice("notifying: \(tag, privacy: .public)")
+                Log.app.notice("notifying: \(alert.agent.rawValue, privacy: .public) \(tag, privacy: .public)")
                 Notifier.send(request) { reason in
                     Log.app.error("notification failed: \(reason, privacy: .public)")
                 }
@@ -784,8 +797,8 @@ final class Engine {
                 return ControlResponse(ok: false, error: "notifications are off")
             }
             guard let probe = Notifier.request(
-                server: config.notifyServerOrDefault, topic: topic, title: AlertCopy.title,
-                tag: "bell", click: "https://claude.ai/code",
+                server: config.notifyServerOrDefault, topic: topic, title: "MySidepulse",
+                tag: "bell", click: AgentKind.claude.homeLink,
                 message: "MySidepulse test notification")
             else { return ControlResponse(ok: false, error: "unusable server or topic") }
             Notifier.send(probe) { reason in
@@ -876,7 +889,7 @@ final class Engine {
             let sessions = store.sessions.values
                 .sorted { $0.lastEventAt > $1.lastEventAt }
                 .map { s in
-                    SessionStatus(id: s.id, state: stateLabel(s.state),
+                    SessionStatus(id: s.id, agent: s.agent.rawValue, state: stateLabel(s.state),
                                   reason: s.waitReason?.rawValue,
                                   ageSeconds: Int(now.timeIntervalSince(s.lastEventAt)),
                                   cwd: s.cwd)
@@ -921,24 +934,35 @@ final class Engine {
         }
     }
 
+    /// `mysidepulse status`'s word for the display. An agent state names its
+    /// agents: `working (claude+codex)`.
     private func displayLabel(_ display: DisplayState) -> String {
+        func who(_ agents: Agents) -> String {
+            "(" + agents.kinds.map(\.rawValue).joined(separator: "+") + ")"
+        }
+        func workLabel(_ work: SplitWork) -> String {
+            switch work {
+            case .working(let agents): return "working \(who(agents))"
+            case .jobRunning: return "job-running"
+            }
+        }
         switch display {
         case .off: return "off"
-        case .working: return "working"
-        case .waiting: return "waiting"
-        case .done: return "done"
+        case .working(let agents): return "working \(who(agents))"
+        case .waiting(let agents): return "waiting \(who(agents))"
+        case .done(let agents): return "done \(who(agents))"
         case .jobRunning: return "job-running"
         case .jobSucceeded: return "job-succeeded"
         case .jobFailed: return "job-failed"
         case .split(let alert, let work):
             let alertLabel: String
             switch alert {
-            case .waiting: alertLabel = "waiting"
+            case .waiting(let agents): alertLabel = "waiting \(who(agents))"
             case .jobFailed: alertLabel = "job-failed"
-            case .done: alertLabel = "done"
+            case .done(let agents): alertLabel = "done \(who(agents))"
             case .jobSucceeded: alertLabel = "job-succeeded"
             }
-            return "\(alertLabel) over \(work == .working ? "working" : "job-running")"
+            return "\(alertLabel) over \(workLabel(work))"
         case .batteryCritical: return "battery-critical"
         case .batteryGlance: return "battery-glance"
         case .manualColor(let hex): return "forced \(hex)"

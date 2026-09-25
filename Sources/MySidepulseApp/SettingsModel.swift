@@ -114,11 +114,18 @@ final class SettingsModel: ObservableObject {
 
     /// nil until first read, and when settings.json exists but cannot be read.
     @Published private(set) var claudeHooksSetUp: Bool?
+    /// The same for Codex's hooks.json.
+    @Published private(set) var codexHooksSetUp: Bool?
+    /// Whether Codex is on this Mac (`~/.codex` exists), read with the hook files: its group and its
+    /// Health line are shown only while it is, or while its hooks are set up.
+    @Published private(set) var codexInstalled = false
     /// Whether the hook files have been read once, which tells "cannot be read" from "not read yet".
     @Published private(set) var hooksRead = false
     @Published private(set) var zshHookSetUp = false
     /// What went wrong in the last Claude Code hook action, cleared when one works.
     @Published private(set) var claudeHooksError: String?
+    /// The same, for the Codex hooks.
+    @Published private(set) var codexHooksError: String?
     /// The same, for the terminal hook.
     @Published private(set) var zshHookError: String?
 
@@ -126,33 +133,53 @@ final class SettingsModel: ObservableObject {
     /// of its buttons, not on the 2 s tick: these are the user's files, and
     /// they change when a button here is pressed.
     func refreshHooks() {
-        claudeHooksSetUp = HookInstaller.claudeHooksInstalled().map { $0 == HookConfig.events.count }
+        claudeHooksSetUp = HookInstaller.hooksSetUp(for: .claude)
+        codexHooksSetUp = HookInstaller.hooksSetUp(for: .codex)
+        codexInstalled = HookInstaller.codexInstalled()
         zshHookSetUp = HookInstaller.zshrcHasSnippet()
         hooksRead = true
     }
 
+    /// Whether the window shows Codex at all: on a Mac without it there is nothing to set up, and a
+    /// group offering to would be noise. Set-up hooks keep the group, so Remove stays reachable.
+    var showsCodex: Bool { codexInstalled || codexHooksSetUp == true }
+
+    private enum HookTarget { case claude, codex, zsh }
+
     func setUpClaudeHooks() {
-        hookAction("install-hooks", HookInstaller.installClaudeHooks(), claude: true)
+        hookAction("install-hooks", HookInstaller.installClaudeHooks(), target: .claude)
     }
 
     func removeClaudeHooks() {
-        hookAction("uninstall-hooks", HookInstaller.removeClaudeHooks(), claude: true)
+        hookAction("uninstall-hooks", HookInstaller.removeClaudeHooks(), target: .claude)
+    }
+
+    func setUpCodexHooks() {
+        hookAction("install-codex-hooks", HookInstaller.installCodexHooks(), target: .codex)
+    }
+
+    func removeCodexHooks() {
+        hookAction("uninstall-codex-hooks", HookInstaller.removeCodexHooks(), target: .codex)
     }
 
     func setUpZshHook() {
-        hookAction("add-to-zshrc", HookInstaller.addToZshrc(), claude: false)
+        hookAction("add-to-zshrc", HookInstaller.addToZshrc(), target: .zsh)
     }
 
     func removeZshHook() {
-        hookAction("remove-from-zshrc", HookInstaller.removeFromZshrc(), claude: false)
+        hookAction("remove-from-zshrc", HookInstaller.removeFromZshrc(), target: .zsh)
     }
 
     /// Only the failure is kept: a hook that worked says so through the status row,
     /// which is read back from the files themselves.
-    private func hookAction(_ name: String, _ outcome: HookInstaller.Outcome, claude: Bool) {
+    private func hookAction(_ name: String, _ outcome: HookInstaller.Outcome, target: HookTarget) {
         Log.app.notice("\(name, privacy: .public) from settings: \(outcome.message, privacy: .public)")
         let error = outcome.ok ? nil : outcome.message
-        if claude { claudeHooksError = error } else { zshHookError = error }
+        switch target {
+        case .claude: claudeHooksError = error
+        case .codex: codexHooksError = error
+        case .zsh: zshHookError = error
+        }
         refreshHooks()
     }
 
@@ -321,11 +348,16 @@ final class SettingsModel: ObservableObject {
         facts.notificationsGranted = notificationsGranted
 
         if hooksRead {
-            facts.claudeHooks = switch claudeHooksSetUp {
-            case true?: .setUp
-            case false?: .missing
-            case nil: .unreadable
+            func state(_ setUp: Bool?) -> HealthFacts.HookFile {
+                switch setUp {
+                case true?: .setUp
+                case false?: .missing
+                case nil: .unreadable
+                }
             }
+            facts.claudeHooks = state(claudeHooksSetUp)
+            facts.codexHooks = state(codexHooksSetUp)
+            facts.codexInstalled = codexInstalled
             facts.terminalHookSetUp = zshHookSetUp
         }
         let checks = doctor?.checks ?? []
@@ -335,13 +367,16 @@ final class SettingsModel: ObservableObject {
         facts.hooksCheck = check("hooks installed")
         facts.hookBinary = check("hook binary")
         facts.hookCommand = check("hook command")?.detail
+        facts.codexHooksCheck = check("codex hooks")
+        facts.codexHookCommand = HookConfig.command(cliPath: HookInstaller.cliPath(), agent: .codex)
         facts.journal = check("journal")
         facts.control = check("app")
 
         if let status {
             facts.lastHookEventSeconds = status.lastEventAgeSeconds
             facts.sessions = (status.sessions ?? []).map {
-                HealthFacts.Session(id: $0.id, phase: .init(state: $0.state, reason: $0.reason),
+                HealthFacts.Session(id: $0.id, agent: $0.agent.flatMap(AgentKind.init(rawValue:)) ?? .claude,
+                                    phase: .init(state: $0.state, reason: $0.reason),
                                     ageSeconds: $0.ageSeconds, cwd: $0.cwd)
             }
             facts.jobs = (status.jobs ?? []).map {

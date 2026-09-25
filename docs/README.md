@@ -28,11 +28,11 @@ request wins only after the owner has said so.
 
 | Document | Read it for |
 |---|---|
-| [functional.md](functional.md) | What the app does: the strip's states and precedence, how Claude Code's status is read, acknowledgement, phone notifications, terminal jobs, battery, menu, settings, CLI, language, permissions, and every delay and threshold. **Authoritative for behaviour and constants** — update it when behaviour changes. |
+| [functional.md](functional.md) | What the app does: the strip's states and precedence, how Claude Code's and Codex's status is read, acknowledgement, phone notifications, terminal jobs, battery, menu, settings, CLI, language, permissions, and every delay and threshold. **Authoritative for behaviour and constants** — update it when behaviour changes. |
 | [architecture.md](architecture.md) | How it is built: targets, the status / device / notification layers, the engine's single `sync()` path, who watches what, threading, the control socket, persistence, the hook path, build and signing. |
 | [device.md](device.md) | The strip as the host sees it: recognition, LED count, the program text format, the exact program for every display state, brightness, write mechanics, keepalive. |
 | [macOS.md](macOS.md) | The operating-system boundary: DiskArbitration and the eject guard, sleep and wake, battery, presence and focus inputs, process inspection, permissions, launchd, the bundle and signing, logging. |
-| [pitfalls.md](pitfalls.md) | Traps already fallen into — card slot, LED protocol, Claude Code detection, acknowledgement, ntfy, launchd, hooks — and the open issues. Read before changing any of those areas. |
+| [pitfalls.md](pitfalls.md) | Traps already fallen into — card slot, LED protocol, Claude Code and Codex detection, acknowledgement, ntfy, launchd, hooks — and the open issues. Read before changing any of those areas. |
 | [manual-test-checklist.md](manual-test-checklist.md) | What only a person at the Mac can verify, with the strip in the slot: the settings window, and how the French reads in it. One line per thing to do and what to expect. |
 
 Where the facts come from:

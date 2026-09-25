@@ -3,8 +3,9 @@ import MySidepulseCore
 import MySidepulsePlatform
 
 /// What MySidepulse needs from outside itself, each beside the button that gives it: Claude Code's
-/// hooks, the terminal hook in ~/.zshrc, and the notification permission. The hooks are read back from
-/// disk and the permission from macOS, so what a row says is what is actually there. Each row's colour is
+/// hooks, Codex's hooks (a group shown only while Codex is on this Mac or its hooks are set up), the
+/// terminal hook in ~/.zshrc, and the notification permission. The hooks are read back from disk and the
+/// permission from macOS, so what a row says is what is actually there. Each row's colour is
 /// `HealthRules.grant`'s, as on the Health page.
 struct SystemPage: View {
     @ObservedObject var model: SettingsModel
@@ -22,6 +23,22 @@ struct SystemPage: View {
                         Button(t.removeHooksButton) { model.removeClaudeHooks() }
                     } else {
                         Button(t.setUpHooksButton) { model.setUpClaudeHooks() }
+                    }
+                }
+            }
+
+            if model.showsCodex {
+                SettingsGroup(title: t.codexTitle,
+                              hint: t.codexHint(events: HookConfig.codexEvents.count),
+                              warnings: codexWarnings,
+                              notes: [t.codexNote]) {
+                    StatusRow(t.codexHooksLabel, mark: codexMark)
+                    ButtonRow {
+                        if model.codexHooksSetUp == true {
+                            Button(t.removeHooksButton) { model.removeCodexHooks() }
+                        } else {
+                            Button(t.setUpHooksButton) { model.setUpCodexHooks() }
+                        }
                     }
                 }
             }
@@ -72,6 +89,31 @@ struct SystemPage: View {
         case false?: return StatusMark(HealthRules.grant(held: false, required: true), words.disabled)
         case nil: return .failure(words.invalid)
         }
+    }
+
+    /// Codex is optional, so missing is orange, and so is a file that cannot be read.
+    private var codexMark: StatusMark {
+        let words = Loc.settings.words
+        switch model.codexHooksSetUp {
+        case true?: return .good(words.enabled)
+        case false?: return StatusMark(HealthRules.grant(held: false, required: false), words.disabled)
+        case nil: return .warning(words.invalid)
+        }
+    }
+
+    private var codexWarnings: [String] {
+        let t = Loc.settings.system
+        var warnings: [String] = []
+        switch model.codexHooksSetUp {
+        case true?:
+            break
+        case false?:
+            warnings.append(t.withoutCodexHooksWarning)
+        case nil:
+            warnings.append(t.codexHooksUnreadableWarning)
+        }
+        if let error = model.codexHooksError { warnings.append(error) }
+        return warnings
     }
 
     /// Nothing until macOS has answered once: a row that read Denied for the first half second would be

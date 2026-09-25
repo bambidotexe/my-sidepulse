@@ -18,14 +18,16 @@ public struct NotificationsPageStrings {
 
     public var phoneHint: String {
         switch language {
-        case .en: "When Claude finishes or needs you while you are away from the "
-            + "Mac, your phone gets a notification through ntfy. It carries a fixed "
-            + "label like \u{201c}Finished\u{201d} and a claude.ai link, never a "
-            + "prompt, a path or code."
-        case .fr: "Quand Claude termine ou a besoin de vous pendant que vous êtes "
-            + "loin du Mac, votre téléphone reçoit une notification via ntfy. Elle "
-            + "porte une étiquette fixe comme \u{ab} Terminé \u{bb} et un lien "
-            + "claude.ai, jamais une invite, un chemin ou du code."
+        case .en: "When Claude or Codex finishes or needs you while you are away from "
+            + "the Mac, your phone gets a notification through ntfy. It is titled "
+            + "with the agent's name and carries a fixed label like "
+            + "\u{201c}Finished\u{201d} and a link to that agent, never a prompt, a "
+            + "path or code."
+        case .fr: "Quand Claude ou Codex termine ou a besoin de vous pendant que vous "
+            + "êtes loin du Mac, votre téléphone reçoit une notification via ntfy. "
+            + "Elle est titrée du nom de l'agent et porte une étiquette fixe comme "
+            + "\u{ab} Terminé \u{bb} et un lien vers cet agent, jamais une invite, un "
+            + "chemin ou du code."
         }
     }
 
@@ -40,8 +42,8 @@ public struct NotificationsPageStrings {
 
     public var notifyToggle: String {
         switch language {
-        case .en: "Notify my phone when Claude finishes or needs you"
-        case .fr: "Notifier mon téléphone quand Claude termine ou a besoin de moi"
+        case .en: "Notify my phone when Claude or Codex finishes or needs you"
+        case .fr: "Notifier mon téléphone quand Claude ou Codex termine ou a besoin de moi"
         }
     }
 

@@ -24,12 +24,22 @@ public struct HookInstallStrings {
         }
     }
 
-    public func installed(total: Int, command: String) -> String {
+    public func installed(total: Int, agent: AgentKind, command: String) -> String {
+        let name = agent.productName
         switch language {
-        case .en: total == 1 ? "Installed 1 Claude Code hook -> \(command)"
-                            : "Installed \(total) Claude Code hooks -> \(command)"
-        case .fr: total == 1 ? "1 hook Claude Code installé -> \(command)"
-                            : "\(total) hooks Claude Code installés -> \(command)"
+        case .en: return total == 1 ? "Installed 1 \(name) hook -> \(command)"
+                                   : "Installed \(total) \(name) hooks -> \(command)"
+        case .fr: return total == 1 ? "1 hook \(name) installé -> \(command)"
+                                   : "\(total) hooks \(name) installés -> \(command)"
+        }
+    }
+
+    /// `install-hooks` from a terminal sets up every agent on the Mac; a
+    /// Codex that is not there is said, not failed.
+    public var codexNotInstalledSkipped: String {
+        switch language {
+        case .en: "Codex is not installed (no ~/.codex), so its hooks were not set up."
+        case .fr: "Codex n'est pas installé (pas de ~/.codex), ses hooks n'ont donc pas été configurés."
         }
     }
 
@@ -47,12 +57,10 @@ public struct HookInstallStrings {
         }
     }
 
-    public var declinedShapeNote: String {
+    public func declinedShapeNote(file: String) -> String {
         switch language {
-        case .en: "(their existing value in ~/.claude/settings.json has a shape "
-            + "this tool does not rewrite)"
-        case .fr: "(leur valeur actuelle dans ~/.claude/settings.json a une forme "
-            + "que cet outil ne réécrit pas)"
+        case .en: "(their existing value in \(file) has a shape this tool does not rewrite)"
+        case .fr: "(leur valeur actuelle dans \(file) a une forme que cet outil ne réécrit pas)"
         }
     }
 

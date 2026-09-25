@@ -30,4 +30,16 @@ public enum Paths {
     public static var claudeSettingsBackup: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json.backup-mysidepulse")
     }
+    /// Codex's home, `~/.codex`: its presence is how the app tells that Codex
+    /// is on this Mac. Codex reads its user hooks from `hooks.json` there,
+    /// under the same `hooks` key and shape as Claude Code's settings.
+    public static var codexHome: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+    }
+    public static var codexHooks: URL {
+        codexHome.appendingPathComponent("hooks.json").resolvingSymlinksInPath()
+    }
+    public static var codexHooksBackup: URL {
+        codexHome.appendingPathComponent("hooks.json.backup-mysidepulse")
+    }
 }

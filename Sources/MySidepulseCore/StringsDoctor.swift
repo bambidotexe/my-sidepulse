@@ -116,8 +116,22 @@ public struct DoctorStrings {
 
     public var journalEmpty: String {
         switch language {
-        case .en: "journal empty (no Claude session since install)"
-        case .fr: "journal vide (aucune session Claude depuis l'installation)"
+        case .en: "journal empty (no agent session since install)"
+        case .fr: "journal vide (aucune session d'agent depuis l'installation)"
+        }
+    }
+
+    public var codexNotInstalled: String {
+        switch language {
+        case .en: "Codex not installed (no ~/.codex), nothing to subscribe"
+        case .fr: "Codex non installé (pas de ~/.codex), rien à abonner"
+        }
+    }
+
+    public var codexHooksMissingOrUnparseable: String {
+        switch language {
+        case .en: "~/.codex/hooks.json missing or unparseable. Run mysidepulse install-hooks"
+        case .fr: "~/.codex/hooks.json manquant ou illisible. Lancez mysidepulse install-hooks"
         }
     }
 

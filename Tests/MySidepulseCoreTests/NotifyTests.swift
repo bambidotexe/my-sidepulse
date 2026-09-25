@@ -231,7 +231,8 @@ final class NotifyTests: XCTestCase {
     // MARK: copy — a device contract of its own
 
     func testAlertCopyIsExact() {
-        XCTAssertEqual(AlertCopy.title, "Claude Code")
+        XCTAssertEqual(AlertCopy.title(for: .claude), "Claude Code")
+        XCTAssertEqual(AlertCopy.title(for: .codex), "Codex")
         let expected: [(AlertKind, String, String, String)] = [
             (.finished, "Finished", "Terminé", "white_check_mark"),
             (.needsYou(.question), "Asking you something", "Vous pose une question", "speech_balloon"),

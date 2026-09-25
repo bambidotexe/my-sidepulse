@@ -13,7 +13,7 @@ public enum Trim {
     public static func journalEvent(fromHookPayload data: Data, loggedAt: Date) -> JournalEvent {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let name = obj["hook_event_name"] as? String,
-              let event = HookEventName(rawValue: name), event != .parseError
+              let event = eventName(name), event != .parseError
         else {
             var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
             e.rawPrefix = String(decoding: data.prefix(300), as: UTF8.self)
@@ -45,6 +45,15 @@ public enum Trim {
             e.backgroundTaskIds = taskIds(tasks)
         }
         return e
+    }
+
+    /// The event names are Claude Code's spellings, which Codex shares. Codex
+    /// spells the same names in snake case in its own configuration, so that
+    /// spelling is taken too, in case a payload ever carries it.
+    static func eventName(_ raw: String) -> HookEventName? {
+        if let event = HookEventName(rawValue: raw) { return event }
+        let pascal = raw.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
+        return HookEventName(rawValue: pascal)
     }
 
     static func clamp(_ value: Any?) -> String? {

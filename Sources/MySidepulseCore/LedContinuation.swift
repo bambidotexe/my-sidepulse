@@ -304,11 +304,19 @@ public enum LedContinuation {
         // from the bridge's end. Not from dark, where the fade-in is the
         // point, and not when it would not fit.
         if !fromDark, let bridge = bridgeLine(parsed, at: phase), parsed.loopMs - phase > bridge.ms {
-            let after = rest(of: parsed, from: phase + bridge.ms, reset: bridge.reset).lines
-            let unscaled = text(Program(brightness: nil, lines: [bridge.line] + after, repeats: false))
-            if !after.isEmpty, unscaled.utf8.count <= 512 {
+            let whole = rest(of: parsed, from: phase + bridge.ms, reset: bridge.reset).lines
+            // The whole rest of the loop; or, on a loop of several passes
+            // (the roll both agents share) when that does not fit, the
+            // current pass alone: a pass ends dark, so the loop can start
+            // there, and the bridge is worth more than the pass order.
+            for after in [whole, currentPass(whole)] where !after.isEmpty {
+                let unscaled = text(Program(brightness: nil, lines: [bridge.line] + after, repeats: false))
+                guard unscaled.utf8.count <= 512 else { continue }
+                let length = after.count == whole.count
+                    ? parsed.loopMs - phase
+                    : bridge.ms + after.reduce(0) { $0 + $1.lengthMs }
                 return Tail(program: LedProgram.scaled(unscaled, brightness: brightness), unscaled: unscaled,
-                            lengthMs: parsed.loopMs - phase)
+                            lengthMs: length)
             }
         }
         let lines = rest(of: parsed, from: phase, fromDark: fromDark).lines
@@ -452,6 +460,19 @@ public enum LedContinuation {
         return String(format: "#%02x%02x%02x", channel(16), channel(8), channel(0))
     }
 
+    /// The lines of the pass under way: `lines`, the rest of a loop from the
+    /// line under way, cut before the next pass starts, which is a whole-strip
+    /// dark line. The single-pass loops come back whole. A pass ends with
+    /// every LED dark, so a loop written at its end finds what a loop's end
+    /// would have.
+    static func currentPass(_ lines: [Line]) -> [Line] {
+        guard let next = lines.indices.dropFirst().first(where: { index in
+            let line = lines[index]
+            return line.segments.count == 1 && line.segments[0].led == nil && line.segments[0].color == "off"
+        }) else { return lines }
+        return Array(lines[..<next])
+    }
+
     /// The loop's lines from `phase` on: the line under way cut, the later
     /// ones whole. Also the original line under way and how far into it.
     static func rest(of parsed: Program, from phase: Int, fromDark: Bool = false, reset: Set<Int> = [])
@@ -518,18 +539,22 @@ public enum LedContinuation {
         var lines: [Line]
         var lengths: [Int]
         var openMs = K.rollingFadeMs
+        // A roll of several passes (the one both agents share) carries on to
+        // the end of the pass under way, where every LED is dark, and the
+        // split's own program takes over there: with its zone lines, the
+        // whole rest would not fit in the strip's 512 bytes.
         if case .blink(let hex) = opening {
             guard let built = blinkOpening(parsed, at: phase, count: count, hex: hex, zone: zoneAfter,
                                            strip: strip) else { return nil }
             lines = built.lines
             lengths = built.lengths
         } else if let bridge = bridgeLine(parsed, at: phase), parsed.loopMs - phase > bridge.ms {
-            let after = rest(of: parsed, from: phase + bridge.ms, reset: bridge.reset).lines
+            let after = currentPass(rest(of: parsed, from: phase + bridge.ms, reset: bridge.reset).lines)
             lines = ([bridge.line] + after).map { strip(perLed($0, count: count)) }
             lengths = [bridge.ms] + after.map(\.lengthMs)
             openMs = bridge.ms
         } else {
-            let cut = rest(of: parsed, from: phase).lines
+            let cut = currentPass(rest(of: parsed, from: phase).lines)
             lines = cut.map { strip(perLed($0, count: count)) }
             lengths = cut.map(\.lengthMs)
         }
@@ -576,11 +601,12 @@ public enum LedContinuation {
         let span = K.askBlinkMs
         let fade = K.rollingFadeMs
         let cutResult = rest(of: parsed, from: phase)
-        guard !cutResult.lines.isEmpty else { return nil }
+        let cutLines = currentPass(cutResult.lines)
+        guard !cutLines.isEmpty else { return nil }
         let (original, t) = cutResult.underWay.map { (perLed($0.line, count: count), $0.t) }
-            ?? (perLed(cutResult.lines[0], count: count), 0)
-        let rest = cutResult.lines.dropFirst().map { strip(perLed($0, count: count)) }
-        let restLengths = cutResult.lines.dropFirst().map(\.lengthMs)
+            ?? (perLed(cutLines[0], count: count), 0)
+        let rest = cutLines.dropFirst().map { strip(perLed($0, count: count)) }
+        let restLengths = cutLines.dropFirst().map(\.lengthMs)
         func blink(after delay: Int) -> [Segment] {
             (0..<zone).map { Segment(led: $0, color: hex, durationMs: span, easing: "pulse", delayMs: delay) }
         }

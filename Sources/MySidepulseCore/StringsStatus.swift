@@ -2,12 +2,27 @@ import Foundation
 
 /// The `Showing` sentences: what the strip shows and why, in the user's words.
 /// `StatusCopy` owns which sentence goes with which state and what tone it
-/// carries; this owns the words. Every sentence is short, names Claude or the
-/// command rather than a colour, carries no long dash and ends without a full
-/// stop. `StatusCopyTests` pins both languages.
+/// carries; this owns the words. Every sentence is short, names the agent or
+/// the command rather than a colour, carries no long dash and ends without a
+/// full stop. `StatusCopyTests` pins both languages.
+///
+/// A sentence about an agent takes the agents it is about: Claude, Codex, or
+/// both, in which case the verb agrees with the pair.
 public struct StatusStrings {
     private let language: Language
     init(_ language: Language) { self.language = language }
+
+    /// "Claude", "Codex" or "Claude and Codex": product names, the same in
+    /// both languages but for the conjunction.
+    private func names(_ agents: Agents) -> String {
+        let kinds = agents.kinds.isEmpty ? [AgentKind.claude] : agents.kinds
+        switch language {
+        case .en: return kinds.map(\.shortName).joined(separator: " and ")
+        case .fr: return kinds.map(\.shortName).joined(separator: " et ")
+        }
+    }
+
+    private func isPair(_ agents: Agents) -> Bool { agents.kinds.count > 1 }
 
     public var off: String {
         switch language {
@@ -16,24 +31,24 @@ public struct StatusStrings {
         }
     }
 
-    public var working: String {
+    public func working(_ agents: Agents) -> String {
         switch language {
-        case .en: "Claude is working"
-        case .fr: "Claude travaille"
+        case .en: "\(names(agents)) \(isPair(agents) ? "are" : "is") working"
+        case .fr: "\(names(agents)) \(isPair(agents) ? "travaillent" : "travaille")"
         }
     }
 
-    public var waiting: String {
+    public func waiting(_ agents: Agents) -> String {
         switch language {
-        case .en: "Claude needs you: a question, a permission or a plan"
-        case .fr: "Claude a besoin de vous : une question, une permission ou un plan"
+        case .en: "\(names(agents)) \(isPair(agents) ? "need" : "needs") you: a question, a permission or a plan"
+        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") besoin de vous : une question, une permission ou un plan"
         }
     }
 
-    public var done: String {
+    public func done(_ agents: Agents) -> String {
         switch language {
-        case .en: "Claude has finished. Clears when you look at the terminal"
-        case .fr: "Claude a terminé. S'efface quand vous regardez le terminal"
+        case .en: "\(names(agents)) \(isPair(agents) ? "have" : "has") finished. Clears when you look at the terminal"
+        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") terminé. S'efface quand vous regardez le terminal"
         }
     }
 
@@ -58,10 +73,10 @@ public struct StatusStrings {
         }
     }
 
-    public var splitWaiting: String {
+    public func splitWaiting(_ agents: Agents) -> String {
         switch language {
-        case .en: "Claude needs you, and other work is still running"
-        case .fr: "Claude a besoin de vous, et d'autres tâches sont en cours"
+        case .en: "\(names(agents)) \(isPair(agents) ? "need" : "needs") you, and other work is still running"
+        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") besoin de vous, et d'autres tâches sont en cours"
         }
     }
 
@@ -72,10 +87,10 @@ public struct StatusStrings {
         }
     }
 
-    public var splitDone: String {
+    public func splitDone(_ agents: Agents) -> String {
         switch language {
-        case .en: "Claude has finished, and other work is still running"
-        case .fr: "Claude a terminé, et d'autres tâches sont en cours"
+        case .en: "\(names(agents)) \(isPair(agents) ? "have" : "has") finished, and other work is still running"
+        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") terminé, et d'autres tâches sont en cours"
         }
     }
 

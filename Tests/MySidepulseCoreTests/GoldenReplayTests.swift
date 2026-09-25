@@ -82,7 +82,7 @@ final class GoldenReplayTests: XCTestCase {
         {"logged_at":"2026-08-21T09:00:00.000Z","event":"UserPromptSubmit","session_id":"dead","claude_pid":1111}
         {"logged_at":"2026-08-21T09:00:01.000Z","event":"UserPromptSubmit","session_id":"live","claude_pid":2222}
         """)
-        store.pruneDead { pid in pid == 2222 }
+        store.pruneDead { _, pid in pid == 2222 }
         XCTAssertNil(store.sessions["dead"])
         XCTAssertEqual(display(store), .working)
     }

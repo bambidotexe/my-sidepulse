@@ -13,8 +13,9 @@ public struct HealthFacts: Equatable {
         public init(ok: Bool, detail: String) { self.ok = ok; self.detail = detail }
     }
 
-    /// What `~/.claude/settings.json` says about the hooks.
-    public enum ClaudeHooks: Equatable {
+    /// What an agent's hook file says about the hooks: `~/.claude/settings.json`, or
+    /// `~/.codex/hooks.json`.
+    public enum HookFile: Equatable {
         /// Every event is subscribed.
         case setUp
         /// At least one event is not.
@@ -40,15 +41,16 @@ public struct HealthFacts: Equatable {
         }
     }
 
-    /// A Claude Code session as the engine reports it: its state in the engine's own words, which the page
+    /// An agent's session as the engine reports it: its state in the engine's own words, which the page
     /// translates, never shows.
     public struct Session: Equatable {
         public var id: String
+        public var agent: AgentKind
         public var phase: SessionPhase
         public var ageSeconds: Int
         public var cwd: String?
-        public init(id: String, phase: SessionPhase, ageSeconds: Int, cwd: String?) {
-            self.id = id; self.phase = phase; self.ageSeconds = ageSeconds; self.cwd = cwd
+        public init(id: String, agent: AgentKind = .claude, phase: SessionPhase, ageSeconds: Int, cwd: String?) {
+            self.id = id; self.agent = agent; self.phase = phase; self.ageSeconds = ageSeconds; self.cwd = cwd
         }
     }
 
@@ -102,7 +104,7 @@ public struct HealthFacts: Equatable {
     public var notificationsGranted: Bool?
 
     // Claude Code
-    public var claudeHooks: ClaudeHooks?
+    public var claudeHooks: HookFile?
     /// The doctor's "hooks installed", for which events are missing.
     public var hooksCheck: Check?
     /// The doctor's "hook binary": whether every installed hook points at a file that exists.
@@ -113,6 +115,16 @@ public struct HealthFacts: Equatable {
     public var journal: Check?
     public var lastHookEventSeconds: Int?
     public var sessions: [Session] = []
+
+    // Codex
+    /// Whether Codex is on this Mac (`~/.codex` exists). Nil until read. Its hooks are a line only while
+    /// it is, or while they are set up.
+    public var codexInstalled: Bool?
+    public var codexHooks: HookFile?
+    /// The doctor's "codex hooks".
+    public var codexHooksCheck: Check?
+    /// The command this bundle's Codex hooks run, which is what `hooks.json` holds while the line is green.
+    public var codexHookCommand: String?
 
     // Terminal
     public var terminalHookSetUp: Bool?
@@ -147,26 +159,27 @@ public enum HealthReport {
     /// The Health table, in page order. A fact nobody has read yet leaves its line out rather than showing
     /// it unknown.
     public static func checks(for facts: HealthFacts) -> [HealthRow] {
-        [claudeHooks(facts), terminalHook(facts), notifications(facts), strip(facts), launchAgent(facts),
-         phone(facts), commandLine(facts), crashes(facts.recentCrashes)].compactMap { $0 }
+        [claudeHooks(facts), codexHooks(facts), terminalHook(facts), notifications(facts), strip(facts),
+         launchAgent(facts), phone(facts), commandLine(facts), crashes(facts.recentCrashes)].compactMap { $0 }
     }
 
     /// The Information table, in page order, each line only once it has something to say.
     public static func readings(for facts: HealthFacts) -> [InfoRow] {
         let t = Loc.settings.health
         var rows: [InfoRow] = []
-        let claudeSetUp = facts.claudeHooks == .setUp
+        let agentSetUp = facts.claudeHooks == .setUp || facts.codexHooks == .setUp
         let terminalSetUp = facts.terminalHookSetUp == true
 
-        if claudeSetUp || terminalSetUp {
+        if agentSetUp || terminalSetUp {
             rows.append(InfoRow(id: "last hook event", label: t.lastHookEventLabel,
                                 value: facts.lastHookEventSeconds.map(t.ago(seconds:)) ?? t.noneYet))
         }
-        if claudeSetUp {
-            rows.append(InfoRow(id: "sessions", label: t.claudeSessionsLabel,
+        if agentSetUp {
+            rows.append(InfoRow(id: "sessions", label: t.agentSessionsLabel,
                                 value: facts.sessions.isEmpty ? t.noSessions : "\(facts.sessions.count)",
                                 detail: facts.sessions.isEmpty ? nil : facts.sessions.map {
-                                    "\($0.id.prefix(8)): \(t.sessionMark($0.phase, ageSeconds: $0.ageSeconds))"
+                                    "\($0.id.prefix(8)) \($0.agent.shortName): "
+                                        + t.sessionMark($0.phase, ageSeconds: $0.ageSeconds)
                                 }.joined(separator: "\n")))
         }
         if terminalSetUp {
@@ -209,6 +222,36 @@ public enum HealthReport {
             }
             return HealthRow(id: "claude code hooks", label: label, level: .good, word: words.enabled,
                              detail: facts.hookCommand)
+        }
+    }
+
+    /// Optional: a Mac without Codex has nothing to set up, so the line is there only while Codex is
+    /// installed or the hooks are, and missing is orange. The same one-line rule as Claude's otherwise.
+    static func codexHooks(_ facts: HealthFacts) -> HealthRow? {
+        guard let hooks = facts.codexHooks, facts.codexInstalled == true || hooks == .setUp else { return nil }
+        let t = Loc.settings.health
+        let system = Loc.settings.system
+        let words = Loc.settings.words
+        let label = system.codexHooksLabel
+        switch hooks {
+        case .missing:
+            return HealthRow(id: "codex hooks", label: label, level: HealthRules.grant(held: false, required: false),
+                             word: words.disabled, detail: facts.codexHooksCheck?.detail,
+                             fix: system.withoutCodexHooksWarning)
+        case .unreadable:
+            return HealthRow(id: "codex hooks", label: label, level: .warning, word: words.invalid,
+                             detail: facts.codexHooksCheck?.detail, fix: system.codexHooksUnreadableWarning)
+        case .setUp:
+            if let check = facts.codexHooksCheck, !check.ok {
+                return HealthRow(id: "codex hooks", label: label, level: .warning, word: words.invalid,
+                                 detail: facts.codexHookCommand ?? check.detail, fix: t.codexHookCommandFix)
+            }
+            if let journal = facts.journal, !journal.ok {
+                return HealthRow(id: "codex hooks", label: label, level: .warning, word: words.failed,
+                                 detail: journal.detail, fix: t.journalFix)
+            }
+            return HealthRow(id: "codex hooks", label: label, level: .good, word: words.enabled,
+                             detail: facts.codexHookCommand)
         }
     }
 

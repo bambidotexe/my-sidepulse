@@ -53,15 +53,35 @@ struct StripPreviewView: View {
         if case .split(let alert, let work) = state {
             return splitAppearance(alert: alert, work: work, dot: index, at: t)
         }
+        if case .working(let agents) = state, let t {
+            // The device program's own timeline: one pass per colour, each
+            // the single roll's cycle, so a shared roll changes colour at
+            // every pass exactly as the strip does.
+            let colors = palette.rollColors(agents)
+            let cycle = rollCycle
+            let raw = (t / cycle).rounded(.down)
+            let pass = Int(raw) % colors.count
+            return (screen(colors[(pass + colors.count) % colors.count]), intensity(dot: index, at: t))
+        }
         let level = t.map { intensity(dot: index, at: $0) } ?? staticIntensity(dot: index)
         return (solidColor, level)
     }
 
+    /// One pass of the roll on this strip: the fade, then the last LED's
+    /// pulse after its stagger, as `LedProgram.rolling` lays it out.
+    private var rollCycle: TimeInterval {
+        let stagger = Double(ledCount <= 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs) / 1000
+        return Double(K.rollingFadeMs) / 1000 + Double(K.rollingPulseMs) / 1000
+            + stagger * Double(max(ledCount - 1, 1))
+    }
+
     /// The one colour of a state that paints the whole strip in one colour,
-    /// the battery bar's being the one its charge picks.
+    /// the battery bar's being the one its charge picks. A roll shared by
+    /// both agents has two, one per pass, which `appearance` picks by the
+    /// pass under way; this is its first, for a still frame.
     private var solidColor: Color {
         switch state {
-        case .working: return screen(palette.working)
+        case .working(let agents): return screen(palette.rollColors(agents)[0])
         case .jobRunning: return screen(palette.jobRunning)
         case .waiting, .jobFailed: return screen(palette.needsYou)
         case .done, .jobSucceeded: return screen(palette.done)
@@ -87,7 +107,14 @@ struct StripPreviewView: View {
         let count = max(2, ledCount)
         let zone = LedProgram.splitZone(alert: alert, ledCount: count)
         let rest = count - zone
-        let workColor = screen(work == .working ? palette.working : palette.jobRunning)
+        // Under a zone a shared roll alternates its colour by LED, as the
+        // device program does (`LedProgram.splitProgram`).
+        let workColors: [Color]
+        switch work {
+        case .working(let agents): workColors = palette.rollColors(agents).map(screen)
+        case .jobRunning: workColors = [screen(palette.jobRunning)]
+        }
+        func workColor(_ index: Int) -> Color { workColors[max(0, index - zone) % workColors.count] }
         let alertColor: Color
         let zoneIsGreen: Bool
         switch alert {
@@ -97,7 +124,7 @@ struct StripPreviewView: View {
             alertColor = screen(palette.done); zoneIsGreen = true
         }
         guard let t else {
-            return index < zone ? (alertColor, 1) : (workColor, 1)
+            return index < zone ? (alertColor, 1) : (workColor(index), 1)
         }
         let fade = Double(K.rollingFadeMs) / 1000
         let blink = Double(K.askBlinkMs) / 1000
@@ -120,8 +147,8 @@ struct StripPreviewView: View {
             return (alertColor, 0.06)
         }
         let local = phase - rollStart - Double(index - zone) * stagger
-        guard local >= 0, local < pulseSeconds else { return (workColor, 0.06) }
-        return (workColor, pulse(local / pulseSeconds))
+        guard local >= 0, local < pulseSeconds else { return (workColor(index), 0.06) }
+        return (workColor(index), pulse(local / pulseSeconds))
     }
 
     private func dot(color: Color, level: Double) -> some View {
@@ -151,12 +178,16 @@ struct StripPreviewView: View {
         case .effect, .split:
             return 1 // painted per-dot upstream; appearance() never gets here
         case .working, .jobRunning:
+            // The program's own pass: the fade first, then each LED's pulse
+            // after its stagger, so a two-colour roll's pass boundary lands
+            // where the colour changes.
             let stagger = Double(ledCount <= 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs) / 1000
             let pulse = Double(K.rollingPulseMs) / 1000
-            let cycle = pulse + stagger * Double(max(ledCount - 1, 1))
-            let raw = (t - Double(index) * stagger).truncatingRemainder(dividingBy: cycle)
-            let phase = raw < 0 ? raw + cycle : raw
-            guard phase < pulse else { return 0.06 }
+            let fade = Double(K.rollingFadeMs) / 1000
+            let cycle = rollCycle
+            let raw = t.truncatingRemainder(dividingBy: cycle)
+            let phase = (raw < 0 ? raw + cycle : raw) - fade - Double(index) * stagger
+            guard phase >= 0, phase < pulse else { return 0.06 }
             let s = sin(.pi * phase / pulse)
             return 0.06 + 0.94 * s * s
         case .waiting, .jobFailed:

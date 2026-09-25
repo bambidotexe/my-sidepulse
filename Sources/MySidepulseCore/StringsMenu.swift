@@ -73,8 +73,8 @@ public struct MenuStrings {
 
     public var noSessions: String {
         switch language {
-        case .en: "No Claude sessions"
-        case .fr: "Aucune session Claude"
+        case .en: "No agent sessions"
+        case .fr: "Aucune session d'agent"
         }
     }
 

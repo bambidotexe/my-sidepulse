@@ -2,21 +2,25 @@ import Foundation
 
 /// What plays on the alert zone of a split display. Session states outrank
 /// their job counterparts, and needs-you outranks finished — the same order
-/// the full-strip ladder uses.
+/// the full-strip ladder uses. An agent alert names the agents behind it,
+/// for the sentence about it; the zone looks the same whoever they are.
 public enum SplitAlert: Equatable {
-    case waiting, jobFailed, done, jobSucceeded
+    case waiting(Agents), jobFailed, done(Agents), jobSucceeded
 }
 
-/// What plays on the rest of the strip under a split alert.
+/// What plays on the rest of the strip under a split alert. A roll names the
+/// agents it rolls for: one colour, or both in turn.
 public enum SplitWork: Equatable {
-    case working, jobRunning
+    case working(Agents), jobRunning
 }
 
 public enum DisplayState: Equatable {
     case off
-    case working
-    case waiting
-    case done
+    /// The roll: Claude's colour, Codex's, or both. With both, the wave takes
+    /// one colour on one pass and the other on the next.
+    case working(Agents)
+    case waiting(Agents)
+    case done(Agents)
     case jobRunning
     case jobSucceeded
     case jobFailed
@@ -57,14 +61,15 @@ public enum LedProgram {
         switch state {
         case .off:
             return "off"
-        case .working:
-            return applyBrightness(rolling(color: palette.working, ledCount: ledCount), brightness)
+        case .working(let agents):
+            return applyBrightness(rolling(colors: palette.rollColors(agents), ledCount: ledCount),
+                                   brightness)
         case .waiting, .jobFailed:
             return applyBrightness(askBlink(palette: palette), brightness)
         case .done, .jobSucceeded:
             return applyBrightness("off\n\(palette.done) \(K.doneBreathSeconds)s pulse\nrepeat", brightness)
         case .jobRunning:
-            return applyBrightness(rolling(color: palette.jobRunning, ledCount: ledCount), brightness)
+            return applyBrightness(rolling(colors: [palette.jobRunning], ledCount: ledCount), brightness)
         case .split(let alert, let work):
             return applyBrightness(
                 splitProgram(alert: alert, work: work, ledCount: ledCount, palette: palette),
@@ -104,13 +109,29 @@ public enum LedProgram {
                 "off \(K.askBlinkPauseMs)ms", "repeat"].joined(separator: "\n")
     }
 
-    static func rolling(color: String, ledCount: Int) -> String {
+    /// The roll: a dark fade, then one staggered pulse per LED, looped. With
+    /// two colours the loop holds one pass per colour, each opening with the
+    /// same fade, so the wave keeps its rhythm and changes colour at every
+    /// pass. Two passes of eight LEDs are 496 bytes, inside the strip's 512.
+    static func rolling(colors: [String], ledCount: Int) -> String {
         let count = max(2, min(8, ledCount))
         let stagger = count == 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs
-        let segments = (0..<count)
-            .map { "\($0):\(color) \(K.rollingPulseMs)ms pulse \($0 * stagger)ms" }
-            .joined(separator: "; ")
-        return "off \(K.rollingFadeMs)ms cosine\n\(segments)\nrepeat"
+        let passes = colors.map { color in
+            let segments = (0..<count)
+                .map { "\($0):\(color) \(K.rollingPulseMs)ms pulse \($0 * stagger)ms" }
+                .joined(separator: "; ")
+            return "off \(K.rollingFadeMs)ms cosine\n\(segments)"
+        }
+        return (passes + ["repeat"]).joined(separator: "\n")
+    }
+
+    /// Whether a change of state is the full-strip roll changing colour:
+    /// Claude's roll becoming the shared one, or the reverse. The wave then
+    /// carries on from where it is and takes the new colours at its next
+    /// pass (`Engine.paint`), instead of restarting from its first line.
+    public static func rollRecolour(from: DisplayState, to: DisplayState) -> Bool {
+        guard from != to, case .working = from, case .working = to else { return false }
+        return true
     }
 
     /// The zone an alert borrows: needs-you is wider than finished, and at
@@ -140,7 +161,7 @@ public enum LedProgram {
         let count = max(2, min(8, ledCount))
         func work(_ state: DisplayState) -> SplitWork? {
             switch state {
-            case .working: return .working
+            case .working(let agents): return .working(agents)
             case .jobRunning: return .jobRunning
             case .split(_, let work): return work
             default: return nil
@@ -161,8 +182,9 @@ public enum LedProgram {
         return RollHandover(zoneBefore: zone(from), zoneAfter: zone(to), opening: opening)
     }
 
-    /// The alert zone on the left, the working roll on the rest — built
-    /// entirely from shapes this strip has PROVEN:
+    /// The alert zone on the left, the working roll on the rest, in the
+    /// work's colour or, for a roll both agents share, alternating by LED —
+    /// built entirely from shapes this strip has PROVEN:
     ///
     /// - a per-LED pulse returns to its PRE-pulse value, not to black, so
     ///   every split opens with a BASELINE frame assigning every LED (green
@@ -189,10 +211,14 @@ public enum LedProgram {
         let count = max(2, min(8, ledCount))
         let zone = splitZone(alert: alert, ledCount: count)
         let rest = count - zone
-        let workColor: String
+        // A roll shared by both agents cannot alternate its colour by pass
+        // here: two passes of blink lines and roll lines are over 700 bytes
+        // on eight LEDs, and the strip takes 512. Under a zone the shared
+        // roll alternates its colour by LED instead.
+        let workColors: [String]
         switch work {
-        case .working: workColor = palette.working
-        case .jobRunning: workColor = palette.jobRunning
+        case .working(let agents): workColors = palette.rollColors(agents)
+        case .jobRunning: workColors = [palette.jobRunning]
         }
         let zoneIsGreen: Bool
         switch alert {
@@ -204,7 +230,7 @@ public enum LedProgram {
             .joined(separator: "; ")
         let stagger = rest <= 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs
         let rollPulses = (0..<rest).map {
-            "\(zone + $0):\(workColor) \(K.rollingPulseMs)ms pulse \($0 * stagger)ms"
+            "\(zone + $0):\(workColors[$0 % workColors.count]) \(K.rollingPulseMs)ms pulse \($0 * stagger)ms"
         }
         if zoneIsGreen {
             return baseline + "\n" + rollPulses.joined(separator: "; ") + "\nrepeat"

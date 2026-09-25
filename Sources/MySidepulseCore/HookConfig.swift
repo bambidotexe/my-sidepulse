@@ -1,9 +1,11 @@
 import Foundation
 
-/// Edits the `hooks` section of Claude Code's settings.json. Pure dictionary
-/// transforms — file I/O and backups belong to `HookInstaller`.
+/// Edits the `hooks` section of an agent's hook file: Claude Code's
+/// `settings.json`, or Codex's `hooks.json`, which holds the same shape under
+/// the same key. Pure dictionary transforms; file I/O and backups belong to
+/// `HookInstaller`.
 public enum HookConfig {
-    /// Every event the state machine consumes (docs/functional.md §4).
+    /// Every Claude Code event the state machine consumes (docs/functional.md §4).
     public static let events = [
         "SessionStart", "SessionEnd", "UserPromptSubmit",
         "PreToolUse", "PostToolUse", "PostToolUseFailure",
@@ -11,10 +13,45 @@ public enum HookConfig {
         "Stop", "StopFailure", "SubagentStart", "SubagentStop",
         "PreCompact", "PostCompact",
     ]
+    /// Every Codex event: the same names, less the four Codex does not have
+    /// (`PostToolUseFailure`, `PermissionDenied`, `Notification`,
+    /// `StopFailure`), plus `Interrupt`, which Claude Code does not have.
+    public static let codexEvents = [
+        "SessionStart", "SessionEnd", "UserPromptSubmit",
+        "PreToolUse", "PostToolUse", "PermissionRequest",
+        "Stop", "SubagentStart", "SubagentStop",
+        "PreCompact", "PostCompact", "Interrupt",
+    ]
+
+    public static func events(for agent: AgentKind) -> [String] {
+        switch agent {
+        case .claude: return events
+        case .codex: return codexEvents
+        }
+    }
+
     /// Our own entries, recognized for idempotent reinstall and uninstall.
+    /// Both agents' commands carry it: `… hook` and `… hook --agent codex`.
     public static let ourMarker = "/Contents/MacOS/mysidepulse hook"
 
-    public static func install(into root: [String: Any], command: String) -> [String: Any] {
+    /// The command an agent's hooks run. Claude Code's is the bare `hook`,
+    /// the shape every install has written; Codex's names itself, so the
+    /// journal line carries the agent whatever process fired the hook.
+    public static func command(cliPath: String, agent: AgentKind) -> String {
+        switch agent {
+        case .claude: return "\(cliPath) hook"
+        case .codex: return "\(cliPath) hook --agent codex"
+        }
+    }
+
+    /// The binary an installed command runs: everything before ` hook`.
+    public static func binary(ofCommand command: String) -> String {
+        guard let range = command.range(of: " hook") else { return command }
+        return String(command[..<range.lowerBound])
+    }
+
+    public static func install(into root: [String: Any], command: String,
+                               events: [String] = events) -> [String: Any] {
         var root = root
         // A `hooks` value that is not an object is a file we do not
         // understand. Replacing it would discard whatever the user has
@@ -34,7 +71,8 @@ public enum HookConfig {
             // `matcher` selects which tools a PreToolUse/PostToolUse group
             // fires for. A matcher-less group is accepted for the events that
             // have nothing to match on, but "*" is what the docs prescribe
-            // for every event — the shape known to work.
+            // for every event — the shape known to work. Codex reads "*" as
+            // match-all too.
             let entry: [String: Any] = [
                 "matcher": "*",
                 "hooks": [["type": "command", "command": command, "timeout": 5]],

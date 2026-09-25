@@ -49,7 +49,7 @@ final class ProcWalkTests: XCTestCase {
             proc(200, 1, "ghostty", "/Applications/Ghostty.app/Contents/MacOS/ghostty"),
         ]
         let origin = ProcWalk.classify(chain)
-        XCTAssertEqual(origin.claudePid, 400)
+        XCTAssertEqual(origin.agentPid, 400)
         XCTAssertEqual(origin.hostAppPid, 200)
         XCTAssertEqual(origin.hostBundlePath, "/Applications/Ghostty.app")
 
@@ -62,7 +62,7 @@ final class ProcWalkTests: XCTestCase {
 
         let headless = [proc(500, 400, "claude", "/opt/claude"), proc(400, 1, "sshd", "/usr/sbin/sshd")]
         let h = ProcWalk.classify(headless)
-        XCTAssertEqual(h.claudePid, 500)
+        XCTAssertEqual(h.agentPid, 500)
         XCTAssertNil(h.hostBundlePath, "no host app over ssh/tmux — fields omitted")
     }
 
@@ -88,7 +88,7 @@ final class ProcWalkTests: XCTestCase {
             proc(200, 1, "Terminal", "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"),
         ]
         let origin = ProcWalk.classify(chain)
-        XCTAssertEqual(origin.claudePid, 400)
+        XCTAssertEqual(origin.agentPid, 400)
         XCTAssertEqual(origin.hostAppPid, 200)
     }
 
@@ -110,7 +110,7 @@ final class ProcWalkTests: XCTestCase {
             proc(5713, 1, "Terminal", "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal", nil),
         ]
         let origin = ProcWalk.classify(chain)
-        XCTAssertEqual(origin.claudePid, 82789)
+        XCTAssertEqual(origin.agentPid, 82789)
         XCTAssertEqual(origin.tabTTY, "ttys002", "a tab the user can focus")
     }
 
@@ -131,7 +131,7 @@ final class ProcWalkTests: XCTestCase {
             proc(5713, 1, "Terminal", "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal", nil),
         ]
         let origin = ProcWalk.classify(chain)
-        XCTAssertEqual(origin.claudePid, 25408, "the process that ran the turn")
+        XCTAssertEqual(origin.agentPid, 25408, "the process that ran the turn")
         XCTAssertEqual(origin.hostBundlePath,
                        "/System/Applications/Utilities/Terminal.app",
                        "the host still resolves — this is why the bundle gate passed")

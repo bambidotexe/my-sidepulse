@@ -83,7 +83,7 @@ final class TimerTests: XCTestCase {
         var s = SessionStore()
         s.apply(ev(.userPromptSubmit, 0, pid: 42))
         s.apply(ev(.userPromptSubmit, 1, sid: "s2"))
-        s.pruneDead { _ in false }
+        s.pruneDead { _, _ in false }
         XCTAssertNil(s.sessions["s1"])
         XCTAssertNotNil(s.sessions["s2"], "no pid → staleness handles it, never liveness")
     }

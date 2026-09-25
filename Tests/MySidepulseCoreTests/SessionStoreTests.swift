@@ -8,7 +8,7 @@ func ev(_ name: HookEventName, _ t: TimeInterval, sid: String? = "s1", tool: Str
     var e = JournalEvent(loggedAt: Date(timeIntervalSince1970: 1_787_652_000 + t), event: name)
     e.sessionId = sid; e.toolName = tool; e.notificationType = ntype; e.lastMessageTail = tail
     e.backgroundTaskIds = bg; e.agentId = agent; e.source = source
-    e.claudePid = pid; e.hostBundleId = host; e.tty = tty
+    e.agentPid = pid; e.hostBundleId = host; e.tty = tty
     e.ackStateSince = ackSince.map { Date(timeIntervalSince1970: 1_787_652_000 + $0) }
     return e
 }
@@ -22,7 +22,7 @@ final class SessionStoreTests: XCTestCase {
         var s = SessionStore()
         s.apply(ev(.sessionStart, 0, source: "startup", pid: 42, host: "com.apple.Terminal"))
         XCTAssertEqual(state(s), .idle)
-        XCTAssertEqual(s.sessions["s1"]?.claudePid, 42)
+        XCTAssertEqual(s.sessions["s1"]?.agentPid, 42)
         s.apply(ev(.userPromptSubmit, 1))
         XCTAssertEqual(state(s), .working)
         s.apply(ev(.preToolUse, 2, tool: "Bash"))

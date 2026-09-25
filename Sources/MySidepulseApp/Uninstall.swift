@@ -8,8 +8,8 @@ import MySidepulsePlatform
 ///
 /// **Dragging the bundle to the Trash is not an uninstall.** It removes the app and nothing else: the
 /// launch agent stays and launchd tries to start a binary that is not there at every login, the Claude
-/// Code hooks fire at a missing command once per event, the zsh line runs at every shell, and the journal,
-/// the settings and the ntfy topic stay in Application Support.
+/// Code and Codex hooks fire at a missing command once per event, the zsh line runs at every shell, and
+/// the journal, the settings and the ntfy topic stay in Application Support.
 ///
 /// The order is the whole of it, and the last of it cannot run here at all: this process is usually the
 /// launch agent's own job, so `launchctl bootout` would kill it where it stands, before the strip had been
@@ -27,16 +27,19 @@ enum Uninstall {
         var outcome = Outcome()
 
         // The hooks first: they name a binary inside the bundle, which is still there.
-        // nil when settings.json cannot be read, and the removal is still worth trying then.
-        if HookInstaller.claudeHooksInstalled() ?? 1 > 0 {
-            let result = HookInstaller.removeClaudeHooks()
-            if !result.ok { outcome.failed.append(t.uninstallHooksFailed(result.lines.joined(separator: " "))) }
+        // nil when a hook file cannot be read, and the removal is still worth trying then.
+        for agent in AgentKind.allCases where HookInstaller.hooksInstalled(for: agent) ?? 1 > 0 {
+            let result = HookInstaller.removeHooks(for: agent)
+            if !result.ok {
+                outcome.failed.append(t.uninstallHooksFailed(agent, result.lines.joined(separator: " ")))
+            }
         }
         if HookInstaller.zshrcHasSnippet() {
             let result = HookInstaller.removeFromZshrc()
             if !result.ok { outcome.failed.append(t.uninstallZshFailed(result.lines.joined(separator: " "))) }
         }
         try? FileManager.default.removeItem(at: Paths.claudeSettingsBackup)
+        try? FileManager.default.removeItem(at: Paths.codexHooksBackup)
 
         // The plist goes now so that nothing loads at the next login even if the helper never runs. The
         // job itself is booted out by the helper, once this process is no longer the thing running as it.

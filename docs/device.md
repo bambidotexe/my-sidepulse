@@ -73,8 +73,10 @@ below.
 
 **Limits the host stays inside:** 20 lines and 512 bytes per program
 (`testProgramsRespectDeviceLimits`). The 8-LED rainbow is the tightest at 486
-bytes; that ceiling is why it has four frames and steps two hues at a time.
-No program carries a `brightness N` line (see *Brightness*).
+bytes, then the shared roll's two passes at 496; that ceiling is why the
+rainbow has four frames and steps two hues at a time, and why the shared roll
+alternates by LED under a zone. No program carries a `brightness N` line (see
+*Brightness*).
 
 A program the device cannot parse is not shown at all: the strip blinks red six
 times instead. One malformed colour is enough, which is why
@@ -96,8 +98,9 @@ each the reason a program has the shape it has:
 
 `LedProgram.program(for:power:ledCount:brightness:palette:)` maps each
 `DisplayState` to one text. Shown for the 8-LED strip with the default palette;
-each colour below is a palette slot (`working`, `needsYou`, `done`,
-`jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`).
+each colour below is a palette slot (`working`, `codexWorking`, `needsYou`,
+`done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`,
+`batteryHigh`).
 
 **`off`** — also the idle strip, when nothing is happening:
 
@@ -105,12 +108,27 @@ each colour below is a palette slot (`working`, `needsYou`, `done`,
 off
 ```
 
-**`working`** — a red wave rolling left to right (`K.claudeWorking`). Each LED
-pulses for 760 ms, staggered by 95 ms (260 ms on the 2-LED strip):
+**`working(claude)`** — a red wave rolling left to right (`K.claudeWorking`).
+Each LED pulses for 760 ms, staggered by 95 ms (260 ms on the 2-LED strip):
 
 ```
 off 160ms cosine
 0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 95ms; … 7:#ff374a 760ms pulse 665ms
+repeat
+```
+
+**`working(codex)`** — the same roll in `K.codexWorking` (`#0a00ff`).
+
+**`working(claude, codex)`** — both at work: one pass per colour, Claude's
+first, each opening with the same fade, so the wave keeps its rhythm and
+changes colour at every pass. 496 bytes on 8 LEDs, the largest program the
+host writes after the rainbow; the loop is 3170 ms (2360 on the Dot):
+
+```
+off 160ms cosine
+0:#ff374a 760ms pulse 0ms; … 7:#ff374a 760ms pulse 665ms
+off 160ms cosine
+0:#0a00ff 760ms pulse 0ms; … 7:#0a00ff 760ms pulse 665ms
 repeat
 ```
 
@@ -181,6 +199,18 @@ repeat
 ```
 
 When the roll has two LEDs or fewer it uses the 260 ms stagger.
+
+A roll both agents share cannot alternate by pass under a zone: two passes of
+blink lines and roll lines are over 700 bytes on 8 LEDs. It alternates by LED
+instead, Claude's colour on the roll's first LED, Codex's on the next, and so
+on; on the Dot, where the roll is one LED, only Claude's shows:
+
+```
+0:#000000 160ms; 1:#000000 160ms; … 7:#000000 160ms
+0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
+0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#0a00ff 760ms pulse 95ms; 5:#ff374a 760ms pulse 190ms; 6:#0a00ff 760ms pulse 285ms; 7:#ff374a 760ms pulse 380ms
+repeat
+```
 
 **`effect(name)`** — the six `LedEffects.names`:
 
@@ -323,12 +353,25 @@ than the rest of its rise. Nothing is skipped and nothing stays lit.
 Every tail is cut from unscaled text, the palette's colours, and scaled once
 on the way out; the Engine keeps the unscaled text of what plays, so a second
 cut works from the same colours.
+
+**A loop of several passes**, the roll both agents share, is cut the same way,
+with one more rule. The bridge and the whole rest of the loop fit in 512 bytes
+while four LEDs or so are lit; when they would not, the tail is the bridge and
+the rest of the pass under way, which ends with every LED dark, and the loop
+is written there (`LedContinuation.currentPass`): the bridge is worth more
+than the pass order, and the cost is Claude's colour twice in a row, once,
+after a brightness change during Claude's pass. The tail says how long it
+plays, and the Engine hands over at that moment. **The full-strip roll changing
+colour** (`LedProgram.rollRecolour`: Claude's roll becoming the shared one, or
+the reverse) is carried on by the same tail at the same brightness, and the
+new loop is written at its end.
 A cut duration is spelled the shortest way (`0.1s`); an unchanged one keeps
 the spelling the host gave it, so the reader and the writer round-trip every
 program byte for byte (`testEveryHostProgramReadsBackAsItself`).
 
 **The roll under a zone.** When a split opens, closes or changes over the same
-roll, the tail is the roll's rest with the zone's LEDs taken out of every line
+roll (the same agents: a roll whose agents change under a zone starts the
+split anew), the tail is the roll's rest with the zone's LEDs taken out of every line
 (`LedProgram.rollHandover` says which LEDs, `LedContinuation.transition` writes
 it). A green zone is `i:#green 160ms` on the first line; a zone that closes is
 `i:#000000 160ms` there. An amber zone needs blink one on a line of its own and
@@ -344,10 +387,11 @@ if three would not fit in 512 bytes. The last chord is the bridge: at its
 end a rising LED past half goes to its peak, one below half to black to start
 over, and a pulse that would have started during it starts at its end. A
 steady zone, and a zone that closes, open over the bridge itself. The tail ends
-where the roll's loop would have, so the loop written there finds the roll
-dark; the blink pair's rhythm has one irregular gap there, from the transition
-to the loop's first pair. When the roll is at its dark end, with nothing left
-but LED 7's fall, the new program is written outright.
+where the roll's loop would have, or on the shared roll where the pass under
+way ends, so the loop written there finds the roll dark; the blink pair's
+rhythm has one irregular gap there, from the transition to the loop's first
+pair. When the roll is at its dark end, with nothing left but LED 7's fall,
+the new program is written outright.
 
 The 8-LED working roll 500 ms in, LEDs 0…2 lit, a question landing (brightness 255):
 
@@ -359,9 +403,9 @@ The 8-LED working roll 500 ms in, LEDs 0…2 lit, a question landing (brightness
 
 **Limits.** Every tail is checked at every phase in 5 ms steps, on 2 and 8 LEDs,
 at 255 and 254: under 512 bytes and 20 lines, no brightness line, every line a
-shape the reader knows, its length the loop's remainder within one frame
-(`testEveryTailIsWellFormedAndEndsAtTheLoopEnd`,
-`testEveryTransitionIsWellFormed`).
+shape the reader knows, its length the loop's remainder within one frame, or
+the pass's on the shared roll (`testEveryTailIsWellFormedAndEndsAtTheLoopEnd`,
+`testEveryTransitionIsWellFormed`, `CodexTests`).
 
 ## Writing
 

@@ -89,8 +89,11 @@ All through `sysctl` and `libproc`, with no subprocess and no permission:
 `KERN_PROC_PID` for parent, name and controlling tty; `proc_pidpath` and
 `KERN_PROCARGS2` for the executable path and environment; `KERN_BOOTTIME` for
 the boot time; kqueue `EVFILT_PROC` for exits. This is how the hook finds the
-Claude process, its host app and its terminal tab, and how the app reads a
-Claude process's `CLAUDE_CONFIG_DIR`.
+agent's process (the nearest Claude Code or Codex ancestor: Claude by a
+`claude` name or path component, Codex by a `codex` one, which covers the
+standalone release under `~/.codex/packages`, the `~/.local/bin` launcher and
+the copy inside `ChatGPT.app`), its host app and its terminal tab, and how the
+app reads a Claude process's `CLAUDE_CONFIG_DIR`.
 
 ## Permissions
 

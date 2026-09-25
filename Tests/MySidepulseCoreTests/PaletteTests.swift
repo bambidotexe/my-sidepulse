@@ -2,13 +2,13 @@ import XCTest
 @testable import MySidepulseCore
 
 final class PaletteTests: XCTestCase {
-    /// Eight colours no default uses, one per slot, so a program that paints
+    /// Nine colours no default uses, one per slot, so a program that paints
     /// a slot's colour can only have taken it from that slot. Bright enough
     /// that the battery bar's dimmed partial LED cannot land on another one.
     private let custom = LedPalette(
-        working: "#c10000", needsYou: "#00c200", done: "#0000c3", jobRunning: "#c4c400",
-        batteryCritical: "#00c5c5", batteryLow: "#c600c6", batteryMid: "#c7c7c7",
-        batteryHigh: "#c8c8c8")
+        working: "#c10000", codexWorking: "#c90000", needsYou: "#00c200", done: "#0000c3",
+        jobRunning: "#c4c400", batteryCritical: "#00c5c5", batteryLow: "#c600c6",
+        batteryMid: "#c7c7c7", batteryHigh: "#c8c8c8")
 
     private func program(_ state: DisplayState, power: PowerState? = nil,
                          palette: LedPalette) -> String {
@@ -19,6 +19,7 @@ final class PaletteTests: XCTestCase {
     func testTheStandardPaletteIsK() {
         let standard = LedPalette.standard
         XCTAssertEqual(standard[.working], K.claudeWorking)
+        XCTAssertEqual(standard[.codexWorking], K.codexWorking)
         XCTAssertEqual(standard[.needsYou], K.askAmber)
         XCTAssertEqual(standard[.done], K.doneGreen)
         XCTAssertEqual(standard[.jobRunning], K.jobRunning)
@@ -30,7 +31,7 @@ final class PaletteTests: XCTestCase {
 
     func testTheSlotKeysAreTheOnesConfigJsonHolds() {
         XCTAssertEqual(LedPalette.Slot.allCases.map(\.rawValue),
-                       ["working", "needsYou", "done", "jobRunning", "batteryCritical",
+                       ["working", "codexWorking", "needsYou", "done", "jobRunning", "batteryCritical",
                         "batteryLow", "batteryMid", "batteryHigh"],
                        "a renamed key orphans every saved colour")
     }

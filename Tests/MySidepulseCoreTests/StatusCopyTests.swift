@@ -6,7 +6,9 @@ import XCTest
 final class StatusCopyTests: XCTestCase {
     static let everyState: [DisplayState] = [
         .off, .working, .waiting, .done, .jobRunning, .jobFailed, .jobSucceeded,
+        .working(.codex), .working(.both), .waiting(.codex), .waiting(.both), .done(.codex), .done(.both),
         .split(alert: .waiting, work: .working), .split(alert: .jobFailed, work: .working),
+        .split(alert: .waiting(.both), work: .working(.codex)), .split(alert: .done(.codex), work: .working(.both)),
         .split(alert: .done, work: .jobRunning), .split(alert: .jobSucceeded, work: .jobRunning),
         .batteryCritical, .batteryGlance, .manualColor("#ff9900"), .effect("rainbow"),
     ]

@@ -6,9 +6,18 @@ enum CLIMain {
     static func run(_ args: [String]) -> Int32 {
         switch args.first {
         case "hook":
+            // `hook [--agent claude|codex]`: Codex's hooks say who they are,
+            // Claude Code's never had to. With no flag the nearest agent
+            // process in the chain says, and Claude is the fallback. An
+            // unknown flag value is ignored the same way, since the hook
+            // must never fail.
+            var flagged: AgentKind?
+            if let index = args.firstIndex(of: "--agent"), args.indices.contains(index + 1) {
+                flagged = AgentKind(rawValue: args[index + 1].lowercased())
+            }
             // 64 KB chunks, retaining at most the 8 MB cap while still
             // draining stdin to EOF — stopping early could block or break the
-            // Claude Code process writing to us, and the hook must never do
+            // agent's process writing to us, and the hook must never do
             // either. The cap bounds this process, not the writer.
             var input = Data()
             let stdinHandle = FileHandle.standardInput
@@ -17,9 +26,9 @@ enum CLIMain {
                     input.append(chunk.prefix(K.hookStdinMaxBytes - input.count))
                 }
             }
-            let origin = ProcWalk.classify(ProcWalk.chain(from: getppid()))
+            let origin = ProcWalk.classify(ProcWalk.chain(from: getppid()), agent: flagged)
             return HookCommand.run(input: input, environment: ProcessInfo.processInfo.environment,
-                                   journalURL: Paths.journal, now: Date(), origin: origin)
+                                   journalURL: Paths.journal, now: Date(), origin: origin, agent: flagged)
         case "led":
             // "toggle" is passed through verbatim for the app to resolve
             // against the mode it currently holds; everything else is
@@ -116,7 +125,8 @@ enum CLIMain {
             if (response.devices ?? []).isEmpty { print("device: none mounted") }
             for session in response.sessions ?? [] {
                 let reason = session.reason.map { " (\($0))" } ?? ""
-                print("session \(session.id.prefix(8)): \(session.state)\(reason), \(session.ageSeconds)s ago, \(session.cwd ?? "?")")
+                let agent = session.agent ?? AgentKind.claude.rawValue
+                print("session \(session.id.prefix(8)) [\(agent)]: \(session.state)\(reason), \(session.ageSeconds)s ago, \(session.cwd ?? "?")")
             }
             for job in response.jobs ?? [] {
                 let seen = job.acknowledged ? ", seen" : ""
@@ -149,13 +159,15 @@ enum CLIMain {
             report.lines.forEach { print($0) }
             return Int32(report.failures)
         case "install-hooks":
-            return report(HookInstaller.installClaudeHooks())
+            return report(HookInstaller.installAllHooks())
         case "uninstall-hooks":
-            return report(HookInstaller.removeClaudeHooks())
+            return report(HookInstaller.removeAllHooks())
         default:
             print("""
             usage: mysidepulse <command>
-              hook              (internal) Claude Code hook entry — reads stdin
+              hook [--agent claude|codex]
+                                (internal) the hook entry Claude Code and Codex run;
+                                reads the payload on stdin
               led auto|off|toggle|#RRGGBB|<effect>
                                 set LED mode; toggle flips off <-> auto (skhd-friendly)
                                 effects: \(LedEffects.names.joined(separator: ", "))
@@ -165,8 +177,9 @@ enum CLIMain {
                                 N steps of 100/N % each, default \(K.brightnessCycleDefaultSteps)
               status [--json]   sessions, display, device, battery
               doctor            health checks; exit code = failure count
-              install-hooks     subscribe Claude Code events in ~/.claude/settings.json
-              uninstall-hooks   remove MySidepulse hook entries
+              install-hooks     subscribe Claude Code events in ~/.claude/settings.json,
+                                and Codex events in ~/.codex/hooks.json when Codex is installed
+              uninstall-hooks   remove MySidepulse hook entries from both
               run [--show-after N] [--label L] -- <cmd...>
                                 run a command with the strip following it;
                                 exits with the command's own status

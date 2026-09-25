@@ -16,6 +16,10 @@ public enum HookEventName: String, Codable, Equatable {
     case subagentStop = "SubagentStop"
     case preCompact = "PreCompact"
     case postCompact = "PostCompact"
+    /// Codex only: the user interrupted the turn. Claude Code has no such
+    /// event, which is why its interrupts need the registry and the
+    /// transcript instead (`Engine.checkAbandonedTurns`).
+    case interrupt = "Interrupt"
     case parseError = "ParseError"
     /// Not a Claude Code event: the app's own record that an alert was seen,
     /// appended to the same journal so acknowledgements survive a restart.
@@ -29,6 +33,9 @@ public enum HookEventName: String, Codable, Equatable {
 public struct JournalEvent: Codable, Equatable {
     public var loggedAt: Date
     public var event: HookEventName
+    /// Which agent fired the hook. Absent on lines written before Codex was
+    /// followed, which were all Claude Code's: a reader takes nil as Claude.
+    public var agent: AgentKind?
     public var sessionId: String?
     public var promptId: String?
     public var agentId: String?
@@ -42,7 +49,10 @@ public struct JournalEvent: Codable, Equatable {
     public var isInterrupt: Bool?
     public var lastMessageTail: String?
     public var backgroundTaskIds: [String]?
-    public var claudePid: Int32?
+    /// The agent's own process, Claude Code's or Codex's: what the process
+    /// watcher and the startup prune key on. Its journal key stays
+    /// `claude_pid`, the name it had when only Claude was followed.
+    public var agentPid: Int32?
     public var hostAppPid: Int32?
     public var hostBundleId: String?
     /// The Claude process's controlling terminal ("ttys003") — the one
@@ -71,7 +81,7 @@ public struct JournalEvent: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case loggedAt = "logged_at"
-        case event
+        case event, agent
         case sessionId = "session_id"
         case promptId = "prompt_id"
         case agentId = "agent_id"
@@ -84,7 +94,7 @@ public struct JournalEvent: Codable, Equatable {
         case isInterrupt = "is_interrupt"
         case lastMessageTail = "last_message_tail"
         case backgroundTaskIds = "background_task_ids"
-        case claudePid = "claude_pid"
+        case agentPid = "claude_pid"
         case hostAppPid = "host_app_pid"
         case hostBundleId = "host_bundle_id"
         case tty

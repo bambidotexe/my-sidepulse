@@ -1,4 +1,5 @@
 import Foundation
+import MySidepulseCore
 
 /// Reads the process ancestor chain via sysctl — microseconds, no
 /// subprocesses.
@@ -18,15 +19,18 @@ public enum ProcWalk {
     }
 
     public struct Origin: Equatable {
-        public var claudePid: Int32?
+        /// The agent's own process: the nearest Claude Code or Codex
+        /// ancestor, and which of the two it is.
+        public var agentPid: Int32?
+        public var agent: AgentKind?
         public var hostAppPid: Int32?
         public var hostBundlePath: String?
         /// The terminal TAB the session is displayed in, or nil when the
         /// chain proves there is no tab to name. See `tabTTY`.
         public var tabTTY: String?
-        public init(claudePid: Int32? = nil, hostAppPid: Int32? = nil, hostBundlePath: String? = nil,
-                    tabTTY: String? = nil) {
-            self.claudePid = claudePid; self.hostAppPid = hostAppPid
+        public init(agentPid: Int32? = nil, agent: AgentKind? = nil, hostAppPid: Int32? = nil,
+                    hostBundlePath: String? = nil, tabTTY: String? = nil) {
+            self.agentPid = agentPid; self.agent = agent; self.hostAppPid = hostAppPid
             self.hostBundlePath = hostBundlePath; self.tabTTY = tabTTY
         }
     }
@@ -127,20 +131,43 @@ public enum ProcWalk {
         return path.split(separator: "/").contains("claude")
     }
 
-    static func isClaudeProcess(_ info: ProcInfo) -> Bool {
-        if info.name == "claude" { return true }
-        if let path = info.path, isClaudePath(path) { return true }
-        if let argv0 = execPath(for: info.pid), isClaudePath(argv0) { return true }
-        return false
+    /// True for a path that belongs to a Codex install: the standalone
+    /// release under `~/.codex/packages/…/bin/codex`, the launcher
+    /// `~/.local/bin/codex`, and the copy inside the ChatGPT app
+    /// (`ChatGPT.app/Contents/Resources/codex`), every one of which ends in
+    /// `/codex` or passes through a `codex` component.
+    static func isCodexPath(_ path: String) -> Bool {
+        if path.hasSuffix("/codex") { return true }
+        return path.split(separator: "/").contains("codex")
     }
 
-    /// Whether a live pid still looks like a Claude Code process. Used by
+    /// Which agent a process is, if it is one. The name is tried first, then
+    /// the resolved path, then the exec path: a Claude launched by its
+    /// versioned installer is named by its version, and a symlinked launcher
+    /// resolves elsewhere.
+    static func agent(of info: ProcInfo) -> AgentKind? {
+        if info.name == "claude" { return .claude }
+        if info.name == "codex" { return .codex }
+        if let path = info.path {
+            if isClaudePath(path) { return .claude }
+            if isCodexPath(path) { return .codex }
+        }
+        if let argv0 = execPath(for: info.pid) {
+            if isClaudePath(argv0) { return .claude }
+            if isCodexPath(argv0) { return .codex }
+        }
+        return nil
+    }
+
+    static func isClaudeProcess(_ info: ProcInfo) -> Bool { agent(of: info) == .claude }
+
+    /// Whether a live pid still looks like that agent's process. Used by
     /// the replay-time prune: a pid recycled by some unrelated process while
     /// the app was down would otherwise keep a dead session alive until the
     /// staleness backstop — kill(0) proves a process, not THE process.
-    public static func looksLikeClaude(pid: Int32) -> Bool {
+    public static func looksLike(_ kind: AgentKind, pid: Int32) -> Bool {
         guard let info = info(for: pid) else { return false }
-        return isClaudeProcess(info)
+        return agent(of: info) == kind
     }
 
     /// NODEV spells itself -1 or UInt32.max depending on how `e_tdev`
@@ -157,7 +184,8 @@ public enum ProcWalk {
     }
 
     /// The terminal TAB a session is displayed in — the one fact that scopes
-    /// acknowledgement to what the user can actually see.
+    /// acknowledgement to what the user can actually see. The same walk
+    /// serves both agents: it starts at the agent's process, whichever it is.
     ///
     /// A tty is NOT proof of a tab. Claude Code 2.1's daemon hosts sessions
     /// on ptys it allocates itself (`claude daemon run` → `bg-pty-host` →
@@ -173,23 +201,28 @@ public enum ProcWalk {
     /// controlling terminal at all. Nil means "no tab to name", which the
     /// ack path already treats as the app-level fail-open, so a rejection
     /// can only ever widen acknowledgement, never strand an alert.
-    public static func tabTTY(in chain: [ProcInfo], claudePid: Int32?, hostAppPid: Int32?) -> String? {
-        guard let claudePid, let hostAppPid,
-              let claudeIndex = chain.firstIndex(where: { $0.pid == claudePid }),
+    public static func tabTTY(in chain: [ProcInfo], agentPid: Int32?, hostAppPid: Int32?) -> String? {
+        guard let agentPid, let hostAppPid,
+              let agentIndex = chain.firstIndex(where: { $0.pid == agentPid }),
               let hostIndex = chain.firstIndex(where: { $0.pid == hostAppPid }),
-              let tty = chain[claudeIndex].tty else { return nil }
-        let between = chain[(claudeIndex + 1)..<max(claudeIndex + 1, hostIndex)]
+              let tty = chain[agentIndex].tty else { return nil }
+        let between = chain[(agentIndex + 1)..<max(agentIndex + 1, hostIndex)]
         guard !between.isEmpty, between.allSatisfy({ $0.tty == tty }) else { return nil }
         return tty
     }
 
-    /// claude = first ancestor named "claude"; host = first ancestor living
-    /// inside a .app bundle (outermost bundle wins for nested helpers).
-    public static func classify(_ chain: [ProcInfo]) -> Origin {
+    /// The agent = the nearest ancestor that is one, Claude Code or Codex
+    /// (`agent` names which one to look for, when the hook was told); host =
+    /// first ancestor living inside a .app bundle (outermost bundle wins for
+    /// nested helpers). Nearest, because one agent can run the other: a
+    /// Codex started by Claude's shell tool fires Codex's hooks, and it is
+    /// Codex's process that hosts them.
+    public static func classify(_ chain: [ProcInfo], agent wanted: AgentKind? = nil) -> Origin {
         var origin = Origin()
         for info in chain {
-            if origin.claudePid == nil, isClaudeProcess(info) {
-                origin.claudePid = info.pid
+            if origin.agentPid == nil, let kind = agent(of: info), wanted == nil || wanted == kind {
+                origin.agentPid = info.pid
+                origin.agent = kind
             }
             if origin.hostAppPid == nil, let path = info.path,
                let bundle = outermostAppBundle(in: path) {
@@ -199,7 +232,7 @@ public enum ProcWalk {
         }
         // Derived here rather than at the call site so no caller can record a
         // pty that is not a tab.
-        origin.tabTTY = tabTTY(in: chain, claudePid: origin.claudePid, hostAppPid: origin.hostAppPid)
+        origin.tabTTY = tabTTY(in: chain, agentPid: origin.agentPid, hostAppPid: origin.hostAppPid)
         return origin
     }
 

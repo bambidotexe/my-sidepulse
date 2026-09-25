@@ -135,6 +135,35 @@ public struct PlaygroundPageStrings {
         }
     }
 
+    public var titleCodexWorking: String {
+        switch language {
+        case .en: "Codex working"
+        case .fr: "Codex au travail"
+        }
+    }
+
+    public var subtitleCodexWorking: String {
+        switch language {
+        case .en: "Rolls in Codex's colour while a Codex turn runs."
+        case .fr: "Défile dans la couleur de Codex pendant qu'un tour de Codex s'exécute."
+        }
+    }
+
+    public var titleBothWorking: String {
+        switch language {
+        case .en: "Claude and Codex working"
+        case .fr: "Claude et Codex au travail"
+        }
+    }
+
+    public var subtitleBothWorking: String {
+        switch language {
+        case .en: "One pass in Claude's colour, the next in Codex's, while both work."
+        case .fr: "Un passage dans la couleur de Claude, le suivant dans celle de Codex, "
+            + "pendant que les deux travaillent."
+        }
+    }
+
     public var titleWaiting: String {
         switch language {
         case .en: "Needs you"

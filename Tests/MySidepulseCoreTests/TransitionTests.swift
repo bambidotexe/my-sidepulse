@@ -89,6 +89,17 @@ final class TransitionTests: XCTestCase {
         }
         pairs.append((splits[0], splits[1]))
         pairs.append((splits[1], splits[0]))
+        // The roll both agents share, and Codex's alone, under the same zones.
+        for work in [Agents.both, .codex] {
+            let shared: [DisplayState] = [.split(alert: .waiting(.codex), work: .working(work)),
+                                          .split(alert: .done(.claude), work: .working(work))]
+            for split in shared {
+                pairs.append((.working(work), split))
+                pairs.append((split, .working(work)))
+            }
+            pairs.append((shared[0], shared[1]))
+            pairs.append((shared[1], shared[0]))
+        }
         for (from, to) in pairs {
             for leds in [2, 8] {
                 for brightness in [255, 254] {

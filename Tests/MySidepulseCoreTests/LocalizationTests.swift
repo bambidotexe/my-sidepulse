@@ -75,7 +75,8 @@ final class LocalizationTests: XCTestCase {
     /// tag was translated would lose its icon on the phone.
     func testTheTitleAndTheTagsAreNotTranslated() {
         withLanguage(.fr) {
-            XCTAssertEqual(AlertCopy.title, "Claude Code")
+            XCTAssertEqual(AlertCopy.title(for: .claude), "Claude Code")
+            XCTAssertEqual(AlertCopy.title(for: .codex), "Codex")
             XCTAssertEqual(AlertCopy.tag(for: .finished), "white_check_mark")
             XCTAssertEqual(AlertCopy.tag(for: .needsYou(.question)), "speech_balloon")
             XCTAssertEqual(AlertCopy.tag(for: .needsYou(.permission)), "lock")

@@ -53,12 +53,16 @@ public struct ControlRequest: Codable, Equatable {
 
 public struct SessionStatus: Codable, Equatable {
     public var id: String
+    /// `claude` or `codex`. Optional on the wire, like every field added
+    /// after the first release; absent means Claude.
+    public var agent: String?
     public var state: String
     public var reason: String?
     public var ageSeconds: Int
     public var cwd: String?
-    public init(id: String, state: String, reason: String?, ageSeconds: Int, cwd: String?) {
-        self.id = id; self.state = state; self.reason = reason
+    public init(id: String, agent: String? = nil, state: String, reason: String?, ageSeconds: Int,
+                cwd: String?) {
+        self.id = id; self.agent = agent; self.state = state; self.reason = reason
         self.ageSeconds = ageSeconds; self.cwd = cwd
     }
 }

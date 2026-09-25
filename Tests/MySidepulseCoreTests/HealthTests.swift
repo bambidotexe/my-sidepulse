@@ -161,7 +161,7 @@ final class HealthTests: XCTestCase {
             facts.jobs = [.init(id: "j", label: "make", phase: .init(state: "failed"),
                                 acknowledged: true, ageSeconds: 7_200)]
             XCTAssertEqual(reading("sessions", facts)?.value, "1")
-            XCTAssertEqual(reading("sessions", facts)?.detail, "01234567: A besoin de vous : une question, il y a 2 min")
+            XCTAssertEqual(reading("sessions", facts)?.detail, "01234567 Claude: A besoin de vous : une question, il y a 2 min")
             XCTAssertEqual(reading("commands", facts)?.detail, "make: Échouée, vue, il y a 2 h")
             XCTAssertEqual(reading("last hook event", facts)?.value, "il y a 12 s")
         }

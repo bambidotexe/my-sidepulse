@@ -53,6 +53,64 @@ public struct SystemPageStrings {
         }
     }
 
+    // MARK: Codex
+
+    public var codexTitle: String {
+        switch language {
+        case .en: "Codex"
+        case .fr: "Codex"
+        }
+    }
+
+    public func codexHint(events: Int) -> String {
+        switch language {
+        case .en: "The hooks tell MySidepulse when Codex works, finishes or needs you. "
+            + "Set Up adds \(events) of them to Codex's hooks file, after backing it up. "
+            + "Remove takes out MySidepulse's own entries and nothing else."
+        case .fr: "Les hooks indiquent à MySidepulse quand Codex travaille, termine ou "
+            + "a besoin de vous. Configurer en ajoute \(events) au fichier de hooks de "
+            + "Codex, après l'avoir sauvegardé. Retirer ne supprime que les entrées "
+            + "propres à MySidepulse."
+        }
+    }
+
+    /// Codex runs a hook only once it has been trusted in Codex itself, which
+    /// MySidepulse cannot do for it.
+    public var codexNote: String {
+        switch language {
+        case .en: "Codex runs new hooks only once you have trusted them in Codex."
+        case .fr: "Codex n'exécute de nouveaux hooks qu'une fois que vous les avez "
+            + "approuvés dans Codex."
+        }
+    }
+
+    public var codexHooksLabel: String {
+        switch language {
+        case .en: "Codex hooks"
+        case .fr: "Hooks Codex"
+        }
+    }
+
+    /// Names the button the user must press, so it has to read exactly as the
+    /// button does in the same language.
+    public var withoutCodexHooksWarning: String {
+        switch language {
+        case .en: "Without the hooks the strip never shows Codex. Press "
+            + "\(setUpHooksButton)."
+        case .fr: "Sans les hooks, le ruban ne montre jamais Codex. Cliquez sur "
+            + "\(setUpHooksButton)."
+        }
+    }
+
+    public var codexHooksUnreadableWarning: String {
+        switch language {
+        case .en: "Codex's hooks file could not be read. Check that "
+            + "~/.codex/hooks.json is valid JSON."
+        case .fr: "Le fichier de hooks de Codex n'a pas pu être lu. "
+            + "Vérifiez que ~/.codex/hooks.json est un JSON valide."
+        }
+    }
+
     public var terminalTitle: String {
         switch language {
         case .en: "Terminal"

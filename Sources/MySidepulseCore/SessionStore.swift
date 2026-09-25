@@ -18,6 +18,9 @@ public enum SessionState: Equatable {
 
 public struct Session: Equatable {
     public var id: String
+    /// Whose session. Claude until an event says otherwise, which is what
+    /// every line written before Codex was followed means.
+    public var agent: AgentKind = .claude
     public var state: SessionState = .idle
     public var stateSince: Date
     public var lastEventAt: Date
@@ -25,7 +28,8 @@ public struct Session: Equatable {
     /// helper, not a Notification, not an ack. This is what "the turn has
     /// gone quiet" is measured against.
     public var lastMainEventAt: Date
-    public var claudePid: Int32?
+    /// The agent's own process: Claude Code's, or Codex's.
+    public var agentPid: Int32?
     public var hostBundleId: String?
     /// The claude process's controlling terminal ("ttys003") — the tab.
     public var tty: String?
@@ -119,7 +123,8 @@ public struct SessionStore {
         }
         var s = sessions[sid] ?? Session(id: sid, stateSince: now, lastEventAt: now)
         s.lastEventAt = now
-        if let pid = e.claudePid { s.claudePid = pid }
+        if let agent = e.agent { s.agent = agent }
+        if let pid = e.agentPid { s.agentPid = pid }
         if let host = e.hostBundleId { s.hostBundleId = host }
         if let tty = e.tty { s.tty = tty }
         if let path = e.transcriptPath { s.transcriptPath = path }
@@ -191,7 +196,7 @@ public struct SessionStore {
         case .preToolUse:
             clearPending(&s)
             switch e.toolName {
-            case "AskUserQuestion": set(&s, .waiting(.question), now)
+            case "AskUserQuestion", "request_user_input": set(&s, .waiting(.question), now)
             case "ExitPlanMode": set(&s, .waiting(.plan), now)
             default: set(&s, .working, now)
             }
@@ -229,6 +234,13 @@ public struct SessionStore {
         case .stopFailure:
             clearPending(&s)
             set(&s, .waiting(.error), now)
+        case .interrupt:
+            // Codex says so itself when the user stops a turn, dialog or
+            // not: the turn is over and delivered nothing, so the strip goes
+            // dark. Claude Code has no such event; its interrupts are read
+            // from the registry and the transcript instead.
+            clearPending(&s)
+            set(&s, .idle, now)
         case .stop:
             // A Stop is a finish, full stop: a trailing question in prose is
             // a finished turn, not a request for attention — AskUserQuestion
@@ -247,10 +259,11 @@ public struct SessionStore {
     /// naming themselves as the tool (28 and 6 of the 44 recorded
     /// PermissionRequests). The tool name is what tells a question and a
     /// plan approval apart from a real permission ask — the wait reason, and
-    /// with it the push copy, follows the tool, not the transport.
+    /// with it the push copy, follows the tool, not the transport. Codex's
+    /// question tool is `request_user_input`.
     static func waitReason(forPermissionTool tool: String?) -> WaitReason {
         switch tool {
-        case "AskUserQuestion": return .question
+        case "AskUserQuestion", "request_user_input": return .question
         case "ExitPlanMode": return .plan
         default: return .permission
         }
@@ -374,7 +387,7 @@ public struct SessionStore {
                     s.notifyAt = nil
                     if now.timeIntervalSince(due) <= K.notifyMaxLatenessSeconds,
                        let kind = Self.alertKind(for: s.state) {
-                        fired.append(Alert(sessionId: id, kind: kind, at: now))
+                        fired.append(Alert(sessionId: id, agent: s.agent, kind: kind, at: now))
                     }
                 }
             }
@@ -396,19 +409,21 @@ public struct SessionStore {
             if s.state == .done {
                 deadlines.append(s.stateSince.addingTimeInterval(K.doneVisibleSeconds))
             }
-            if s.state == .working, !s.pendingDone, s.claudePid != nil {
+            if s.state == .working, !s.pendingDone, s.agent == .claude, s.agentPid != nil {
                 // The abandoned-turn watch: wake when the session becomes
                 // eligible for its first registry read, then keep waking on
                 // the recheck cadence while it stays eligible. See
                 // `abandonCandidates(at:)` and Engine's registry check.
+                // Claude only: the registry is Claude Code's.
                 let eligibleAt = s.lastEventAt.addingTimeInterval(K.abandonQuietSeconds)
                 deadlines.append(eligibleAt > now
                                  ? eligibleAt
                                  : now.addingTimeInterval(K.abandonRecheckSeconds))
             }
-            if s.state.isOpenWaiting, s.claudePid != nil {
+            if s.state.isOpenWaiting, s.agent == .claude, s.agentPid != nil {
                 // The answered-dialog watch: an approval may fire no hook
                 // at all, so open waits are re-checked on the same cadence.
+                // Claude only, like the registry it reads.
                 deadlines.append(now.addingTimeInterval(K.abandonRecheckSeconds))
             }
             if let settlingUntil = s.settlingUntil { deadlines.append(settlingUntil) }
@@ -418,20 +433,23 @@ public struct SessionStore {
         return deadlines.filter { $0 > now }.min()
     }
 
-    /// The stuck-state fix: the Claude process died, so every session it
+    /// The stuck-state fix: the agent's process died, so every session it
     /// hosted is gone — no SessionEnd required.
     public mutating func processExited(pid: Int32) {
-        sessions = sessions.filter { $0.value.claudePid != pid }
+        sessions = sessions.filter { $0.value.agentPid != pid }
     }
 
     /// Startup prune after journal replay: drop sessions whose recorded
-    /// process no longer exists. Sessions without a pid are left to staleness.
-    public mutating func pruneDead(isAlive: (Int32) -> Bool) {
-        sessions = sessions.filter { $0.value.claudePid.map(isAlive) ?? true }
+    /// process no longer exists, or is no longer that agent's. Sessions
+    /// without a pid are left to staleness.
+    public mutating func pruneDead(isAlive: (AgentKind, Int32) -> Bool) {
+        sessions = sessions.filter { entry in
+            entry.value.agentPid.map { isAlive(entry.value.agent, $0) } ?? true
+        }
     }
 
     public var trackedPids: Set<Int32> {
-        Set(sessions.values.compactMap(\.claudePid))
+        Set(sessions.values.compactMap(\.agentPid))
     }
 
     /// Startup scrub after journal replay: a push deadline that is already
@@ -453,10 +471,11 @@ public struct SessionStore {
     /// helpers, no background shells for `abandonQuietSeconds` — and can be
     /// checked against Claude Code's own process registry. The read itself
     /// touches the filesystem and lives in the app; a session only reaches
-    /// it with a pid to look up.
+    /// it with a pid to look up, and only a Claude session does: Codex has
+    /// no registry, and says its interrupts itself (`Interrupt`).
     public func abandonCandidates(at now: Date) -> [(sessionId: String, pid: Int32)] {
         sessions.values.compactMap { s in
-            guard s.state == .working, !s.pendingDone, let pid = s.claudePid,
+            guard s.agent == .claude, s.state == .working, !s.pendingDone, let pid = s.agentPid,
                   !s.hasLiveHelpers(at: now), s.backgroundIds.isEmpty,
                   now.timeIntervalSince(s.lastEventAt) >= K.abandonQuietSeconds
             else { return nil }
@@ -511,7 +530,7 @@ public struct SessionStore {
     /// approval's footprint.
     public func openWaitCandidates() -> [(sessionId: String, pid: Int32, stateSince: Date)] {
         sessions.values.compactMap { s in
-            guard s.state.isOpenWaiting, let pid = s.claudePid else { return nil }
+            guard s.agent == .claude, s.state.isOpenWaiting, let pid = s.agentPid else { return nil }
             return (s.id, pid, s.stateSince)
         }
     }

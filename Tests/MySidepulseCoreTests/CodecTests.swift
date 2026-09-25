@@ -10,7 +10,7 @@ final class CodecTests: XCTestCase {
         XCTAssertEqual(e.stopHookActive, false)
         XCTAssertEqual(e.lastMessageTail, "Done.")
         XCTAssertEqual(e.backgroundTaskIds, ["t1"])
-        XCTAssertEqual(e.claudePid, 4242)
+        XCTAssertEqual(e.agentPid, 4242)
         XCTAssertEqual(e.hostBundleId, "com.apple.Terminal")
         XCTAssertEqual(e.loggedAt.timeIntervalSince1970, 1787306400.123, accuracy: 0.001)
     }

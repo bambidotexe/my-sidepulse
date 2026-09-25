@@ -7,20 +7,26 @@ first edit.
 
 MySidepulse is a macOS menu-bar app that drives a **SidePulse** LED strip — an
 LED bar in SD-card form factor that sits in the Mac's card slot — so that three
-things are visible at a glance: Claude Code is **working** (a rolling red wave),
-Claude Code has **finished** (a green breath), Claude Code **needs you** (an
-amber double blink). When nobody is at the machine the same finished / needs-you
-alerts go to a phone through **ntfy**. Around that core it shows terminal jobs
-(`mysidepulse run`, zsh hooks), the battery for a few seconds when the power
-cord moves, a red breath at ≤ 15 % on battery, and a few decorative effects.
+things are visible at a glance: an agent is **working** (a rolling wave: red for
+Claude Code, blue for Codex, one colour per pass when both work), an agent has
+**finished** (a green breath), an agent **needs you** (an amber double blink).
+The agents are **Claude Code and Codex**; finished and needs you are one colour
+for both, because they say the Mac wants the user, not which agent does. When
+nobody is at the machine the same finished / needs-you alerts go to a phone
+through **ntfy**, titled with the agent's name. Around that core it shows
+terminal jobs (`mysidepulse run`, zsh hooks), the battery for a few seconds when
+the power cord moves, a red breath at ≤ 15 % on battery, and a few decorative
+effects.
 
-How it knows: Claude Code runs `mysidepulse hook` on 15 hook events; the hook
-appends one trimmed line to a journal; the app follows the journal, folds it
-into a per-session state machine, picks one display state, and writes a small
-**text program** into `LEDS.LED` on the strip's mounted volume. The strip is a
-closed device: no firmware here, no USB or serial channel, no read-back — files
-on a volume are the whole protocol. Two side channels, both read-only, cover
-what hooks miss: Claude Code's own process registry and the transcript tail.
+How it knows: Claude Code runs `mysidepulse hook` on 15 hook events and Codex
+runs `mysidepulse hook --agent codex` on 12; the hook appends one trimmed line
+to a journal, saying which agent; the app follows the journal, folds it into a
+per-session state machine, picks one display state, and writes a small **text
+program** into `LEDS.LED` on the strip's mounted volume. The strip is a closed
+device: no firmware here, no USB or serial channel, no read-back — files on a
+volume are the whole protocol. Two side channels, both read-only and Claude's
+alone, cover what Claude's hooks miss: Claude Code's own process registry and
+the transcript tail; Codex says its interrupts itself.
 
 Two names, never to be confused: **SidePulse is the hardware** (its volumes are
 named `SidePulseDot…` / `SidePulsePro…`, which is how the LED count is read);
@@ -165,18 +171,19 @@ are `docs/functional.md`.
 
 | To change… | Edit | Then document in |
 |---|---|---|
-| what a hook event means; a state or a transition | `Core/SessionStore.swift` (`apply`, `set`, `applyStopVerdict`), `Core/Event.swift` — pinned by `SessionStoreTests`, `GoldenReplayTests` | §4 |
+| what a hook event means; a state or a transition | `Core/SessionStore.swift` (`apply`, `set`, `applyStopVerdict`), `Core/Event.swift` — pinned by `SessionStoreTests`, `GoldenReplayTests`, `CodexTests` | §4 |
+| an agent: which there are, its colour, how its sessions are told apart, what its events mean | `Core/Agent.swift` (`AgentKind`, `Agents`), `Core/LedPalette.swift` (`rollColors`), `SessionStore.apply` (`Interrupt`, `request_user_input`), `Platform/ProcWalk.swift` (`agent(of:)`, `classify(_:agent:)`), `Platform/HookCommand.swift`, `CLI/CLIMain.swift` (`hook --agent`) — `CodexTests`, `CodexPlatformTests` | §1, §3, §4, `pitfalls.md` *Detecting Codex* |
 | holds, expiry, the settle, any session timer | `SessionStore.tick` and `nextDeadline` (every timer needs both), `Core/Constants.swift` — `TimerTests`, `SettleTests` | §4, §3 *Settle*, §13 |
-| the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`; `SessionStore.finishTurn` / `abandonTurn` / `noteBusy` / `dialogAnswered` | §4 *When hooks say nothing*, `pitfalls.md` |
-| which events are subscribed, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift`, `Platform/HookInstaller.swift` (shared by the CLI and the settings window), `Platform/SettingsFile.swift`; the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests` | §4 *Source*, §10, §11 |
+| the rescues when hooks say nothing (Claude only) | `App/Engine.swift` `checkAbandonedTurns`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`; `SessionStore.finishTurn` / `abandonTurn` / `noteBusy` / `dialogAnswered` | §4 *When hooks say nothing*, `pitfalls.md` |
+| which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `command(cliPath:agent:)`), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests`, `CodexPlatformTests` | §4 *Source*, §10, §11 |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
-| the precedence ladder, the split display | `Core/Arbiter.swift` — `ArbiterTests` | §3 |
+| the precedence ladder, the split display, which agents a state names | `Core/Arbiter.swift` — `ArbiterTests`, `CodexTests` | §3 |
 | carrying an animation across a rewrite: the tail, its cut rules, the roll under a zone, when the loop is handed over | `Core/LedContinuation.swift` (the reader, the cut rules, `tail`, `transition`), `LedProgram.rollHandover` (which changes carry the roll), `Engine.paint` / `carryOn` / `handOver` — `ContinuationTests`, `TransitionTests` (exact text, and a sweep over every phase) | §3 *Carrying an animation on*, `device.md` *Carrying an animation on*, `pitfalls.md` |
-| what a state looks like: program text, colours, zone widths, effects | `Core/LedProgram.swift`, `LedEffects.swift`, `Constants.swift` — `ProgramTests` (exact text). The settings preview mirrors the timings and draws the palette's own hexes: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
+| what a state looks like: program text, colours, zone widths, effects, the shared roll's passes | `Core/LedProgram.swift` (`rolling(colors:)`, `splitProgram`, `rollRecolour`), `LedEffects.swift`, `Constants.swift` — `ProgramTests`, `CodexTests` (exact text). The settings preview mirrors the timings and draws the palette's own hexes: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
 | which colours can be changed, their defaults, the Colours page | `Core/LedPalette.swift` (the slots, `standard` from `K`, the overrides rule, what each slot plays — `PaletteTests`), `Core/Constants.swift` (the defaults), `App/Engine.swift` (`palette`, `setColor`), `App/AppConfig.swift` (`colors`), `App/SettingsColorsPage.swift`, `Core/StringsColorsPage.swift` | §3 *Colours*, §10, `device.md`, `architecture.md` *Persistence* |
 | acknowledgement | `SessionStore.acknowledgeAlerts`, `JobStore.acknowledge`, `Engine.acknowledge`, `App/AttentionMonitor.swift`, `Platform/TerminalTabProber.swift`, `ProcWalk.tabTTY` | §5 |
 | **when** a push fires | `SessionStore.set` (arming) and `tick` (debounce, deferral, late-drop), `Core/Presence.swift` — `NotifyTests` | §6 |
-| **what** a push says | `Core/StringsAlerts.swift` for the words, `Core/Alert.swift` (`AlertCopy`) for which body a kind gets — `NotifyTests` pins every string in both languages | §6, §15 |
+| **what** a push says | `Core/StringsAlerts.swift` for the words, `Core/Alert.swift` (`AlertCopy`: the title is the agent's name, the body the kind's) — `NotifyTests` pins every string in both languages | §6, §15 |
 | how a push is sent, which sessions are silent, the click link | `Platform/Notifier.swift` (`Notifier`, `ClaudeSessions`), `Engine.deliver` | §6 |
 | notification settings | `Engine.applyNotifySettings`, `App/AppConfig.swift`, `CLI/RunCommand.swift` (`NotifyCommand`), `App/SettingsNotificationsPage.swift` | §6, §10, §11 |
 | terminal jobs, the block in `~/.zshrc` | `Core/JobStore.swift`, `Core/ShellInit.swift` (the snippet, and the block's text rules), `Platform/HookInstaller.swift`, `CLI/RunCommand.swift` — `JobTests`, `ShellInitTests` (runs a real zsh) | §7 |
@@ -189,7 +196,7 @@ are `docs/functional.md`.
 | a CLI command | `CLI/CLIMain.swift` (and its usage text), `Platform/Control.swift` (new fields optional), `Engine.controlResponse` | §11, `architecture.md` *Control plane* |
 | updates: the check, its schedule, the notification | `Core/UpdateCheck.swift` (versions, what a reply means — `UpdateCheckTests`), `Core/UpdateSchedule.swift`, `Core/UpdatePanel.swift` (the Updates group), the `update…` numbers in `Core/Constants.swift`; `Platform/UpdateChecker.swift` (the request — `UpdateCheckerTests`); `App/UpdateController.swift` (the one owner), `App/UpdateNotifier.swift`, the Updates group of `App/SettingsGeneralPage.swift` | §10 *Updates*, §12, §13, `macOS.md` *Updates* |
 | updates: the window, the fetch, making it ready, Install and Relaunch | `Core/UpdateSession.swift`, `Core/StagedUpdateCheck.swift`, `Core/UpdateInstallScript.swift` (the helper's text, its plan, its result — run under a real `/bin/sh` by `UpdateInstallScriptTests`); `Platform/UpdateChecker.swift` (`UpdateDownload`), `UpdateStager.swift`, `CodeSignature.swift`, `UpdateInstaller.swift`, `DetachedProcess.swift`; `App/UpdateWindow.swift`, `UpdateController.installAndRelaunch`; the words in `Core/StringsUpdateWindow.swift` and `Core/StringsUpdate.swift` | the same, plus `pitfalls.md` (the six update entries) and the checklist's §3. **Read those entries before touching the order of an install** |
-| a doctor check | `Platform/Doctor.swift` for what it probes and its `name` (an identifier, never translated), `Core/StringsDoctor.swift` for its detail sentence — `DoctorTests` (every detail is a sentence with no long dash, in both languages). The Health page reads a check by its name in `SettingsModel.healthFacts`, takes its `ok` and its sentence (the tooltip), and never reads the sentence back | §11, §10 *What the pages say*, §15 |
+| a doctor check | `Platform/Doctor.swift` for what it probes and its `name` (an identifier, never translated), `Core/StringsDoctor.swift` for its detail sentence — `DoctorTests`, `CodexPlatformTests` (every detail is a sentence with no long dash, in both languages). The Health page reads a check by its name in `SettingsModel.healthFacts`, takes its `ok` and its sentence (the tooltip), and never reads the sentence back | §11, §10 *What the pages say*, §15 |
 | the Health page: a check, a reading, a colour, a fix sentence | **Invoke the `macos-building-settings-pages` skill first** (*The Health page*: two tables, what is a check, the limits). `Core/HealthReport.swift` (`HealthFacts` → `checks(for:)` and `readings(for:)`), `Core/HealthRules.swift` (the colour rules, shared with the System page's rows), `Core/Health.swift` (the level, `HealthRow`, `InfoRow`, `HealthLimits`), `Core/StringsHealthPage.swift`; `App/SettingsModel.swift` (`healthFacts`, `readHealth`, `checkAgain`), `App/SettingsHealthPage.swift` (draws only), `App/SettingsWindow.swift` (reads a page when it is shown); the reader `Platform/CrashReports.swift` — `HealthTests` (the worst case holds `HealthLimits`), `CrashReportsTests` | §10 *What the pages say* |
 | **any sentence the user reads**, in either language | `Core/Strings*.swift` (one table per surface; a string is one accessor switching over `Language`, so the two languages are added together or not at all), `Core/Localization.swift` (the language rule and the ambient switch) — `LocalizationTests`, which also reads the tables off disk to check the text rules in both languages | §15, and the section that shows the sentence |
 | a new language | `Core/Localization.swift` (`Language`) — every table then fails to compile until it answers for it, which is the point | §15 |
@@ -214,8 +221,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (386, one opt-in skip) runs in about eleven seconds;
-  `MySidepulsePlatformTests` (134) takes about 24 s, because it spawns real
+  `MySidepulseCoreTests` (407, one opt-in skip) runs in about eighteen seconds;
+  `MySidepulsePlatformTests` (142) takes about 26 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -262,18 +269,22 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
   (`{"tag_name": "9.9.9", "assets": [{"name": "….dmg", "browser_download_url":
   "file:///…", "size": …, "digest": "sha256:…"}]}`), which is how the whole
   update is walked offline (`docs/manual-test-checklist.md` §3).
-- `/Applications/MySidepulse.app/Contents/MacOS/mysidepulse doctor` — nine
+- `/Applications/MySidepulse.app/Contents/MacOS/mysidepulse doctor` — ten
   checks, exit code = failures. `… status [--json]` — mode, display, strips,
-  sessions, jobs, notifications with the topic masked.
+  sessions with their agent, jobs, notifications with the topic masked.
 - `/usr/bin/log show --predicate 'subsystem == "io.mysidepulse.app"' --last 1h`
   — the app's log. `log` alone is a zsh builtin, hence the full path. Device
   arrival, stalls, rescues and sent pushes are logged at `notice`, the lowest
   level macOS persists.
 - The journal is `~/Library/Application Support/MySidepulse/journal.jsonl` —
-  one JSON line per hook event, the evidence every derived constant is
-  calibrated from. It holds working directories and message tails: read it
-  locally, never paste it. **Never read or print `config.json`** in that
-  directory: it holds the ntfy topic.
+  one JSON line per hook event, from either agent (`agent`), the evidence
+  every derived constant is calibrated from. It holds working directories and
+  message tails: read it locally, never paste it. **Never read or print
+  `config.json`** in that directory: it holds the ntfy topic.
+- Codex runs a hook only once it has been trusted in Codex. After an
+  `install-hooks` (every `make install` runs one) the entries in
+  `~/.codex/hooks.json` are new to Codex again, and nothing reaches the
+  journal from Codex until the owner has trusted them there.
 
 ## Architecture
 
@@ -283,13 +294,16 @@ Full version in `docs/architecture.md`.
 - **`Sources/MySidepulseCore`** — pure rules, **Foundation only** (`PurityTests`
   fails the build otherwise). Never reads a clock: `now` is always passed in,
   which is what lets tests and the journal replay drive it.
+  `Agent` (`AgentKind`: Claude Code or Codex; `Agents`: which of them a
+  display state is about) ·
   `SessionStore` (the per-session state machine: `apply` folds an event, `tick`
   applies every time-based rule and returns the pushes that are due,
   `nextDeadline` says when to tick next) · `Event` + `JournalCodec` + `Trim`
   (the journal line and its 4096-byte cap) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
-  program text) · `LedPalette` (the eight colours the owner can change, and
-  which saved colour is trusted) · `BrightnessCurve` (brightness as the eye
+  program text) · `LedPalette` (the nine colours the owner can change, which
+  saved colour is trusted, and the colours a roll cycles through) ·
+  `BrightnessCurve` (brightness as the eye
   sees it, to the strip's 1…255) · `BrightnessCycle` (the steps of
   `mysidepulse brightness cycle`, the mode it brings back, when its white LED
   shows) · `Constants` (`K`: every default colour and
@@ -309,7 +323,8 @@ Full version in `docs/architecture.md`.
   French side by side, one table per surface).
 - **`Sources/MySidepulsePlatform`** — headless, testable I/O. `HookCommand` +
   `JournalWriter` (the hook path) · `JournalTailer` (kqueue, follows rotation) ·
-  `ProcWalk` (sysctl: the Claude process, its host app, its terminal tab) ·
+  `ProcWalk` (sysctl: the nearest agent process, Claude's or Codex's, its host
+  app, its terminal tab) ·
   `ProcessWatcher` (kqueue exits) · `ClaudeProcessRegistry` + `TranscriptTail`
   (the two side channels) · `TerminalTabProber` (osascript, Terminal and
   iTerm2) · **`LedWriter`** (the only code that writes `LEDS.LED`: one io queue,
@@ -317,7 +332,8 @@ Full version in `docs/architecture.md`.
   `Keepalive` · `Notifier` + `ClaudeSessions` (the only ntfy client) ·
   `Control` + `ControlServer` + `ControlClient` (Unix socket, JSON lines) ·
   `Doctor` · `CrashReports` (the Health page's crash line) · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
-  both hooks, for the CLI and the settings window alike) · `UpdateChecker` +
+  the hooks of both agents and the zsh block, for the CLI and the settings
+  window alike) · `UpdateChecker` +
   `UpdateDownload` (the only code that talks to GitHub) · `UpdateStager` +
   `CodeSignature` (the disk image, the copy, its signature) · `UpdateInstaller`
   + `DetachedProcess` (the hand-over to the helper, which outlives the app).
@@ -440,7 +456,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (386 + 134, one opt-in skip) at
+`swift build` is clean and `swift test` is green (407 + 142, one opt-in skip) at
 this commit. The live journal replays.
 
 Checked on the strip by the owner: the brightness key over the roll carries the
@@ -465,7 +481,16 @@ Known limitations, in plain words — the authority is *Open issues* in
   still run: green over real work, by design, as the price of not trusting
   `SubagentStop`.
 - A Claude launched through an interpreter (`node …/cli.js`) is not recognised,
-  so its death goes unnoticed until the 2 h backstop.
+  so its death goes unnoticed until the 2 h backstop; the same for a Codex run
+  that way.
+- Codex's states rest on its hooks alone: an interrupt is its own event and
+  goes dark at once, but a `Stop` that never arrives has no registry or
+  transcript rescue and stands until the process exits or the 2 h backstop.
+  Whether Codex fires `PreToolUse` for `request_user_input` is unobserved.
+- The shared roll (both agents working: one colour per pass on the whole
+  strip, one per LED under a zone), its recolour tail and its pass-end
+  handover are pinned by exact text and the phase sweeps, and have not been
+  seen on the strip. Judge them there before trusting them.
 - Jobs are not journaled: a restart forgets them.
 - One write queue serves every strip: a card whose write never returns freezes
   all of them until the app restarts.

@@ -87,10 +87,10 @@ public struct HealthPageStrings {
         }
     }
 
-    public var claudeSessionsLabel: String {
+    public var agentSessionsLabel: String {
         switch language {
-        case .en: "Claude sessions"
-        case .fr: "Sessions Claude"
+        case .en: "Agent sessions"
+        case .fr: "Sessions d'agents"
         }
     }
 
@@ -137,6 +137,15 @@ public struct HealthPageStrings {
         case (.plan, .fr): "un plan"
         case (.error, .en): "an error"
         case (.error, .fr): "une erreur"
+        }
+    }
+
+    public var codexHookCommandFix: String {
+        switch language {
+        case .en: "The Codex hooks run a copy of MySidepulse that is not there any more. On the "
+            + "System page, remove the Codex hooks and set them up again."
+        case .fr: "Les hooks Codex lancent une copie de MySidepulse qui n'existe plus. Sur la page "
+            + "Système, retirez les hooks Codex puis réinstallez-les."
         }
     }
 
