@@ -317,6 +317,44 @@ final class Engine {
         sync()
     }
 
+    /// One press of `mysidepulse brightness cycle`, resolved here because only
+    /// the app knows the mode and the strips. Every plugged-in strip moves to
+    /// the same step, taken from the brightest of them; the step past the last
+    /// one is the mode `off`, and the press after it brings back `auto`.
+    private func cycleBrightness(steps: Int) -> ControlResponse {
+        guard (1...K.brightnessCycleMaxSteps).contains(steps) else {
+            return ControlResponse(ok: false,
+                                   error: "bad steps \(steps): use 1 to \(K.brightnessCycleMaxSteps)")
+        }
+        let names = devices.values.map(\.name)
+        guard !names.isEmpty else {
+            return ControlResponse(ok: false, error: "no SidePulse strip is plugged in")
+        }
+        let brightest = names.map(config.brightness(forVolumeName:)).max() ?? 255
+        switch BrightnessCycle.next(after: brightest, modeIsOff: mode == .off, steps: steps) {
+        case .off:
+            mode = .off
+            return ControlResponse(ok: true, mode: mode.configValue)
+        case .level(let level):
+            for name in names {
+                // 255 is the default: store nothing, as the Strip page does.
+                if level == 255 {
+                    config.brightness.removeValue(forKey: name.lowercased())
+                } else {
+                    config.brightness[name.lowercased()] = level
+                }
+            }
+            config.save()
+            if mode == .off {
+                mode = .auto // saves and repaints
+            } else {
+                sync()
+            }
+            return ControlResponse(ok: true, mode: mode.configValue,
+                                   brightnessPercent: BrightnessCycle.percent(level))
+        }
+    }
+
     /// Start (or, with nil, stop) a Playground preview. Passing a state again
     /// restarts its TTL. `power` is only read by the battery-glance program.
     func setPreview(_ state: DisplayState?, power: PowerState? = nil) {
@@ -639,6 +677,8 @@ final class Engine {
             }
             mode = newMode
             return ControlResponse(ok: true, mode: mode.configValue)
+        case "brightness-cycle":
+            return cycleBrightness(steps: request.steps ?? K.brightnessCycleDefaultSteps)
         case "autostart":
             // Bare read, or on/off. `make uninstall` uses "off" to take the
             // launch agent down *before* the bundle goes: Background Task

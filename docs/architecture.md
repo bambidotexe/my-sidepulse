@@ -179,6 +179,7 @@ arrive within 3 s; the client waits 2 s (1 s for job calls).
 |---|---|---|
 | `status` | — | Snapshot: mode, display, sessions, devices, battery, launch-agent state, last hook event age, jobs, masked notification status. |
 | `led` | `mode` = `auto`, `off`, `toggle`, `#RRGGBB` or an effect name | Sets the mode. `toggle` is resolved in the app. |
+| `brightness-cycle` | `steps` | One step of `BrightnessCycle`, resolved in the app against the mode and the plugged-in strips' brightness; replies with the mode and `brightnessPercent`, absent when the step was off. |
 | `autostart` | `mode` = `on`, `off` or absent | Installs or removes the launch agent; replies with its state. |
 | `job-begin`, `job-end` | `job` | Drives `JobStore`. |
 | `notify` | `notify` or absent | Reads or changes notification settings; can send a test. |

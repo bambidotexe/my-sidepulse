@@ -213,8 +213,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (346, one opt-in skip) runs in about two seconds;
-  `MySidepulsePlatformTests` (133) takes about 24 s, because it spawns real
+  `MySidepulseCoreTests` (355, one opt-in skip) runs in about two seconds;
+  `MySidepulsePlatformTests` (134) takes about 24 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -287,7 +287,8 @@ Full version in `docs/architecture.md`.
   (the journal line and its 4096-byte cap) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
   program text) · `LedPalette` (the eight colours the owner can change, and
-  which saved colour is trusted) · `Constants` (`K`: every default colour and
+  which saved colour is trusted) · `BrightnessCycle` (the steps of
+  `mysidepulse brightness cycle`) · `Constants` (`K`: every default colour and
   every timing, with its evidence)
   · `Alert` (`AlertCopy`, the push text) · `Presence` · `JobStore` ·
   `BatteryRules` · `EjectGuard` · `HookConfig` (edits to `settings.json`) ·
@@ -434,7 +435,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (346 + 133, one opt-in skip) at
+`swift build` is clean and `swift test` is green (355 + 134, one opt-in skip) at
 this commit. The live journal replays.
 
 Walked end to end on the owner's Mac: a drag install from the disk image, which

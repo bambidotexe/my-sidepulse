@@ -82,6 +82,13 @@ public enum K {
     public static let alertZoneLedsNeedsYou = 3
     public static let alertZoneLedsFinished = 2
 
+    /// `mysidepulse brightness cycle` without `--steps`: 25 % → 50 % → 75 % →
+    /// 100 % → off, the owner's choice.
+    public static let brightnessCycleDefaultSteps = 4
+    /// The most steps `--steps` takes. The cycle compares brightness in whole
+    /// percent, so steps finer than 1 % could not be told apart.
+    public static let brightnessCycleMaxSteps = 100
+
     /// How long a Playground state or effect holds the strip before the engine
     /// hands it back. Long enough to watch a full cycle of the slowest effect,
     /// short enough that a forgotten preview cannot hide a real alert. The

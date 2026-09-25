@@ -443,7 +443,7 @@ opens on General, already at that page's height and centred.
 | General | Uninstall | `Uninstall MySidepulse` under a hint, with a warning that always stands there | |
 | Strip | Right now | the live strip, and a `Showing` row saying what it shows and why | |
 | Strip | What the strip shows | Auto · Off · Colour · Effect; with Colour a colour picker, with Effect six picture tiles | Auto |
-| Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider (1–255, applied on release; 255 stores nothing) | 255 |
+| Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider (1–255, applied on release; 255 stores nothing; `brightness cycle` (§11) sets the same value) | 255 |
 | Strip | Remembered brightness | the overrides of strips not plugged in, each with `Forget` | |
 | Colours | Preview | the live strip playing the picked colour's state, what is playing, and `Stop` while it plays | |
 | Colours | Colours | one row per colour (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
@@ -834,6 +834,7 @@ rule rather than a gap (§15).
 |---|---|---|
 | `hook` | Claude Code's hook entry; reads the payload on stdin | always 0 |
 | `led auto\|off\|toggle\|#RRGGBB\|<effect>` | sets the mode; `toggle` flips off ↔ auto | 0; 1 app down; 2 bad argument |
+| `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
 | `status [--json]` | mode, display, battery, strips, sessions, jobs, notifications (topic masked) | 0; 1 app down |
 | `doctor` | nine health checks | number of failures |
 | `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`; foreign hooks and shapes it does not recognise are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any of the 15 events was declined, or on error |
@@ -843,6 +844,17 @@ rule rather than a gap (§15).
 | `shell-init zsh` | prints the zsh snippet | 0; 2 |
 
 With no arguments it prints usage and exits 0.
+
+**`brightness cycle`** walks the brightness of the Strip page up in `N` equal
+steps, `k/N` of full for step `k`, then off, then the first step again. `N` is
+1 to `K.brightnessCycleMaxSteps` (100), and 4 when `--steps` is left out
+(`K.brightnessCycleDefaultSteps`): 25 %, 50 %, 75 %, 100 %, off. A press goes to
+the first step brighter than now, compared in whole percent, so a brightness a
+unit under a step counts as that step; past the last step it sets the mode
+`off`, exactly as `led toggle` does, and the next press sets the first step and
+the mode `auto`, whatever mode was forced before. Every plugged-in strip takes
+the same step, counted from the brightest of them. With 3 steps from 50 %: 67 %,
+100 %, off, 33 %, 67 %. It prints `brightness: 67% (LEDs: auto)` or `LEDs: off`.
 
 `doctor` checks: app reachable; auto-start & restart (this process is the one
 launchd supervises); hooks installed (all 15); hook binary exists; hook command
@@ -956,6 +968,7 @@ belongs to on the strip.
 | `journalSoftMaxBytes` / `journalHardMaxBytes` | 5 MB / 20 MB | journal rotation |
 | `journalLineMaxBytes` / `hookStdinMaxBytes` / `messageTailMaxChars` | 4096 / 8 MB / 500 | hook and journal caps |
 | `playgroundPreviewSeconds` | 30 s | a Playground state or effect, or a Colours row, holds the strip this long, and each page's hint says the number |
+| `brightnessCycleDefaultSteps` / `brightnessCycleMaxSteps` | 4 / 100 | `brightness cycle` without `--steps`; the most it takes, since steps are told apart in whole percent |
 | Colour well pause | 0.3 s | a colour dragged in the colour panel is saved and written once it has paused this long (Colours, and the Playground's A colour) |
 | Settings status refresh | 2 s | the window re-reads the engine while open (`SettingsModel`) |
 

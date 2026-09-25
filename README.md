@@ -156,6 +156,7 @@ Everything the menu does, the `mysidepulse` command line does, which makes it ea
 mysidepulse led auto|off|toggle            # toggle flips the strip between off and auto
 mysidepulse led '#ff6a00'                  # any colour
 mysidepulse led rainbow                    # an effect: rainbow aurora ocean lava ember sparkle
+mysidepulse brightness cycle [--steps N]   # one step brighter, off after 100 %, then the first step again
 mysidepulse status [--json]                # mode, strip, battery, every session and command
 mysidepulse doctor                         # nine health checks; the exit code is the number of failures
 mysidepulse notify [on|off|test|topic new] # phone notifications
@@ -169,6 +170,7 @@ An example for `~/.skhdrc`, with the command line at its place inside the app:
 hyper - l : /Applications/MySidepulse.app/Contents/MacOS/mysidepulse led toggle    # the strip, off and back
 hyper - r : /Applications/MySidepulse.app/Contents/MacOS/mysidepulse led rainbow
 hyper - 0 : /Applications/MySidepulse.app/Contents/MacOS/mysidepulse led auto
+hyper - b : /Applications/MySidepulse.app/Contents/MacOS/mysidepulse brightness cycle --steps 3
 ```
 
 A manual mode outranks everything: choose *off*, a colour or an effect and the strip holds it until you go
@@ -315,7 +317,7 @@ MySidepulse is free and carries no ads. If it saves you trouble, you can leave a
 ## Notes
 
 - Personal build: English and French, no licensing.
-- `swift test` runs 479 tests across the two library targets (346 + 133); the app target's verification is the
+- `swift test` runs 489 tests across the two library targets (355 + 134); the app target's verification is the
   strip itself, `mysidepulse doctor` and the journal replay.
 - Every colour is a true colour, the same hex on the strip and on screen; a strip's brightness is what dims it.
   The defaults are the owner's, and the Colours page changes them.

@@ -42,9 +42,12 @@ public struct ControlRequest: Codable, Equatable {
     public var mode: String?
     public var job: JobRequest?
     public var notify: NotifyRequest?
+    /// `brightness-cycle`: how many steps the cycle has.
+    public var steps: Int?
     public init(cmd: String, mode: String? = nil, job: JobRequest? = nil,
-                notify: NotifyRequest? = nil) {
+                notify: NotifyRequest? = nil, steps: Int? = nil) {
         self.cmd = cmd; self.mode = mode; self.job = job; self.notify = notify
+        self.steps = steps
     }
 }
 
@@ -129,15 +132,20 @@ public struct ControlResponse: Codable, Equatable {
     /// The raw topic, populated ONLY in reply to the `notify` command — the
     /// one you run when you mean to read it. Never on a status reply.
     public var notifyTopic: String?
+    /// The strips' brightness in whole percent after `brightness-cycle`; nil
+    /// when the cycle turned the strip off.
+    public var brightnessPercent: Int?
     public init(ok: Bool, error: String? = nil, mode: String? = nil, display: String? = nil,
                 sessions: [SessionStatus]? = nil, devices: [DeviceStatus]? = nil,
                 battery: BatteryStatus? = nil, loginItem: String? = nil,
                 lastEventAgeSeconds: Int? = nil, jobs: [JobStatus]? = nil,
-                notify: NotifyStatus? = nil, notifyTopic: String? = nil) {
+                notify: NotifyStatus? = nil, notifyTopic: String? = nil,
+                brightnessPercent: Int? = nil) {
         self.ok = ok; self.error = error; self.mode = mode; self.display = display
         self.sessions = sessions; self.devices = devices; self.battery = battery
         self.loginItem = loginItem; self.lastEventAgeSeconds = lastEventAgeSeconds
         self.jobs = jobs; self.notify = notify; self.notifyTopic = notifyTopic
+        self.brightnessPercent = brightnessPercent
     }
 }
 

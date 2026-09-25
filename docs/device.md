@@ -204,7 +204,9 @@ rejects it, and the program builder falls back to `off`.
 
 Per volume name, `1…255`, stored in `config.json` under `brightness` keyed by
 the lower-cased volume name; absent means 255. It is sent as the `brightness N`
-first line. `off` is never prefixed.
+first line. `off` is never prefixed. The Strip page's slider sets it, and so does
+`mysidepulse brightness cycle` (functional.md §11), which writes the same value
+for every plugged-in strip.
 
 ## Writing
 

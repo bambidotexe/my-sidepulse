@@ -154,6 +154,13 @@ final class ControlTests: XCTestCase {
         XCTAssertEqual(try roundTrip(request), request)
     }
 
+    func testBrightnessCycleRoundTrips() throws {
+        let request = ControlRequest(cmd: "brightness-cycle", steps: 3)
+        XCTAssertEqual(try roundTrip(request), request)
+        let response = ControlResponse(ok: true, mode: "auto", brightnessPercent: 67)
+        XCTAssertEqual(try roundTrip(response), response)
+    }
+
     /// A CLI from a previous install must keep working against a newer app,
     /// and vice versa: every added field is optional.
     func testAnOldShapedRequestStillDecodes() throws {

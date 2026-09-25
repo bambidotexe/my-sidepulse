@@ -43,6 +43,44 @@ enum CLIMain {
             }
             print("LEDs: \(response.mode ?? wanted)")
             return 0
+        case "brightness":
+            let usage = "usage: mysidepulse brightness cycle [--steps N]   (N from 1 to "
+                + "\(K.brightnessCycleMaxSteps), default \(K.brightnessCycleDefaultSteps))"
+            let rest = Array(args.dropFirst())
+            guard rest.first?.lowercased() == "cycle" else {
+                print(usage)
+                return 2
+            }
+            var steps = K.brightnessCycleDefaultSteps
+            switch rest.count {
+            case 1:
+                break
+            case 3 where rest[1] == "--steps":
+                guard let n = Int(rest[2]), (1...K.brightnessCycleMaxSteps).contains(n) else {
+                    print(usage)
+                    return 2
+                }
+                steps = n
+            default:
+                print(usage)
+                return 2
+            }
+            guard let response = ControlClient.send(
+                    ControlRequest(cmd: "brightness-cycle", steps: steps),
+                    socketPath: Paths.controlSocket.path) else {
+                print("MySidepulse.app is not running (no reply at \(Paths.controlSocket.path)).")
+                return 1
+            }
+            guard response.ok else {
+                print(response.error ?? "brightness cycle refused")
+                return 1
+            }
+            if let percent = response.brightnessPercent {
+                print("brightness: \(percent)% (LEDs: \(response.mode ?? "auto"))")
+            } else {
+                print("LEDs: \(response.mode ?? "off")")
+            }
+            return 0
         case "autostart":
             let wanted = args.dropFirst().first?.lowercased()
             guard wanted == nil || wanted == "on" || wanted == "off" else {
@@ -121,6 +159,10 @@ enum CLIMain {
               led auto|off|toggle|#RRGGBB|<effect>
                                 set LED mode; toggle flips off <-> auto (skhd-friendly)
                                 effects: \(LedEffects.names.joined(separator: ", "))
+              brightness cycle [--steps N]
+                                every strip one step brighter, off after the last
+                                step, then the first step again (skhd-friendly);
+                                N steps of 100/N % each, default \(K.brightnessCycleDefaultSteps)
               status [--json]   sessions, display, device, battery
               doctor            health checks; exit code = failure count
               install-hooks     subscribe Claude Code events in ~/.claude/settings.json
