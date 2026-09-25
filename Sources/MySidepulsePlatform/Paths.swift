@@ -36,6 +36,12 @@ public enum Paths {
     public static var codexHome: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
     }
+    /// A link to the socket of Codex's managed daemon (under
+    /// `/private/tmp/codex-daemon-<uid>/`), present while the daemon runs;
+    /// a stale link can outlive it. `CodexDaemonClient` resolves it.
+    public static var codexControlSocket: URL {
+        codexHome.appendingPathComponent("app-server-control/app-server-control.sock")
+    }
     public static var codexHooks: URL {
         codexHome.appendingPathComponent("hooks.json").resolvingSymlinksInPath()
     }

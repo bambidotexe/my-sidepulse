@@ -82,6 +82,20 @@ final class Engine {
     /// The same canary for a quiet Codex session whose rollout cannot be
     /// read or holds no turn marker.
     private var warnedNoRollout: Set<String> = []
+    /// The Codex sessions with a question out to Codex's daemon, skipped by
+    /// the periodic check until it is answered, and, after an answer that
+    /// decided nothing, when each may be asked again: until then its rollout
+    /// decides.
+    private var askingDaemon: Set<String> = []
+    private var daemonAskAgainAt: [String: Date] = [:]
+    /// Once per launch, and once per status value the daemon reports that
+    /// the verdict does not know.
+    private var warnedDaemonSilent = false
+    private var warnedDaemonStatuses: Set<String> = []
+    /// True until the launch checks have run: until then the daemon is asked
+    /// only `thread/loaded/list`, and `thread/read` waits for the first live
+    /// check.
+    private var launching = true
     /// Notification delivery touches the filesystem (the sessions directory)
     /// and the network, neither of which belongs on the queue that owns the
     /// state and paints the strip.
@@ -179,18 +193,42 @@ final class Engine {
             let alerts = self.store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
             self.jobs.tick(now: now)
             if !alerts.isEmpty { self.deliver(alerts) }
-            self.checkAbandonedTurns(now: now, quietSeconds: 0)
-            self.armProcessWatchers()
-            // Hooks append while the app is away and only the app rotates, so
-            // a long absence needs this catch-up — otherwise the journal only
-            // rotates once the next live event happens to arrive.
-            self.rotateJournalIfNeeded()
-            self.sync()
+            // A working session Codex's daemon hosts, whose thread the daemon
+            // no longer holds, has nothing running: the daemon is asked which
+            // threads it holds (at most `CodexDaemonClient.deadlineSeconds`)
+            // before the launch check and the first paint, which wait for it.
+            let hosted = self.daemonHostedWorkingSessions()
+            guard !hosted.isEmpty, CodexDaemonClient.socketExists() else { return self.finishLaunch(now: now) }
+            CodexDaemonClient.loadedThreadIds { [weak self] loaded in
+                guard let self, self.launching else { return }
+                self.daemonListed(loaded, asked: hosted)
+                self.finishLaunch(now: Date())
+            }
+            // The client answers within its deadline; this only bounds the
+            // launch should it ever not.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2 * CodexDaemonClient.deadlineSeconds) { [weak self] in
+                guard let self, self.launching else { return }
+                self.noteDaemonSilent()
+                self.finishLaunch(now: Date())
+            }
         }
         keepalive.start { [weak self] in
             guard let self else { return [] }
             return DispatchQueue.main.sync { Array(self.devices.values) }
         }
+    }
+
+    /// The rest of the launch: every working turn checked against the
+    /// registry or its rollout, with no quiet gate, then the first paint.
+    private func finishLaunch(now: Date) {
+        checkAbandonedTurns(now: now, quietSeconds: 0)
+        launching = false
+        armProcessWatchers()
+        // Hooks append while the app is away and only the app rotates, so
+        // a long absence needs this catch-up — otherwise the journal only
+        // rotates once the next live event happens to arrive.
+        rotateJournalIfNeeded()
+        sync()
     }
 
     // MARK: inputs (all on main)
@@ -454,6 +492,9 @@ final class Engine {
     // MARK: the single sync path
 
     func sync() {
+        // Nothing is ticked, pushed or painted before the launch checks have
+        // run (`finishLaunch`): the replayed state is not yet what to show.
+        guard !launching else { return }
         let now = Date()
         var alerts = store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
         jobs.tick(now: now)
@@ -621,10 +662,11 @@ final class Engine {
     /// (silent thinking, or dead hooks) → stay on the roll and keep the
     /// session alive. Anything else — no record, wrong session, stale
     /// stamp, unknown status — proves nothing and changes nothing.
-    /// A quiet Codex turn is read from its rollout instead
-    /// (`checkCodexRollouts`). `quietSeconds` is the quiet gate: 0 for the
-    /// launch check. A verdict is dated to when the source says the turn
-    /// ended (`SessionStore.rescueStamp`). Returns whether any turn ended.
+    /// A quiet Codex turn is asked about at Codex's daemon or read from its
+    /// rollout instead (`checkCodexTurns`). `quietSeconds` is the quiet
+    /// gate: 0 for the launch check. A verdict is dated to when the source
+    /// says the turn ended (`SessionStore.rescueStamp`). Returns whether any
+    /// turn ended synchronously; the daemon's answers arrive later.
     @discardableResult
     private func checkAbandonedTurns(now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds) -> Bool {
         var ended = false
@@ -712,64 +754,213 @@ final class Engine {
                 """)
             store.dialogAnswered(sessionId: sessionId, now: now)
         }
-        return checkCodexRollouts(now: now, quietSeconds: quietSeconds) || ended
+        return checkCodexTurns(now: now, quietSeconds: quietSeconds) || ended
     }
 
-    /// Codex has no registry, but its rollout records every turn's start
-    /// and end. `CodexRolloutTail` decides; this only reads the file (the
-    /// recorded path when Core trusts it, else the one found by session id),
-    /// maps the decision onto the store and logs identifiers, never a line
-    /// of the file.
-    private func checkCodexRollouts(now: Date, quietSeconds: TimeInterval) -> Bool {
+    /// Codex has no registry. A quiet session that Codex's managed daemon
+    /// hosts is asked about there first (`thread/read`), from the first live
+    /// check on; its answer arrives later, on main (`daemonAnswered`). Every
+    /// other session, one the daemon could not decide, and every session
+    /// while the daemon is down or the launch checks run, is read from its
+    /// rollout (`checkCodexRollout`).
+    private func checkCodexTurns(now: Date, quietSeconds: TimeInterval) -> Bool {
+        let candidates = store.codexCandidates(at: now, quietSeconds: quietSeconds)
+        daemonAskAgainAt = daemonAskAgainAt.filter { store.sessions[$0.key] != nil }
+        guard !candidates.isEmpty else { return false }
+        let daemonUp = !launching && CodexDaemonClient.socketExists()
         var ended = false
-        for (sessionId, recorded) in store.codexCandidates(at: now, quietSeconds: quietSeconds) {
+        for (sessionId, recorded) in candidates where !askingDaemon.contains(sessionId) {
             guard let session = store.sessions[sessionId] else { continue }
-            let verdict = CodexRollout.path(recorded: recorded, sessionId: sessionId, codexHome: Paths.codexHome)
-                .flatMap(CodexRollout.read(path:))
-                .map(CodexRolloutTail.verdict(tail:)) ?? .unreadable
-            switch CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt,
-                                             lastMainTurnId: session.lastMainTurnId) {
-            case .finished(let endedAt):
-                Log.app.notice("""
-                    lost Stop recovered: Codex session \(sessionId, privacy: .public) — rollout \
-                    ends on task_complete at \(endedAt, privacy: .public) — finished
+            if daemonUp, isHostedByDaemon(session), daemonAskAgainAt[sessionId].map({ now >= $0 }) ?? true {
+                askDaemon(sessionId: sessionId, asked: session.lastMainEventAt)
+                continue
+            }
+            ended = checkCodexRollout(sessionId: sessionId, recorded: recorded, now: now) || ended
+        }
+        return ended
+    }
+
+    /// Codex's rollout records every turn's start and end.
+    /// `CodexRolloutTail` decides; this only reads the file (the recorded
+    /// path when Core trusts it, else the one found by session id), maps the
+    /// decision onto the store and logs identifiers, never a line of the
+    /// file.
+    private func checkCodexRollout(sessionId: String, recorded: String?, now: Date) -> Bool {
+        guard let session = store.sessions[sessionId] else { return false }
+        let verdict = rolloutVerdict(sessionId: sessionId, recorded: recorded)
+        var ended = false
+        switch CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt,
+                                         lastMainTurnId: session.lastMainTurnId) {
+        case .finished(let endedAt):
+            Log.app.notice("""
+                lost Stop recovered: Codex session \(sessionId, privacy: .public) — rollout \
+                ends on task_complete at \(endedAt, privacy: .public) — finished
+                """)
+            store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+            ended = true
+        case .aborted(let endedAt):
+            Log.app.notice("""
+                turn abandoned: Codex session \(sessionId, privacy: .public) — rollout ends \
+                on turn_aborted at \(endedAt, privacy: .public) — going dark
+                """)
+            store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+            ended = true
+        case .busy:
+            if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
+               warnedHooksSilent.insert(sessionId).inserted {
+                Log.app.warning("""
+                    hooks look dead for Codex session \(sessionId, privacy: .public): its \
+                    rollout says the turn runs but no hook event has arrived for over five \
+                    minutes — its finishes and questions cannot be shown until the hooks \
+                    run again
                     """)
-                store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt)
-                ended = true
-            case .aborted(let endedAt):
-                Log.app.notice("""
-                    turn abandoned: Codex session \(sessionId, privacy: .public) — rollout ends \
-                    on turn_aborted at \(endedAt, privacy: .public) — going dark
+            }
+            // Alive as of the rollout's last line: a turn that died with
+            // no end marker stops writing, and still meets the 2 h
+            // backstop that long after it.
+            var writtenAt = now
+            if case .running(_, let at) = verdict { writtenAt = min(at, now) }
+            store.noteBusy(sessionId: sessionId, now: writtenAt)
+        case .nothing:
+            if verdict == .unreadable, warnedNoRollout.insert(sessionId).inserted {
+                Log.app.warning("""
+                    quiet Codex turn undecidable: session \(sessionId, privacy: .public) — \
+                    its rollout cannot be read or holds no turn marker; it stands until \
+                    the rollout says more, a hook arrives, or the 2 h staleness backstop
                     """)
-                store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt)
-                ended = true
-            case .busy:
-                if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
-                   warnedHooksSilent.insert(sessionId).inserted {
-                    Log.app.warning("""
-                        hooks look dead for Codex session \(sessionId, privacy: .public): its \
-                        rollout says the turn runs but no hook event has arrived for over five \
-                        minutes — its finishes and questions cannot be shown until the hooks \
-                        run again
-                        """)
-                }
-                // Alive as of the rollout's last line: a turn that died with
-                // no end marker stops writing, and still meets the 2 h
-                // backstop that long after it.
-                var writtenAt = now
-                if case .running(_, let at) = verdict { writtenAt = min(at, now) }
-                store.noteBusy(sessionId: sessionId, now: writtenAt)
-            case .nothing:
-                if verdict == .unreadable, warnedNoRollout.insert(sessionId).inserted {
-                    Log.app.warning("""
-                        quiet Codex turn undecidable: session \(sessionId, privacy: .public) — \
-                        its rollout cannot be read or holds no turn marker; it stands until \
-                        the rollout says more, a hook arrives, or the 2 h staleness backstop
-                        """)
-                }
             }
         }
         return ended
+    }
+
+    /// The rollout's verdict on a Codex session: the recorded path when Core
+    /// trusts it, else the daemon's when Core trusts that, else the one found
+    /// by session id.
+    private func rolloutVerdict(sessionId: String, recorded: String?, daemonPath: String? = nil) -> CodexRolloutTail.Verdict {
+        let trusted = [recorded, daemonPath].compactMap { $0 }.first {
+            CodexRolloutTail.isTrusted(path: $0, sessionId: sessionId, codexHome: Paths.codexHome.path)
+        }
+        return CodexRollout.path(recorded: trusted ?? recorded, sessionId: sessionId, codexHome: Paths.codexHome)
+            .flatMap(CodexRollout.read(path:))
+            .map(CodexRolloutTail.verdict(tail:)) ?? .unreadable
+    }
+
+    // MARK: Codex's daemon
+
+    /// Only a session whose recorded pid is Codex's managed daemon is asked
+    /// about at its socket: a `codex exec` thread runs in its own process and
+    /// a desktop-app thread in the app's own app-server, and the daemon,
+    /// which reads any thread from disk, would call either `notLoaded` while
+    /// it works.
+    private func isHostedByDaemon(_ session: Session) -> Bool {
+        guard session.agent == .codex, let pid = session.agentPid, let info = ProcWalk.info(for: pid) else { return false }
+        return ProcWalk.isManagedCodexDaemon(info)
+    }
+
+    /// The working Codex sessions the daemon hosts, each with its last
+    /// main-agent event; a held `Stop` is the time rules'.
+    private func daemonHostedWorkingSessions() -> [String: Date] {
+        var hosted: [String: Date] = [:]
+        for s in store.sessions.values where s.state == .working && !s.pendingDone && isHostedByDaemon(s) {
+            hosted[s.id] = s.lastMainEventAt
+        }
+        return hosted
+    }
+
+    private func askDaemon(sessionId: String, asked: Date) {
+        askingDaemon.insert(sessionId)
+        CodexDaemonClient.readThread(id: sessionId) { [weak self] record in
+            self?.daemonAnswered(sessionId: sessionId, record: record, asked: asked)
+        }
+    }
+
+    /// The daemon's answer about a session, applied only while the session is
+    /// still the one asked about: working, no `Stop` held, and no main-agent
+    /// event since the question.
+    private func daemonAnswered(sessionId: String, record: CodexThreadRecord?, asked: Date) {
+        askingDaemon.remove(sessionId)
+        guard let session = store.sessions[sessionId], session.state == .working, !session.pendingDone,
+              session.lastMainEventAt == asked else { return }
+        let now = Date()
+        if record == nil { noteDaemonSilent() }
+        switch record?.verdict() ?? .undecided {
+        case .over:
+            Log.app.notice("Codex daemon says thread \(sessionId, privacy: .public) has nothing running")
+            endByRollout(sessionId: sessionId, daemonPath: record?.rolloutPath, fallbackEnd: record?.updatedAt, now: now)
+        case .busy:
+            if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
+               warnedHooksSilent.insert(sessionId).inserted {
+                Log.app.warning("""
+                    hooks look dead for Codex session \(sessionId, privacy: .public): Codex's \
+                    daemon says the thread is active but no hook event has arrived for over \
+                    five minutes — its finishes and questions cannot be shown until the hooks \
+                    run again
+                    """)
+            }
+            store.noteBusy(sessionId: sessionId, now: now)
+        case .undecided:
+            if let status = record?.status, warnedDaemonStatuses.insert(status).inserted {
+                // The daemon's words, not ours: letters and digits only, and
+                // short, before they reach the log.
+                let shown = String(String.UnicodeScalarView(
+                    status.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.prefix(40)))
+                Log.app.notice("Codex daemon reports an unknown thread status \(shown, privacy: .public); using the rollout")
+            }
+            // The rollout decides this session until then, from the sync below.
+            daemonAskAgainAt[sessionId] = now.addingTimeInterval(K.abandonRecheckSeconds)
+        }
+        sync()
+    }
+
+    /// At launch: a working session the daemon hosts, whose thread it does
+    /// not hold in memory, has nothing running. A nil answer leaves every
+    /// session to its rollout.
+    private func daemonListed(_ loaded: Set<String>?, asked: [String: Date]) {
+        guard let loaded else { return noteDaemonSilent() }
+        let now = Date()
+        for (sessionId, lastMain) in asked.sorted(by: { $0.key < $1.key }) where !loaded.contains(sessionId) {
+            guard let s = store.sessions[sessionId], s.state == .working, !s.pendingDone,
+                  s.lastMainEventAt == lastMain else { continue }
+            Log.app.notice("Codex daemon has not loaded thread \(sessionId, privacy: .public): nothing runs in it")
+            endByRollout(sessionId: sessionId, daemonPath: nil, fallbackEnd: nil, now: now)
+        }
+    }
+
+    /// The daemon runs nothing in the session's thread, so its turn is over;
+    /// the rollout tells how it ended: a finish on `task_complete`, dark on
+    /// `turn_aborted`, and dark when the rollout shows no end of this turn,
+    /// dated to when the daemon last saw the thread change.
+    private func endByRollout(sessionId: String, daemonPath: String?, fallbackEnd: Date?, now: Date) {
+        guard let session = store.sessions[sessionId] else { return }
+        let verdict = rolloutVerdict(sessionId: sessionId, recorded: session.transcriptPath, daemonPath: daemonPath)
+        switch CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt,
+                                         lastMainTurnId: session.lastMainTurnId) {
+        case .finished(let endedAt):
+            Log.app.notice("""
+                lost Stop recovered: Codex session \(sessionId, privacy: .public) — nothing runs \
+                in its thread and the rollout ends on task_complete at \(endedAt, privacy: .public) \
+                — finished
+                """)
+            store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+        case .aborted(let endedAt):
+            Log.app.notice("""
+                turn abandoned: Codex session \(sessionId, privacy: .public) — nothing runs in its \
+                thread and the rollout ends on turn_aborted at \(endedAt, privacy: .public) — going dark
+                """)
+            store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+        case .busy, .nothing:
+            Log.app.notice("""
+                turn abandoned: Codex session \(sessionId, privacy: .public) — nothing runs in its \
+                thread and the rollout shows no end of this turn — going dark
+                """)
+            store.abandonTurn(sessionId: sessionId, now: now, endedAt: fallbackEnd)
+        }
+    }
+
+    private func noteDaemonSilent() {
+        guard !warnedDaemonSilent else { return }
+        warnedDaemonSilent = true
+        Log.app.notice("Codex daemon not answering; using the rollout")
     }
 
     /// Wake re-evaluates everything against the wall clock at once.

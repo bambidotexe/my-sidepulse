@@ -87,7 +87,7 @@ queue. Every input funnels into one method:
 sync():
   alerts   = store.tick(now, userPresent)      // holds, settle, expiry, due pushes
   jobs.tick(now)
-  checkAbandonedTurns(now)                     // registry + transcript rescues, Codex rollouts
+  checkAbandonedTurns(now)                     // registry + transcript rescues; Codex: its daemon, else the rollout
   deliver(alerts)                              // → notify queue
   decision = Arbiter.decide(...)
   pre-paint acknowledgement if the user is typing in the host app
@@ -120,10 +120,16 @@ with `wallDeadline`, so time spent asleep counts.
    drains the file synchronously. Events older than the last boot
    (`BootTime.bootDate`) are ignored.
 2. On the next main-queue turn — after the drained events have been applied —
-   drop sessions whose pid is dead or no longer a Claude process
+   drop sessions whose pid is dead or no longer that agent's process
    (`pruneDead`), scrub push deadlines already past the late-drop window
-   (`dropStaleNotifications`), arm the process watchers, rotate the journal if
-   due, and `sync()`.
+   (`dropStaleNotifications`), run the stores' `tick`; when a working session
+   is hosted by Codex's managed daemon and its socket exists, ask the daemon
+   `thread/loaded/list` and decide each such session missing from the
+   complete list by its rollout (`daemonListed`), at most 1 s later; then
+   `finishLaunch`: `checkAbandonedTurns` with no quiet gate, arm the process
+   watchers, rotate the journal if due, and `sync()`. Until `finishLaunch`,
+   `sync()` returns at once (`launching`), so nothing replayed is ticked,
+   pushed or painted before the launch checks.
 3. Only then does `AppDelegate` start `DeviceMonitor`, so the first write to a
    strip already reflects the replayed state.
 
@@ -141,7 +147,8 @@ after it.
 | Agent processes, Claude's and Codex's | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
 | Claude's own registry | `<config>/sessions/<pid>.json`, read only for quiet `working` turns and open waits of Claude sessions (`ClaudeProcessRegistry`); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered` |
 | Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
-| Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read only for quiet `working` Codex sessions (`SessionStore.codexCandidates`); the recorded `transcript_path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
+| Codex's daemon | its control socket, `~/.codex/app-server-control/app-server-control.sock` (`CodexDaemonClient`, a WebSocket over the unix socket on a utility queue, 1 s per call, completing on main; `WebSocketFrame` and `CodexThreadRecord` in Core read the frames and the answers): `thread/read` for a quiet `working` Codex session whose pid is the managed daemon (`ProcWalk.isManagedCodexDaemon`), one question out per session, the answer applied only if the session is still `working` with the same `lastMainEventAt`; `thread/loaded/list` once at launch. `notLoaded` / `idle` → the rollout tells finished from aborted, dark by default; `active` → `noteBusy`; anything else, or no answer, leaves the session to the rollout for 15 s | `finishTurn`, `abandonTurn`, `noteBusy` |
+| Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read for quiet `working` Codex sessions (`SessionStore.codexCandidates`) the daemon does not host or could not decide, and after the daemon says a thread runs nothing; the recorded `transcript_path` when Core trusts it, else the daemon's `path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
 | Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
 | Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
@@ -150,13 +157,14 @@ after it.
 | The onboarding's five rows | a 2 s `Timer` while the wizard is up, plus `didBecomeKey`; nothing tells an app that a grant was made in System Settings | each row's own trailing control (`OnboardingCatalog`, `GrantRow`) |
 | The Settings window | a 2 s `Timer` while it is open (`SettingsModel.windowVisible`): the engine's status and the notification permission. The hook files when the window opens, when System or Health is shown and after a hook button. The doctor and the crash reports (`CrashReports`) when Health is shown and on Check Again, never on a timer | the pages; Health's two tables are `HealthReport.checks(for:)` and `readings(for:)` of `SettingsModel.healthFacts`, built in Core |
 
-Nothing polls either agent. The registry and transcript (Claude sessions)
-and the rollout (Codex sessions) are read on the engine's own deadlines
-(`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`), never on a free-running
-timer, and once at launch: after the replay, `pruneDead` (which keeps a Codex
-session whose pid is the managed daemon, `ProcWalk.isCodexDaemon`), then
-`dropStaleNotifications`, the stores' `tick`, `checkAbandonedTurns` with no
-quiet gate, and only then the first `sync()`.
+Nothing polls either agent. The registry and transcript (Claude sessions),
+Codex's daemon and the rollout (Codex sessions) are asked on the engine's own
+deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`), never on a
+free-running timer, and once at launch: after the replay, `pruneDead` (which
+keeps a Codex session whose pid is a shared app-server, `ProcWalk.isCodexDaemon`),
+then `dropStaleNotifications`, the stores' `tick`, the daemon's
+`thread/loaded/list` when it hosts a working session, `checkAbandonedTurns`
+with no quiet gate, and only then the first `sync()`.
 
 ## Threading
 
@@ -169,6 +177,7 @@ quiet gate, and only then the first `sync()`.
 | `mysidepulse.keepalive` | `Keepalive` | The 60 s timer and touch accounting; reads the device list with `main.sync`. |
 | `mysidepulse.deviceprobe` (utility) | `DeviceMonitor` | Every `stat`/`fileExists` on a volume. |
 | `mysidepulse.notify` (utility) | `Engine` | The `~/.claude/sessions` scan and building each request. |
+| `mysidepulse.codex-daemon` (utility, concurrent) | `CodexDaemonClient` | Each call to Codex's daemon: connect, upgrade, the three frames, the answer, non-blocking with `poll`, 1 s from the moment it is asked; the completion hops to main. |
 | `mysidepulse.ttyprobe` (userInitiated) | `TerminalTabProber` | The `osascript` subprocess. |
 | `mysidepulse.control` | `ControlServer` | Accept, read, reply; calls the handler, which does `main.sync` into `Engine.controlResponse`. |
 | URLSession delegate queue | `Notifier`, `UpdateChecker` | POST completion, with retries scheduled on a global utility queue; the update check's and download's callbacks, which `UpdateController` hops to main. The unpacking of an update runs on a global user-initiated queue. |

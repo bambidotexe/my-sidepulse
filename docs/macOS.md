@@ -126,6 +126,39 @@ the types, turn ids and stamps, and nothing else. Codex sends the same
 thread quit before any prompt sends a `SessionEnd` alone; `SessionEnd` fires at
 thread shutdown, every clean TUI exit, and its `reason` is always `other`.
 
+Codex's managed daemon answers on a control socket:
+`~/.codex/app-server-control/app-server-control.sock` (`Paths.codexControlSocket`)
+is a symlink to the daemon's socket, `/private/tmp/codex-daemon-<uid>/<hash>`,
+mode `0600`, present while the daemon runs; a stale link can outlive it, so
+the link is resolved and the target must be a socket. It speaks WebSocket over
+the unix socket, with no token: an HTTP/1.1 `GET /` with `Host: localhost`,
+`Upgrade: websocket`, `Connection: Upgrade`, a 16-byte base64
+`Sec-WebSocket-Key` and `Sec-WebSocket-Version: 13` is answered `101 Switching
+Protocols` (with `sec-websocket-accept` and
+`x-codex-websocket-max-unfragmented-message-bytes` headers), then JSON-RPC 2.0
+in text frames, masked from the client, unmasked from the daemon. The app does
+not check `Sec-WebSocket-Accept`: the socket is the user's own `0600` local
+socket, and a `101` is all the exchange needs. The daemon's answers carry `id`
+and `result` (or `error`) and no `jsonrpc` field, and it sends notifications
+(`method`, `params`, `emittedAtMs`, no `id`) between them, one of them
+(`remoteControl/status/changed`) between the `initialize` answer and the next.
+The app sends three methods and one notification, and nothing else:
+`initialize` `{clientInfo: {name, title, version}}`, answered `{userAgent,
+codexHome, platformFamily, platformOs}`; then `initialized`; then either
+`thread/read` `{threadId, includeTurns: false}`, answered `{thread: {id,
+status: {type}, path, createdAt, updatedAt, recencyAt, cwd, originator, …}}`
+with the stamps in Unix seconds, where `status.type` is `notLoaded` (not in
+memory; the thread is still read from its rollout on disk), `idle` (loaded, no
+turn) or `active` (a turn runs, with `activeFlags` naming a pending approval
+or question); or `thread/loaded/list` `{}`, answered `{data: [<thread id>…],
+nextCursor}`, the threads held in memory (all of them in one page when no
+`limit` is given; `nextCursor` is `null` then). The daemon holds the TUI's
+threads only: a `codex exec` thread runs in its own process and a desktop-app
+thread in the app's own `codex app-server` (no `--managed-daemon` argument,
+which `ProcWalk.isManagedCodexDaemon` reads), so what the daemon says of
+either proves nothing. Captured by a read-only probe against Codex 0.157;
+`CodexDaemonClient`, `CodexThreadRecord` and `WebSocketFrame` hold it.
+
 ## Permissions
 
 The app is not sandboxed (`Resources/MySidepulse.entitlements`,
@@ -178,6 +211,8 @@ General › Hooks, after a backup), `~/.zshrc` (the app's own block, written and
 removed from the same Hooks rows),
 `<config>/sessions/*.json` and the session transcript (read only), and a Codex
 session's rollout under `~/.codex/sessions/` (its last 64 KB, read only).
+Sockets connected to outside the app's own: Codex's managed daemon's control
+socket, for `thread/read` and `thread/loaded/list` only, 1 s per call.
 
 ## launchd
 

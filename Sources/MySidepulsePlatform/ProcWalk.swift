@@ -161,6 +161,16 @@ public enum ProcWalk {
         return info.path?.contains("/app-server-daemon/") ?? false
     }
 
+    /// Codex's managed daemon alone, the app-server behind
+    /// `~/.codex/app-server-control/app-server-control.sock` and the only one
+    /// whose threads that socket answers for: the ChatGPT app's `codex
+    /// app-server` runs its threads itself. Told apart by `--managed-daemon`,
+    /// or by the daemon's install folder when the arguments cannot be read.
+    public static func isManagedCodexDaemon(_ info: ProcInfo) -> Bool {
+        if let args = arguments(for: info.pid) { return args.dropFirst().contains("--managed-daemon") }
+        return info.path?.contains("/app-server-daemon/") ?? false
+    }
+
     /// True for a path that belongs to a Claude Code install. Both real shapes
     /// must match: the symlink launcher `~/.local/bin/claude`, and the native
     /// installer's versioned target `~/.local/share/claude/versions/<version>`,

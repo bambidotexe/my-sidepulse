@@ -219,6 +219,35 @@ final class ProcWalkTests: XCTestCase {
         XCTAssertFalse(ProcWalk.isCodexDaemon(gone("/Applications/ChatGPT.app/Contents/Resources/codex")))
     }
 
+    /// Only the managed daemon's own threads are asked about at its control
+    /// socket: the ChatGPT app's `codex app-server` is a shared app-server
+    /// too, but its threads are not the daemon's, which would call a live one
+    /// `notLoaded`.
+    func testOnlyTheManagedDaemonIsTheOneWithAControlSocket() throws {
+        func stand(_ args: [String]) throws -> ProcWalk.ProcInfo {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", "sleep 30; :"] + args
+            try process.run()
+            addTeardownBlock { process.terminate() }
+            return try XCTUnwrap(ProcWalk.info(for: process.processIdentifier))
+        }
+        let managed = try stand(["app-server", "--listen", "unix://", "--managed-daemon"])
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(managed))
+        let desktop = try stand(["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled"])
+        XCTAssertTrue(ProcWalk.isCodexDaemon(desktop), "the desktop app's codex is a shared app-server")
+        XCTAssertFalse(ProcWalk.isManagedCodexDaemon(desktop), "but not the managed daemon")
+        XCTAssertFalse(ProcWalk.isManagedCodexDaemon(try XCTUnwrap(ProcWalk.info(for: getpid()))))
+
+        func gone(_ path: String) -> ProcWalk.ProcInfo {
+            ProcWalk.ProcInfo(pid: 999_999, ppid: 1, name: "codex", path: path)
+        }
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(gone(
+            "/Users/u/.codex/packages/app-server-daemon/releases/0.157.0-aarch64-apple-darwin/bin/codex")),
+            "by its install folder when the arguments cannot be read")
+        XCTAssertFalse(ProcWalk.isManagedCodexDaemon(gone("/Applications/ChatGPT.app/Contents/Resources/codex")))
+    }
+
     func testBootDateIsPast() throws {
         let boot = try XCTUnwrap(BootTime.bootDate())
         XCTAssertLessThan(boot, Date())

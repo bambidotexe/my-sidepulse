@@ -293,6 +293,20 @@ there is read. Only the last 64 KB of the file are read, and of them only
 each line's type, the turn markers' turn ids and stamps, and the last line's
 stamp (when Codex last wrote to the session).
 
+When Codex's daemon is running it is asked first (`thread/read` on its
+control socket): a thread it has not loaded, or has idle, has nothing
+running; an active one keeps the session alive; the rollout decides when the
+daemon does not answer. Only a session whose recorded pid is Codex's managed
+daemon is asked: a `codex exec` thread runs in its own process and a
+desktop-app thread in the app's own `codex`, and the daemon would call either
+one not loaded while it works, so those keep the rollout alone. When nothing
+runs, the rollout tells how the turn ended: a `task_complete` that ends it is
+the lost `Stop` (`done`, with its push); a `turn_aborted`, or no end of this
+turn at all, is dark, with no push. Any other status decides nothing, and the
+rollout decides that session for the next `K.abandonRecheckSeconds`. Every
+question has 1 s to be answered, and an answer that arrives after a hook
+moved the session is dropped.
+
 Every verdict of these rescues, Claude's and Codex's, takes effect as of when
 the turn ended — the registry's stamp, the rollout's end marker, never before
 the last main-agent event — not when it was found, exactly as a replayed
@@ -302,9 +316,15 @@ counted from the end, and a finish found more than
 was away for instance, shows `done` without a push.
 
 At launch, after the journal is replayed, the time rules run first (a
-session silent past the 2 h backstop is forgotten), then every working
-session of either agent is checked at once, with no quiet gate, before the
-strip is painted.
+session silent past the 2 h backstop is forgotten); then, when a working
+session is hosted by Codex's daemon and its socket exists, the daemon is
+asked which threads it holds (`thread/loaded/list`, never `thread/read`): a
+working hosted session whose thread is missing from the complete list has
+nothing running and is decided by its rollout at once, dark when the rollout
+says nothing, while a partial list or no answer decides nothing; then every
+working session of either agent is checked at once, with no quiet gate,
+before the strip is painted. The paint waits for the daemon's answer, 1 s at
+most.
 
 | Situation | Signal | Result | Latency |
 |---|---|---|---|
@@ -315,6 +335,8 @@ strip is painted.
 | Dialog answered with no hook | an open wait; the registry says `busy`, stamped more than `K.dialogAnswerMinStampLeadSeconds` (2 s) after the dialog | `working` | ≤ 15 s + |
 | Codex: lost `Stop` | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); the rollout's last turn marker is a `task_complete` stamped after the last main-agent event, or naming its turn | `done`, with its push | 20–35 s |
 | Codex: interrupted turn, `Interrupt` lost | same, but the marker is a `turn_aborted` | `idle` (dark), no push | 20–35 s |
+| Codex, a TUI session: the turn ended with no hook | same quiet gate; Codex's daemon says the thread is `notLoaded` or `idle` | `done` with its push when the rollout ends the turn on `task_complete`, else `idle` (dark), no push | 20–36 s |
+| Codex, a TUI session: the turn runs with no hook | same quiet gate; the daemon says `active` | stays `working`, kept alive | — |
 
 While the registry says `busy`, a quiet session is kept alive and stays
 `working`. The registry and open waits are re-read every
@@ -1110,6 +1132,7 @@ agent's colour while it works.
 | `abandonQuietSeconds` | 20 s | quiet before Claude's registry or a Codex rollout is consulted |
 | `abandonRecheckSeconds` | 15 s | registry / rollout / open-wait recheck |
 | `CodexRolloutTail.tailBytes` | 64 KB | how much of a Codex rollout's end is read |
+| `CodexDaemonClient.deadlineSeconds` | 1 s | the whole of one question to Codex's daemon, connection included |
 | `abandonUndecidedDarkSeconds` | 90 s | dark when the transcript cannot decide |
 | `dialogAnswerMinStampLeadSeconds` | 2 s | busy stamp must be this much newer than the dialog |
 | `hooksSilentWarnSeconds` | 5 min | registry `busy` with no hook event → one log warning per session |
