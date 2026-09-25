@@ -712,7 +712,6 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(40), "the hook is alive")
         XCTAssertNil(s.sessions["s1"]?.notifyAt)
         XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["t1"])
-        XCTAssertNil(s.sessions["s1"]?.openTurnId)
         s.apply(ev(.permissionRequest, 41, tool: "Bash", turn: "t1"))
         XCTAssertEqual(state(s), .idle, "nor does a permission ask of that turn")
     }
@@ -798,6 +797,36 @@ final class SessionStoreTests: XCTestCase {
         other.abandonTurn(sessionId: "s1", now: at(30))
         other.apply(ev(.postToolUse, 40, tool: "Bash", turn: "t2"))
         XCTAssertEqual(state(other), .working, "an id no close named is no closed turn")
+    }
+
+    /// A verdict ends the helpers with the turn: a helper event of that turn
+    /// changes nothing.
+    func testAHelperEventAfterAVerdictIsIgnored() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        s.abandonTurn(sessionId: "s1", now: at(30))
+        s.apply(ev(.postToolUse, 40, tool: "Read", agent: "a1", turn: "p1"))
+        XCTAssertEqual(state(s), .idle)
+        XCTAssertEqual(s.sessions["s1"]?.liveAgents, [:])
+        XCTAssertEqual(s.sessions["s1"]?.pendingDone, false)
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(40))
+    }
+
+    /// Every main-agent event of a closed turn but a prompt or a session
+    /// start changes nothing, its Stop and its notifications included.
+    func testAStopOrANotificationOfAClosedTurnIsIgnored() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, pid: 42, turn: "p1"))
+        s.abandonTurn(sessionId: "s1", now: at(30))
+        s.apply(ev(.stop, 40, tail: "Done.", turn: "p1"))
+        XCTAssertEqual(state(s), .idle, "no green for a turn already over")
+        XCTAssertNil(s.sessions["s1"]?.notifyAt)
+        s.apply(ev(.notification, 50, ntype: "permission_prompt", turn: "p1"))
+        XCTAssertEqual(state(s), .idle, "no amber either")
+        s.apply(ev(.stopFailure, 51, turn: "p1"))
+        s.apply(ev(.preCompact, 52, turn: "p1"))
+        XCTAssertEqual(state(s), .idle)
+        XCTAssertEqual(s.sessions["s1"]?.stateSince, at(30))
     }
 
     /// Only the last eight closed turns are remembered.

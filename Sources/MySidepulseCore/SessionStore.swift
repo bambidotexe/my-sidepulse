@@ -58,10 +58,8 @@ public struct Session: Equatable {
     /// state being left. Cleared by `tick` once the window passes.
     public var settlingFrom: SessionState?
     public var settlingUntil: Date?
-    /// The turn the last main-agent prompt opened, when its line named one.
-    public var openTurnId: String?
-    /// The turn the last main-agent event named: what a close takes when
-    /// no prompt was seen, the session having been followed from mid-turn.
+    /// The turn the last main-agent event that carried an id named, a
+    /// prompt's included: the turn a close closes.
     public var lastMainTurnId: String?
     /// The turns an `Interrupt` or a verdict closed, the most recent last,
     /// at most `Session.closedTurnsKept` of them. An event of one of these
@@ -201,8 +199,7 @@ public struct SessionStore {
             set(&s, e.source == "compact" ? .working : .idle, now)
         case .userPromptSubmit:
             // A prompt always opens a turn, even one that names a closed
-            // turn: its events count again.
-            s.openTurnId = e.turnId
+            // turn: its events count again, its Stop and Interrupt included.
             if let id = e.turnId { s.closedTurnIds.removeAll { $0 == id } }
             s.interruptedAt = nil
             // NOT a helper boundary: Claude Code 2.1 accepts a prompt while
@@ -307,11 +304,12 @@ public struct SessionStore {
     /// which opens a turn, and a session's start. A tool or permission
     /// event that names no turn changes nothing for
     /// `K.abortQuarantineSeconds` after an `Interrupt`, until a prompt.
-    static func changesNothing(_ e: JournalEvent, in s: Session, now: Date) -> Bool {
+    /// `SessionEnd` and acknowledgements never reach it.
+    private static func changesNothing(_ e: JournalEvent, in s: Session, now: Date) -> Bool {
         let ofAClosedTurn = e.turnId.map { s.closedTurnIds.contains($0) } ?? false
         if e.agentId != nil { return ofAClosedTurn }
         switch e.event {
-        case .sessionStart, .sessionEnd, .userPromptSubmit, .ack: return false
+        case .sessionStart, .userPromptSubmit: return false
         default: break
         }
         if ofAClosedTurn { return true }
@@ -325,15 +323,14 @@ public struct SessionStore {
         }
     }
 
-    /// An `Interrupt` or a verdict that the turn is over closes the turn a
-    /// prompt opened or, with no prompt seen, the turn the last main-agent
-    /// event named: the session followed from mid-turn, or the closing
-    /// `Interrupt` itself.
-    func closeTurn(_ s: inout Session, byInterrupt: Bool, now: Date) {
-        if let id = s.openTurnId ?? s.lastMainTurnId, !s.closedTurnIds.contains(id) {
+    /// An `Interrupt` or a verdict that the turn is over closes the turn the
+    /// last main-agent event that carried an id named: the prompt's, a
+    /// later tool event's when the turn goes on under a new id with no
+    /// prompt line, or the closing `Interrupt`'s own.
+    private func closeTurn(_ s: inout Session, byInterrupt: Bool, now: Date) {
+        if let id = s.lastMainTurnId, !s.closedTurnIds.contains(id) {
             s.closedTurnIds = Array((s.closedTurnIds + [id]).suffix(Session.closedTurnsKept))
         }
-        s.openTurnId = nil
         s.interruptedAt = byInterrupt ? now : nil
     }
 

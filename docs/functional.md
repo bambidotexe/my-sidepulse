@@ -215,16 +215,19 @@ lines.
 
 Every event of a turn carries the turn's id: Claude Code's `prompt_id`,
 Codex's `turn_id`. An `Interrupt`, or a verdict that the turn is over (*When
-hooks say nothing*), closes the turn: the one the last prompt opened, or,
-when no prompt was seen, the one the session's last event named. An event
-that arrives for a closed turn, as the end of a tool Codex aborted does
-seconds or minutes later, only proves the hook alive and changes nothing, and
-so does a helper event of a closed turn. A `Stop` ends the turn but does not
-close it: a Stop hook that blocks it keeps the turn running, and its later
-events count. A prompt always opens a turn, whatever id it carries. For
-`K.abortQuarantineSeconds` (120 s) after an `Interrupt`, and until a prompt, a
-tool or permission event without a turn id changes nothing either. A line
-without a turn id otherwise follows the rules above.
+hooks say nothing*), closes the turn named by the last main-agent event that
+carried an id: the prompt that opened it, or the later event of a turn
+followed from mid-turn or going on under a new id. Any event that arrives for
+a closed turn, but a prompt, a `SessionStart` or a `SessionEnd`, only proves
+the hook alive and changes nothing: the end of a tool Codex aborted, seconds
+or minutes later, its `Stop`, its notifications, its compaction, and every
+helper event of that turn. A `Stop` ends the turn but does not close it: a
+Stop hook that blocks it keeps the turn running, and its later events count.
+A prompt always opens a turn, whatever id it carries, a closed one included,
+whose events then count again. For `K.abortQuarantineSeconds` (120 s) after an
+`Interrupt`, and until a prompt, a tool or permission event without a turn id
+changes nothing either. A line without a turn id otherwise follows the rules
+above.
 
 A turn that ends in prose is **finished**, questions included: "Want me to
 commit?" is green. Amber is raised only by the explicit signals above.

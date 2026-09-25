@@ -280,6 +280,45 @@ final class CodexTests: XCTestCase {
         XCTAssertEqual(s.sessions["s1"]?.state, .idle)
         s.apply(codex(.postToolUse, 10 + K.abortQuarantineSeconds + 60, tool: "Bash", turn: "t1"))
         XCTAssertEqual(s.sessions["s1"]?.state, .idle, "the turn's id settles it, whatever the delay")
+
+        var moved = SessionStore()
+        moved.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        moved.apply(codex(.preToolUse, 1, tool: "Bash", turn: "t2"))
+        moved.apply(codex(.interrupt, 10))
+        XCTAssertEqual(moved.sessions["s1"]?.closedTurnIds, ["t2"],
+                       "a turn running under a new id with no prompt line is the one closed")
+        moved.apply(codex(.postToolUse, 23, tool: "Bash", turn: "t2"))
+        XCTAssertEqual(moved.sessions["s1"]?.state, .idle)
+    }
+
+    /// A prompt that names a closed turn reopens it: its events count again,
+    /// and its own Stop and Interrupt end it as they end any turn.
+    func testAPromptReopensAClosedTurnId() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.interrupt, 10, turn: "t1"))
+        s.apply(codex(.userPromptSubmit, 12, turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, [])
+        s.apply(codex(.postToolUse, 13, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working, "the reopened turn's tool event counts")
+        s.apply(codex(.stop, 20, turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .done, "and so does its Stop")
+        s.apply(codex(.interrupt, 30, turn: "t1"))
+        s.apply(codex(.userPromptSubmit, 32, turn: "t1"))
+        s.apply(codex(.preToolUse, 33, tool: "Bash", turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working)
+        s.apply(codex(.interrupt, 40, turn: "t1"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .idle, "and its Interrupt after another reopening")
+    }
+
+    /// The quarantine is for lines that name no turn: a tool line of a turn
+    /// no close named counts inside it, prompt or not.
+    func testAToolLineOfAnUnclosedTurnCountsInsideTheQuarantine() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.interrupt, 10, turn: "t1"))
+        s.apply(codex(.postToolUse, 20, tool: "Bash", turn: "t2"))
+        XCTAssertEqual(s.sessions["s1"]?.state, .working)
     }
 
     /// A prompt always opens a turn, whatever id it carries: a new one, or
@@ -290,7 +329,7 @@ final class CodexTests: XCTestCase {
         s.apply(codex(.interrupt, 10, turn: "t1"))
         s.apply(codex(.userPromptSubmit, 12, turn: "t2"))
         XCTAssertEqual(s.sessions["s1"]?.state, .working)
-        XCTAssertEqual(s.sessions["s1"]?.openTurnId, "t2")
+        XCTAssertEqual(s.sessions["s1"]?.lastMainTurnId, "t2")
         XCTAssertEqual(s.sessions["s1"]?.closedTurnIds, ["t1"])
         XCTAssertNil(s.sessions["s1"]?.interruptedAt)
         s.apply(codex(.preToolUse, 13, tool: "Bash", turn: "t2"))
