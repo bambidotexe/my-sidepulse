@@ -157,6 +157,7 @@ removed from the same Hooks rows),
 | `KeepAlive` | `{ SuccessfulExit = false }` — restart after a crash, a signal or a kill; leave a deliberate Quit alone |
 | `ProcessType` | `Interactive` |
 | `LimitLoadToSessionType` | `Aqua` |
+| `AssociatedBundleIdentifiers` | `[io.mysidepulse.app]` — System Settings › General › Login Items files the agent under MySidepulse, with its name and icon; without it Background Task Management groups a legacy agent by its signing team and the row reads "Wooflab" |
 
 It is bootstrapped with `/bin/launchctl bootout gui/<uid>/io.mysidepulse.agent`
 followed by `bootstrap gui/<uid> <plist>`. This one registration is both "open

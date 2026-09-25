@@ -370,6 +370,12 @@ This is every app's trap: `docs/shared/pitfalls.md`, **L5**. `UninstallPlanTests
 
 This is every app's trap: `docs/shared/pitfalls.md`, **I2**.
 
+### A legacy agent is filed under its signing team unless the plist names the app
+
+- **Symptom.** System Settings › General › Login Items lists the agent as "Wooflab" with a blank icon, not as MySidepulse.
+- **Why.** Background Task Management records a plist in `~/Library/LaunchAgents` as a `legacy agent` and gives it a parent when the record is created: the app listed in `AssociatedBundleIdentifiers`, or the signing team when that key is missing (`sfltool dumpbtm`: `Parent Identifier: Wooflab`). Adding the key to an existing record updates the icon at the next write of the plist but **not the parent**, so the row keeps the team's name. Deleting the plist while the job is still loaded does not drop the record either.
+- **Fix.** `LoginService.install()` writes `AssociatedBundleIdentifiers = [io.mysidepulse.app]`, so a new record gets `Parent Identifier: 2.io.mysidepulse.app` and the row reads MySidepulse, with its icon. A record created without the key keeps "Wooflab" until it is created again: `mysidepulse autostart off`, `launchctl bootout gui/$(id -u)/io.mysidepulse.agent`, wait until `sfltool dumpbtm` no longer lists `8.io.mysidepulse.agent` (about 30 s), then open the app, run `mysidepulse autostart on` and let the next launch hand the app over.
+
 ### An app started by `open` is nobody's job
 
 This is every app's fact: `docs/shared/macOS.md` § Launch, and `docs/shared/pitfalls.md` **L3**. Here `doctor` checks supervision, not registration: only `XPC_SERVICE_NAME == io.mysidepulse.agent` proves the running process would be restarted.

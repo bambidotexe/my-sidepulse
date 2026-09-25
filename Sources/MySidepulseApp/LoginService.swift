@@ -87,6 +87,10 @@ enum LoginService {
             "KeepAlive": ["SuccessfulExit": false],
             "ProcessType": "Interactive",
             "LimitLoadToSessionType": "Aqua",
+            // Background Task Management files a legacy agent under the app this
+            // names, so System Settings › Login Items shows MySidepulse with its
+            // icon. Without it the row is grouped by signing team: "Wooflab".
+            "AssociatedBundleIdentifiers": [Bundle.main.bundleIdentifier ?? "io.mysidepulse.app"],
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: job, format: .xml, options: 0)
         try FileManager.default.createDirectory(
