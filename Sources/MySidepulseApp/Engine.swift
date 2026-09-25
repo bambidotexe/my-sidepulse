@@ -153,9 +153,10 @@ final class Engine {
             self.replaying = false
             // Alive is not enough: a pid recycled while the app was down
             // must not keep a dead session's state on the strip. A Codex
-            // TUI session's pid is Codex's managed daemon, alive across
-            // every TUI, which proves nothing about the session: it is
-            // kept, and the launch check below reads its rollout.
+            // session's pid is a shared app-server (the managed daemon for
+            // every TUI, the desktop app's own for its threads), which
+            // proves nothing about the session: it is kept, and the launch
+            // check below reads its rollout.
             self.store.pruneDead { agent, pid in
                 guard kill(pid, 0) == 0 || errno == EPERM else { return false }
                 if agent == .codex, let info = ProcWalk.info(for: pid), ProcWalk.isCodexDaemon(info) {
@@ -454,9 +455,14 @@ final class Engine {
 
     func sync() {
         let now = Date()
-        let alerts = store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
+        var alerts = store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
         jobs.tick(now: now)
-        checkAbandonedTurns(now: now)
+        // A rescued finish is dated to the turn's real end, so its push can
+        // already be due: tick once more, since `nextDeadline` only wakes
+        // for deadlines still ahead.
+        if checkAbandonedTurns(now: now) {
+            alerts += store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
+        }
         if !alerts.isEmpty { deliver(alerts) }
         let glanceActive = glanceUntil.map { $0 > now } ?? false
         var decision = Arbiter.decide(mode: mode, power: power, glanceActive: glanceActive,
@@ -617,8 +623,11 @@ final class Engine {
     /// stamp, unknown status — proves nothing and changes nothing.
     /// A quiet Codex turn is read from its rollout instead
     /// (`checkCodexRollouts`). `quietSeconds` is the quiet gate: 0 for the
-    /// launch check.
-    private func checkAbandonedTurns(now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds) {
+    /// launch check. A verdict is dated to when the source says the turn
+    /// ended (`SessionStore.rescueStamp`). Returns whether any turn ended.
+    @discardableResult
+    private func checkAbandonedTurns(now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds) -> Bool {
+        var ended = false
         for (sessionId, pid) in store.abandonCandidates(at: now, quietSeconds: quietSeconds) {
             guard let record = ClaudeProcessRegistry.read(pid: pid),
                   record.sessionId == sessionId else {
@@ -648,14 +657,16 @@ final class Engine {
                         pid \(pid) reports idle and the transcript ends on a completed \
                         answer — finished
                         """)
-                    store.finishTurn(sessionId: sessionId, now: now)
+                    store.finishTurn(sessionId: sessionId, now: now, endedAt: stamped)
+                    ended = true
                 case .incomplete:
                     Log.app.notice("""
                         turn abandoned: session \(sessionId, privacy: .public) — claude pid \
                         \(pid) reports idle since \(stamped, privacy: .public) with no \
                         completed answer in the transcript — going dark
                         """)
-                    store.abandonTurn(sessionId: sessionId, now: now)
+                    store.abandonTurn(sessionId: sessionId, now: now, endedAt: stamped)
+                    ended = true
                 case .unreadable:
                     if now.timeIntervalSince(session.lastEventAt) >= K.abandonUndecidedDarkSeconds {
                         Log.app.notice("""
@@ -663,7 +674,8 @@ final class Engine {
                             pid \(pid) reports idle, the transcript is unreadable, and the \
                             conservative window has passed — going dark
                             """)
-                        store.abandonTurn(sessionId: sessionId, now: now)
+                        store.abandonTurn(sessionId: sessionId, now: now, endedAt: stamped)
+                        ended = true
                     }
                 }
             } else if record.isBusy {
@@ -700,7 +712,7 @@ final class Engine {
                 """)
             store.dialogAnswered(sessionId: sessionId, now: now)
         }
-        checkCodexRollouts(now: now, quietSeconds: quietSeconds)
+        return checkCodexRollouts(now: now, quietSeconds: quietSeconds) || ended
     }
 
     /// Codex has no registry, but its rollout records every turn's start
@@ -708,7 +720,8 @@ final class Engine {
     /// recorded path when Core trusts it, else the one found by session id),
     /// maps the decision onto the store and logs identifiers, never a line
     /// of the file.
-    private func checkCodexRollouts(now: Date, quietSeconds: TimeInterval) {
+    private func checkCodexRollouts(now: Date, quietSeconds: TimeInterval) -> Bool {
+        var ended = false
         for (sessionId, recorded) in store.codexCandidates(at: now, quietSeconds: quietSeconds) {
             guard let session = store.sessions[sessionId] else { continue }
             let verdict = CodexRollout.path(recorded: recorded, sessionId: sessionId, codexHome: Paths.codexHome)
@@ -716,18 +729,20 @@ final class Engine {
                 .map(CodexRolloutTail.verdict(tail:)) ?? .unreadable
             switch CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt,
                                              lastMainTurnId: session.lastMainTurnId) {
-            case .finished:
+            case .finished(let endedAt):
                 Log.app.notice("""
                     lost Stop recovered: Codex session \(sessionId, privacy: .public) — rollout \
-                    ends on task_complete — finished
+                    ends on task_complete at \(endedAt, privacy: .public) — finished
                     """)
-                store.finishTurn(sessionId: sessionId, now: now)
-            case .aborted:
+                store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+                ended = true
+            case .aborted(let endedAt):
                 Log.app.notice("""
                     turn abandoned: Codex session \(sessionId, privacy: .public) — rollout ends \
-                    on turn_aborted — going dark
+                    on turn_aborted at \(endedAt, privacy: .public) — going dark
                     """)
-                store.abandonTurn(sessionId: sessionId, now: now)
+                store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt)
+                ended = true
             case .busy:
                 if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
                    warnedHooksSilent.insert(sessionId).inserted {
@@ -754,6 +769,7 @@ final class Engine {
                 }
             }
         }
+        return ended
     }
 
     /// Wake re-evaluates everything against the wall clock at once.

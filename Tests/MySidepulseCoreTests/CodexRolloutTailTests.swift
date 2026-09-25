@@ -32,7 +32,7 @@ final class CodexRolloutTailTests: XCTestCase {
         ]))
         XCTAssertEqual(verdict, .aborted(at: stamp("18:52:34.702"), turnId: "t1"))
         XCTAssertEqual(CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: stamp("18:52:30.000"),
-                                                 lastMainTurnId: nil), .aborted)
+                                                 lastMainTurnId: nil), .aborted(endedAt: stamp("18:52:34.702")))
     }
 
     func testATaskCompleteIsAFinish() {
@@ -45,7 +45,7 @@ final class CodexRolloutTailTests: XCTestCase {
         ]))
         XCTAssertEqual(verdict, .complete(at: stamp("18:57:49.947"), turnId: "t1"))
         XCTAssertEqual(CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: stamp("18:57:40.000"),
-                                                 lastMainTurnId: "t1"), .finished)
+                                                 lastMainTurnId: "t1"), .finished(endedAt: stamp("18:57:49.947")))
     }
 
     /// Codex writes a lone `item_completed` for the aborted turn when the
@@ -93,9 +93,10 @@ final class CodexRolloutTailTests: XCTestCase {
         ])), .unreadable, "an end marker with no stamp cannot be compared with anything")
     }
 
-    /// A window that fills `tailBytes` starts mid-file, so its first line is
-    /// a fragment: it is dropped whatever it looks like. The same line at
-    /// the start of a shorter tail is the file's own first line, and counts.
+    /// The reader takes the window and the byte before it. A tail longer
+    /// than the window starts inside a line unless that byte is a newline,
+    /// and a cut line is dropped whatever it looks like. A tail exactly the
+    /// window's size is a whole file, whose first line counts.
     func testACutFirstLineIsSkipped() {
         let first = marker("18:52:34.702", "turn_aborted")
         let filler = line("18:52:40.000", "event_msg", "token_count")
@@ -106,11 +107,16 @@ final class CodexRolloutTailTests: XCTestCase {
         let padLine = { (n: Int) in #"{"type":"response_item","pad":"\#(String(repeating: "a", count: n))"}"# }
         let short = CodexRolloutTail.tailBytes - text.utf8.count - padLine(0).utf8.count - 1
         text += padLine(short) + "\n"
-        let full = Data(text.utf8)
-        XCTAssertEqual(full.count, CodexRolloutTail.tailBytes)
-        XCTAssertEqual(CodexRolloutTail.verdict(tail: full), .unreadable)
-        XCTAssertEqual(CodexRolloutTail.verdict(tail: Data(full.dropLast(10))),
-                       .aborted(at: stamp("18:52:34.702"), turnId: "t1"))
+        let window = Data(text.utf8)
+        XCTAssertEqual(window.count, CodexRolloutTail.tailBytes)
+        XCTAssertEqual(CodexRolloutTail.readBytes, CodexRolloutTail.tailBytes + 1)
+        let aborted = CodexRolloutTail.Verdict.aborted(at: stamp("18:52:34.702"), turnId: "t1")
+        XCTAssertEqual(CodexRolloutTail.verdict(tail: window), aborted,
+                       "a file of exactly 65 536 bytes keeps its first line")
+        XCTAssertEqual(CodexRolloutTail.verdict(tail: Data("\n".utf8) + window), aborted,
+                       "the byte before the window ends a line: the window starts at one")
+        XCTAssertEqual(CodexRolloutTail.verdict(tail: Data("}".utf8) + window), .unreadable,
+                       "the window starts inside a line: that line is dropped")
     }
 
     // MARK: the decision
@@ -118,9 +124,11 @@ final class CodexRolloutTailTests: XCTestCase {
     func testAnEndMarkerAfterOurLastEventEndsTheTurn() {
         let last = stamp("18:52:30.000")
         XCTAssertEqual(CodexRolloutTail.decision(verdict: .complete(at: stamp("18:52:31.000"), turnId: "t9"),
-                                                 lastMainEventAt: last, lastMainTurnId: "t1"), .finished)
+                                                 lastMainEventAt: last, lastMainTurnId: "t1"),
+                       .finished(endedAt: stamp("18:52:31.000")))
         XCTAssertEqual(CodexRolloutTail.decision(verdict: .aborted(at: stamp("18:52:31.000"), turnId: nil),
-                                                 lastMainEventAt: last, lastMainTurnId: nil), .aborted)
+                                                 lastMainEventAt: last, lastMainTurnId: nil),
+                       .aborted(endedAt: stamp("18:52:31.000")))
     }
 
     /// The `Interrupt` hook lost, and the aborted tool's `PostToolUse`
@@ -130,10 +138,10 @@ final class CodexRolloutTailTests: XCTestCase {
         let latePostToolUse = stamp("18:52:47.372")
         XCTAssertEqual(CodexRolloutTail.decision(verdict: .aborted(at: stamp("18:52:34.702"), turnId: "t1"),
                                                  lastMainEventAt: latePostToolUse, lastMainTurnId: "t1"),
-                       .aborted)
+                       .aborted(endedAt: stamp("18:52:34.702")))
         XCTAssertEqual(CodexRolloutTail.decision(verdict: .complete(at: stamp("18:52:34.702"), turnId: "t1"),
                                                  lastMainEventAt: latePostToolUse, lastMainTurnId: "t1"),
-                       .finished)
+                       .finished(endedAt: stamp("18:52:34.702")))
     }
 
     /// A prompt logged before Codex wrote its `task_started`: the last end

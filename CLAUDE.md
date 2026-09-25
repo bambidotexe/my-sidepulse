@@ -27,8 +27,9 @@ device: no firmware here, no USB or serial channel, no read-back — files on a
 volume are the whole protocol. Read-only side channels cover what the hooks
 miss: for Claude Code, its own process registry and the transcript tail; for
 Codex, the session's rollout, whose turn markers say whether a quiet turn
-runs, finished or was aborted (the pid a Codex TUI session records is Codex's
-shared daemon, which proves nothing about the session).
+runs, finished or was aborted (the pid a Codex session records is a shared
+app-server, Codex's daemon or the desktop app's, which proves nothing about
+the session).
 
 Two names, never to be confused: **SidePulse is the hardware** (its volumes are
 named `SidePulseDot…` / `SidePulsePro…`, which is how the LED count is read);

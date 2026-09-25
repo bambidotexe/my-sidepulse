@@ -30,12 +30,15 @@ public enum CodexRolloutTail {
         case unreadable
     }
 
-    /// What the store does with a verdict.
+    /// What the store does with a verdict. An end carries the marker's
+    /// stamp: the verdict is applied as of when the turn ended, so a finish
+    /// found long after it shows `done` for what is left of its time and
+    /// earns no push, as a replayed `Stop` would.
     public enum Decision: Equatable {
         /// The lost `Stop`: `finishTurn`, with the push a `Stop` earns.
-        case finished
+        case finished(endedAt: Date)
         /// The interrupt: `abandonTurn`, dark, no push.
-        case aborted
+        case aborted(endedAt: Date)
         /// The turn runs: `noteBusy`.
         case busy
         case nothing
@@ -49,14 +52,23 @@ public enum CodexRolloutTail {
     /// markers did); its tail then holds no marker and decides nothing,
     /// which costs nothing while the turn runs.
     public static let tailBytes = 65_536
+    /// What the reader takes: the window and the one byte before it, which
+    /// says whether the window starts at a line (that byte is a newline) or
+    /// inside one.
+    public static let readBytes = tailBytes + 1
 
-    /// A tail that fills the whole window starts mid-file, so its first
-    /// line is a fragment and is dropped; a shorter one is the whole file.
-    /// A line that does not parse, the last one cut mid-write included, is
-    /// no line.
+    /// A tail longer than the window holds the byte before it: everything
+    /// up to its first newline is the end of a line the window cut, and is
+    /// dropped. A tail no longer than the window is the whole file, first
+    /// line included. A line that does not parse, the last one cut
+    /// mid-write included, is no line.
     public static func verdict(tail: Data) -> Verdict {
-        var lines = tail.split(separator: 0x0A, omittingEmptySubsequences: true)
-        if tail.count >= tailBytes, !lines.isEmpty { lines.removeFirst() }
+        var body = tail[...]
+        if tail.count > tailBytes {
+            guard let newline = tail.firstIndex(of: 0x0A) else { return .unreadable }
+            body = tail[tail.index(after: newline)...]
+        }
+        let lines = body.split(separator: 0x0A, omittingEmptySubsequences: true)
         var writtenAt: Date?
         for line in lines.reversed() {
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any]
@@ -96,8 +108,8 @@ public enum CodexRolloutTail {
         }
         switch verdict {
         case .running: return .busy
-        case .complete(let at, let turnId): return endsOurTurn(at, turnId) ? .finished : .nothing
-        case .aborted(let at, let turnId): return endsOurTurn(at, turnId) ? .aborted : .nothing
+        case .complete(let at, let turnId): return endsOurTurn(at, turnId) ? .finished(endedAt: at) : .nothing
+        case .aborted(let at, let turnId): return endsOurTurn(at, turnId) ? .aborted(endedAt: at) : .nothing
         case .unreadable: return .nothing
         }
     }

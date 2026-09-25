@@ -17,9 +17,9 @@ final class CodexRolloutTests: XCTestCase {
         let bytes = Data((0..<100 * 1024).map { UInt8(truncatingIfNeeded: $0 % 251) })
         try bytes.write(to: big)
         let tail = try XCTUnwrap(CodexRollout.read(path: big.path))
-        XCTAssertEqual(tail.count, 65_536)
-        XCTAssertEqual(tail.count, CodexRolloutTail.tailBytes)
-        XCTAssertEqual(tail, bytes.suffix(65_536))
+        XCTAssertEqual(tail.count, 65_537, "the 64 KB window and the byte before it")
+        XCTAssertEqual(tail.count, CodexRolloutTail.readBytes)
+        XCTAssertEqual(tail, bytes.suffix(65_537))
 
         let small = dir.appendingPathComponent("small.jsonl")
         try Data("one line\n".utf8).write(to: small)

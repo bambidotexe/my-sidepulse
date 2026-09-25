@@ -1007,6 +1007,54 @@ final class SessionStoreTests: XCTestCase {
                        "a Claude session without a pid has no registry to read")
     }
 
+    /// A rescued finish is dated to the turn's real end: found later than
+    /// the lateness window, it is the `Stop` that was lost, replayed —
+    /// `done` for what is left of its time, and no push.
+    func testARescuedFinishStampedInThePastNeverPushes() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.preToolUse, 1, tool: "shell", turn: "t1"))
+        let ended = at(60)
+        let found = at(60 + K.notifyMaxLatenessSeconds + K.notifyDebounceSeconds + 30)
+        s.finishTurn(sessionId: "c1", now: found, endedAt: ended)
+        XCTAssertEqual(state(s, "c1"), .done)
+        XCTAssertEqual(s.sessions["c1"]?.stateSince, ended)
+        XCTAssertTrue(s.tick(now: found).isEmpty, "a late push is worse than none")
+        XCTAssertEqual(state(s, "c1"), .done)
+        s.tick(now: ended.addingTimeInterval(K.doneVisibleSeconds))
+        XCTAssertEqual(state(s, "c1"), .idle, "green counts from the real end")
+
+        var dark = SessionStore()
+        dark.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        dark.abandonTurn(sessionId: "c1", now: found, endedAt: ended)
+        XCTAssertEqual(dark.sessions["c1"]?.stateSince, ended)
+    }
+
+    /// Found within seconds of its end, the same rescue still pushes. The
+    /// stamp is never before the last main-agent event (an end marker naming
+    /// the turn can be stamped before the aborted tool's late event) and
+    /// never after now.
+    func testAFreshRescuedFinishStillPushes() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        s.apply(codex(.preToolUse, 1, tool: "shell", turn: "t1"))
+        s.finishTurn(sessionId: "c1", now: at(40), endedAt: at(30))
+        XCTAssertEqual(s.sessions["c1"]?.stateSince, at(30))
+        XCTAssertTrue(s.tick(now: at(40)).isEmpty, "the debounce still runs from the end")
+        let pushed = s.tick(now: at(30 + K.notifyDebounceSeconds))
+        XCTAssertEqual(pushed.map(\.kind), [.finished])
+
+        var late = SessionStore()
+        late.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        late.apply(codex(.postToolUse, 13, tool: "shell", turn: "t1"))
+        late.abandonTurn(sessionId: "c1", now: at(40), endedAt: at(10))
+        XCTAssertEqual(late.sessions["c1"]?.stateSince, at(13), "not before the last main-agent event")
+        var ahead = SessionStore()
+        ahead.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        ahead.finishTurn(sessionId: "c1", now: at(40), endedAt: at(90))
+        XCTAssertEqual(ahead.sessions["c1"]?.stateSince, at(40), "not after now")
+    }
+
     /// A rollout that says the turn runs keeps the session alive as of its
     /// last line, never earlier than the session's own last event: a turn
     /// that died without an end marker stops writing, and the 2 h backstop

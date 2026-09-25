@@ -105,8 +105,10 @@ subscriber is gone, so a killed TUI does not stop a running turn. The nearest
 `codex` in a TUI hook's ancestry is therefore the daemon, and every TUI
 session records the daemon's pid; `ProcWalk.isCodexDaemon` recognises it by an
 `app-server` argument (`KERN_PROCARGS2`) or, when the arguments cannot be
-read, by the `/app-server-daemon/` folder. `codex exec` runs in its own
-process, and the ChatGPT app's threads run under the app's own `codex`.
+read, by the `/app-server-daemon/` folder. The ChatGPT app's threads run under
+the app's own `codex`, which is a shared app-server too (it carries an
+`app-server` argument) and lives as long as the app, so its pid proves no
+single thread either. Only `codex exec` runs in a process of its own.
 
 Codex writes one rollout per session,
 `~/.codex/sessions/YYYY/MM/DD/rollout-<stamp>-<session id>.jsonl`, and names

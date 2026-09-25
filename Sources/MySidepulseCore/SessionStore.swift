@@ -569,8 +569,9 @@ public struct SessionStore {
     /// process no longer exists, or is no longer that agent's. Sessions
     /// without a pid are left to staleness. A live pid is not proof of a
     /// live Codex session: a TUI session's pid is Codex's managed daemon,
-    /// alive across every TUI, so such a session is kept and the launch
-    /// check reads its rollout (`codexCandidates` with no quiet gate).
+    /// alive across every TUI, and a desktop thread's is the app's own
+    /// app-server, so such a session is kept and the launch check reads its
+    /// rollout (`codexCandidates` with no quiet gate).
     public mutating func pruneDead(isAlive: (AgentKind, Int32) -> Bool) {
         sessions = sessions.filter { entry in
             entry.value.agentPid.map { isAlive(entry.value.agent, $0) } ?? true
@@ -636,12 +637,27 @@ public struct SessionStore {
     /// staleness backstop. When Claude's own registry says the process is
     /// sitting idle at its prompt and the transcript shows no completed
     /// answer, or a Codex rollout ends on `turn_aborted`, the turn is over
-    /// and delivered nothing: dark, with no alert and no push.
-    public mutating func abandonTurn(sessionId: String, now: Date) {
+    /// and delivered nothing: dark, with no alert and no push. `endedAt` is
+    /// when the source says the turn ended (see `rescueStamp`).
+    public mutating func abandonTurn(sessionId: String, now: Date, endedAt: Date? = nil) {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
-        set(&s, .idle, now)
+        set(&s, .idle, Self.rescueStamp(endedAt, in: s, now: now))
         closeTurn(&s, byInterrupt: false, now: now)
         sessions[sessionId] = s
+    }
+
+    /// When a rescued verdict takes effect: when the turn ended, as the
+    /// registry's stamp or the rollout's end marker says, never before the
+    /// last main-agent event (an end marker naming the turn can be stamped
+    /// before the aborted tool's late event) and never after now. A verdict
+    /// dated to its real end is the `Stop` that was lost, replayed: `done`
+    /// counts `doneVisibleSeconds` from the end, and its push deadline is
+    /// already past the lateness window when the end is older than
+    /// `K.notifyMaxLatenessSeconds`, so a finish found long after it pushes
+    /// nothing.
+    static func rescueStamp(_ endedAt: Date?, in s: Session, now: Date) -> Date {
+        guard let endedAt else { return now }
+        return min(max(endedAt, s.lastMainEventAt), now)
     }
 
     /// The lost Stop, proven at the source: the registry says idle and the
@@ -653,9 +669,15 @@ public struct SessionStore {
     /// Works during full hook outages, where the idle_prompt rescue (a
     /// hook itself) cannot. A Codex rollout that ends on `task_complete` is
     /// the same proof.
-    public mutating func finishTurn(sessionId: String, now: Date) {
+    /// `endedAt` dates the finish as `abandonTurn`'s does; helpers still out
+    /// hold it as of now.
+    public mutating func finishTurn(sessionId: String, now: Date, endedAt: Date? = nil) {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return }
-        applyStopVerdict(&s, now: now)
+        if !s.hasLiveHelpers(at: now) && s.backgroundIds.isEmpty {
+            set(&s, .done, Self.rescueStamp(endedAt, in: s, now: now))
+        } else {
+            applyStopVerdict(&s, now: now)
+        }
         closeTurn(&s, byInterrupt: false, now: now)
         updateHoldRelease(&s, now: now)
         sessions[sessionId] = s

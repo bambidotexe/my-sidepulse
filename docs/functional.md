@@ -262,11 +262,13 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
 - A session whose agent process exits is forgotten at once (kqueue on the
   pid), except that a Codex session hosted by the TUI is hosted by Codex's
   managed daemon, one per user, alive across every TUI: the pid its hooks
-  record is the daemon's, and only the daemon's death forgets its sessions;
-  `codex exec` and the desktop app record their own process. At launch,
-  sessions whose pid is dead or is no longer that agent's process are
-  dropped; a Codex session whose pid is the daemon is kept, and the launch
-  check below decides it.
+  record is the daemon's, and only the daemon's death forgets its sessions.
+  The desktop app's `codex` is a shared app-server too, alive for every
+  thread of the app, so its pid proves no single session either; only
+  `codex exec` records a process of its own. At launch, sessions whose pid
+  is dead or is no longer that agent's process are dropped; a Codex session
+  whose pid is a shared app-server is kept, and the launch check below
+  decides it.
 
 ### When hooks say nothing
 
@@ -279,7 +281,7 @@ Codex has no registry, but every Codex hook names the session's rollout file
 with nothing out is checked against it every `K.abandonRecheckSeconds` and
 once at launch: a `task_complete` stamped after the last main-agent event is
 the lost `Stop` (`done`, with its push); a `turn_aborted` stamped after it is
-the interrupt (`idle`, dark); a `task_started` with no end keeps the session
+the interrupt (`idle`, dark), with no push; a `task_started` with no end keeps the session
 alive; an unreadable rollout decides nothing. An end marker that names the
 turn of the last main-agent event ends that turn however it is stamped: with
 the `Interrupt` hook lost, the aborted tool's late `PostToolUse` arrives after
@@ -287,8 +289,17 @@ the `turn_aborted`. While the rollout says the turn runs, the 2 h backstop
 counts from its last line. A recorded path is read only when its file name
 names the session and it lies under `~/.codex/sessions/`; otherwise, and for
 a session no line gave a path, the newest `rollout-…-<session id>.jsonl`
-there is read. Only the last 64 KB of the file are read, and only its turn
-markers' types, turn ids and stamps.
+there is read. Only the last 64 KB of the file are read, and of them only
+each line's type, the turn markers' turn ids and stamps, and the last line's
+stamp (when Codex last wrote to the session).
+
+Every verdict of these rescues, Claude's and Codex's, takes effect as of when
+the turn ended — the registry's stamp, the rollout's end marker, never before
+the last main-agent event — not when it was found, exactly as a replayed
+`Stop` would: `done` stays lit for what is left of `K.doneVisibleSeconds`
+counted from the end, and a finish found more than
+`K.notifyMaxLatenessSeconds` after its push was due, at launch after the app
+was away for instance, shows `done` without a push.
 
 At launch, after the journal is replayed, the time rules run first (a
 session silent past the 2 h backstop is forgotten), then every working

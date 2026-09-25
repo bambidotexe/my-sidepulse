@@ -146,13 +146,16 @@ public enum ProcWalk {
         return out
     }
 
-    /// Codex's managed daemon, `codex app-server --listen unix:// --managed-daemon`,
-    /// installed under `~/.codex/packages/app-server-daemon/`: one per user,
-    /// started by the first TUI and parented by launchd, alive across every
-    /// TUI. It spawns every TUI session's hooks, so the pid those hooks
-    /// record is its own, and its being alive proves nothing about any one
-    /// session. Told apart by its arguments, or by its install folder when
-    /// they cannot be read.
+    /// A shared Codex app-server, whose being alive proves nothing about any
+    /// one session: Codex's managed daemon, `codex app-server --listen unix://
+    /// --managed-daemon`, installed under `~/.codex/packages/app-server-daemon/`,
+    /// one per user, started by the first TUI and parented by launchd, alive
+    /// across every TUI, which spawns every TUI session's hooks, so the pid
+    /// those hooks record is its own; and the ChatGPT app's `codex`, an
+    /// app-server too, alive for every thread of the app. Only `codex exec`
+    /// runs in a process of the session's own. Told apart by the
+    /// `app-server` argument, or by the daemon's install folder when the
+    /// arguments cannot be read.
     public static func isCodexDaemon(_ info: ProcInfo) -> Bool {
         if let args = arguments(for: info.pid), args.dropFirst().contains("app-server") { return true }
         return info.path?.contains("/app-server-daemon/") ?? false
