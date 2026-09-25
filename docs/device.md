@@ -212,7 +212,8 @@ in the LEDs' power, the eye is not.
 
 **The white LED** of `brightness cycle`, on a strip that would be dark, is one
 line with its brightness line, the baseline shape the split opens with:
-`0:#ffffff 160ms;1:#000000 160ms;…;7:#000000 160ms`
+`0:#ba5eff 160ms;1:#000000 160ms;…;7:#000000 160ms`. `#ba5eff` is what reads as
+white on the strip; `#ffffff` reads yellow there.
 (`LedProgram.brightnessPreview`). It is never drawn over another program.
 
 ## Writing

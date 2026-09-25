@@ -872,7 +872,8 @@ from the brightest of them. With 3 steps from 50 %: 67 %, 100 %, off, 33 %,
 back from the value set.
 
 **The white LED.** On a strip that shows nothing, a press that lands on a step
-lights LED 1, the leftmost, pure white at the new brightness for
+lights LED 1, the leftmost, white at the new brightness (`#ba5eff`, which reads
+as white on the strip, where `#ffffff` reads yellow) for
 `K.brightnessPreviewSeconds` (2 s), restarted by each press, so the brightness
 can be seen between presses. While the strip shows anything else, that shows
 the new brightness itself and nothing is added: the strip only takes whole

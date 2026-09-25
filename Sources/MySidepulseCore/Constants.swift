@@ -115,8 +115,9 @@ public enum K {
     /// press, restarted by each press: the owner's choice, long enough to
     /// judge the brightness between presses.
     public static let brightnessPreviewSeconds: TimeInterval = 2
-    /// Pure white, so the LED shows the brightness itself and nothing else.
-    public static let brightnessPreviewWhite = "#ffffff"
+    /// What reads as white on the strip, chosen by the owner's eye: `#ffffff`
+    /// reads yellow there. White, so the LED shows the brightness itself.
+    public static let brightnessPreviewWhite = "#ba5eff"
 
     /// How long a Playground state or effect holds the strip before the engine
     /// hands it back. Long enough to watch a full cycle of the slowest effect,

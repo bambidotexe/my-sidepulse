@@ -197,7 +197,7 @@ public enum LedProgram {
             .joined(separator: ";")
     }
 
-    /// A dark strip under the brightness preview: LED 0 pure white at the
+    /// A dark strip under the brightness preview: LED 0 white (`K.brightnessPreviewWhite`) at the
     /// new brightness, every other LED assigned black, the baseline shape the
     /// split opens with.
     public static func brightnessPreview(ledCount: Int, brightness: Int) -> String {
