@@ -68,13 +68,11 @@ public struct Session: Equatable {
     /// When the last `Interrupt` arrived, until a prompt opens a turn: the
     /// start of the quarantine for tool events that name no turn.
     public var interruptedAt: Date?
-    /// The state `PreCompact` found, restored by `PostCompact`: a
-    /// compaction is work while it runs, and afterwards the session goes
-    /// back to what it was, not to `working`.
-    public var stateBeforeCompaction: SessionState?
-    /// The alert bookkeeping `PreCompact` found, restored beside a `.done`
-    /// `stateBeforeCompaction` so `PostCompact` does not re-arm a push for a
-    /// standing finish.
+    /// The state `PreCompact` found, and, when it is an alert (`.done` or
+    /// any `.waiting`), the bookkeeping that goes with it: `PostCompact`
+    /// restores both, so a compaction is work while it runs and afterwards
+    /// the session goes back to what it was, not to `working`, and a
+    /// standing alert does not re-arm its push or its settle.
     var compactionSnapshot: CompactionSnapshot?
     public static let closedTurnsKept = 8
 
@@ -103,14 +101,19 @@ public struct Session: Equatable {
     }
 }
 
-/// The alert fields `PostCompact` copies back verbatim when the state it is
-/// restoring is `.done`, so a standing finish does not re-arm its debounce
-/// through `set`.
+/// The state `PreCompact` found and, for an alert, every field `PostCompact`
+/// copies back verbatim so restoring it does not read as a fresh one: a
+/// fresh `stateSince`, a cleared `acknowledged`, a re-armed `notifyAt`, a
+/// forgotten `waitingFromAgent`, or a settle transition `set` would
+/// otherwise start on its own.
 struct CompactionSnapshot: Equatable {
     var state: SessionState
     var stateSince: Date
     var acknowledged: Bool
     var notifyAt: Date?
+    var waitingFromAgent: Bool
+    var settlingFrom: SessionState?
+    var settlingUntil: Date?
 }
 
 /// A session acknowledgement worth persisting: keyed by the state-entry time
@@ -233,33 +236,41 @@ public struct SessionStore {
             clearPending(&s)
             set(&s, .working, now)
         case .preCompact:
-            // Work while it runs, remembering the state it found so
-            // `PostCompact` can go back to it rather than to `working`.
-            s.stateBeforeCompaction = s.state
-            s.compactionSnapshot = CompactionSnapshot(
-                state: s.state, stateSince: s.stateSince,
-                acknowledged: s.acknowledged, notifyAt: s.notifyAt)
+            // Work while it runs, remembering the state it found (and, if
+            // one is already held from an earlier PreCompact with no
+            // PostCompact between, keeping that one: the state now is
+            // already `working`, not what a compaction should restore).
+            if s.compactionSnapshot == nil {
+                s.compactionSnapshot = CompactionSnapshot(
+                    state: s.state, stateSince: s.stateSince,
+                    acknowledged: s.acknowledged, notifyAt: s.notifyAt,
+                    waitingFromAgent: s.waitingFromAgent,
+                    settlingFrom: s.settlingFrom, settlingUntil: s.settlingUntil)
+            }
             clearPending(&s)
             set(&s, .working, now)
         case .postCompact:
             // A compaction inside a turn leaves it working (no state was
-            // found before it — none ran); one at the prompt leaves it idle
-            // or finished. Restoring `.done` through `set` would re-arm its
-            // push as a fresh alert and its settle as a fresh transition, so
-            // the original stateSince, acknowledged and notifyAt are copied
-            // back over it and no settle is left standing: a standing green
-            // must not blink or push again just because a compaction ran.
-            let restored = s.stateBeforeCompaction ?? .working
+            // found before it — none ran); one at the prompt leaves it idle,
+            // finished or waiting. Restoring an alert (`.done`, any
+            // `.waiting`) through `set` would read as a fresh one — a new
+            // stateSince, a cleared acknowledged, a re-armed notifyAt, a
+            // forgotten waitingFromAgent, a settle transition of its own —
+            // so every one of those fields is copied back over it instead:
+            // a standing alert must not push or blink again just because a
+            // compaction ran. `.idle` and `.working` need only the state.
+            let snap = s.compactionSnapshot
+            let restored = snap?.state ?? .working
             clearPending(&s)
             set(&s, restored, now)
-            if restored == .done, let snap = s.compactionSnapshot {
+            if let snap, Self.alertKind(for: restored) != nil {
                 s.stateSince = snap.stateSince
                 s.acknowledged = snap.acknowledged
                 s.notifyAt = snap.notifyAt
-                s.settlingFrom = nil
-                s.settlingUntil = nil
+                s.waitingFromAgent = snap.waitingFromAgent
+                s.settlingFrom = snap.settlingFrom
+                s.settlingUntil = snap.settlingUntil
             }
-            s.stateBeforeCompaction = nil
             s.compactionSnapshot = nil
         case .preToolUse:
             clearPending(&s)

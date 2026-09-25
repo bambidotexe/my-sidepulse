@@ -203,7 +203,7 @@ lines.
 | `PreToolUse` | `AskUserQuestion` or Codex's `request_user_input` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
 | `PostToolUse`, `PostToolUseFailure`, `PermissionDenied` | `working` |
 | `PreCompact` | `working`, remembering the state it found |
-| `PostCompact` | the state `PreCompact` found, or `working` when it found none: a compaction inside a turn leaves it working, one at the prompt leaves it idle or finished, its debounce and finish time untouched |
+| `PostCompact` | the state `PreCompact` found, or `working` when it found none: a compaction inside a turn leaves it working, one at the prompt leaves it idle, finished or waiting, a finish or a wait with its alert — since when, seen or not, its push, whether a helper raised it, its settle — untouched |
 | `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
 | `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan` |
 | `Notification` `idle_prompt`, `agent_needs_input` | Never an alert. See "lost Stop" below. |

@@ -175,9 +175,10 @@ final class SessionStoreTests: XCTestCase {
     }
 
     /// A compaction is work while it runs, and afterwards the session goes
-    /// back to the state it found — a finished turn's green included,
-    /// without pushing "finished" again (the same `stateSince`,
-    /// `acknowledged` and `notifyAt`, not a fresh alert).
+    /// back to the state it found — a finished turn's green, or a standing
+    /// wait, included — without pushing or blinking again (the same
+    /// `stateSince`, `acknowledged`, `notifyAt`, `waitingFromAgent`, and no
+    /// settle of the compaction's own making).
     func testCompactionKeepsTheStateItFound() {
         // idle -> working during -> idle after: a compaction at the prompt.
         var idleCase = SessionStore()
@@ -190,15 +191,26 @@ final class SessionStoreTests: XCTestCase {
         idleCase.apply(ev(.postCompact, 3))
         XCTAssertEqual(state(idleCase), .idle)
 
-        // done -> working during -> done after, with the debounce untouched.
+        // done -> working during -> done after, with the debounce and the
+        // settle untouched. A tick past the settle window before PreCompact
+        // makes `before` a standing done, exactly what a compaction that
+        // finds it already settled should come back to.
         var doneCase = SessionStore()
         doneCase.apply(ev(.userPromptSubmit, 0))
         doneCase.apply(ev(.stop, 1))
+        _ = doneCase.tick(now: Date(timeIntervalSince1970: 1_787_652_000 + 3))
         let before = doneCase.sessions["s1"]!
         XCTAssertEqual(before.state, .done)
-        doneCase.apply(ev(.preCompact, 2))
+        XCTAssertNil(before.settlingFrom, "settled before the compaction starts")
+        doneCase.apply(ev(.preCompact, 4))
         XCTAssertEqual(state(doneCase), .working)
-        doneCase.apply(ev(.postCompact, 3))
+        XCTAssertEqual(doneCase.sessions["s1"]?.compactionSnapshot?.state, .done)
+        // A second PreCompact with no PostCompact between must not overwrite
+        // the held snapshot with the already-working state it finds now.
+        doneCase.apply(ev(.preCompact, 6))
+        XCTAssertEqual(doneCase.sessions["s1"]?.compactionSnapshot?.state, .done,
+                        "a repeated PreCompact keeps the first snapshot")
+        doneCase.apply(ev(.postCompact, 7))
         let after = doneCase.sessions["s1"]!
         XCTAssertEqual(after.state, .done)
         XCTAssertEqual(after.stateSince, before.stateSince, "no fresh finish time")
@@ -206,6 +218,29 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(after.notifyAt, before.notifyAt, "no re-armed push")
         XCTAssertNil(after.settlingFrom, "no re-armed settle")
         XCTAssertNil(after.settlingUntil, "no re-armed settle")
+        XCTAssertNil(after.compactionSnapshot)
+
+        // waiting(permission), raised by a helper -> working during -> the
+        // same wait after, with waitingFromAgent restored too.
+        var waitCase = SessionStore()
+        waitCase.apply(ev(.userPromptSubmit, 0))
+        waitCase.apply(ev(.permissionRequest, 1, agent: "a1"))
+        _ = waitCase.tick(now: Date(timeIntervalSince1970: 1_787_652_000 + 3))
+        let waitBefore = waitCase.sessions["s1"]!
+        XCTAssertEqual(waitBefore.state, .waiting(.permission))
+        XCTAssertTrue(waitBefore.waitingFromAgent)
+        XCTAssertNil(waitBefore.settlingFrom, "settled before the compaction starts")
+        waitCase.apply(ev(.preCompact, 4))
+        XCTAssertEqual(state(waitCase), .working)
+        waitCase.apply(ev(.postCompact, 5))
+        let waitAfter = waitCase.sessions["s1"]!
+        XCTAssertEqual(waitAfter.state, .waiting(.permission))
+        XCTAssertEqual(waitAfter.stateSince, waitBefore.stateSince, "no fresh wait time")
+        XCTAssertEqual(waitAfter.acknowledged, waitBefore.acknowledged)
+        XCTAssertEqual(waitAfter.notifyAt, waitBefore.notifyAt, "no re-armed push")
+        XCTAssertTrue(waitAfter.waitingFromAgent, "still a helper's wait")
+        XCTAssertNil(waitAfter.settlingFrom, "no re-armed settle")
+        XCTAssertNil(waitAfter.settlingUntil, "no re-armed settle")
 
         // working -> working: a compaction inside a turn.
         var workingCase = SessionStore()
