@@ -353,11 +353,12 @@ public enum K {
     /// A job with a pid is asked of its process instead (`jobProbeSeconds`).
     /// Separate from `staleSeconds` only so the two can be retuned apart.
     public static let jobStaleSeconds: TimeInterval = staleSeconds
-    /// How often a running job's shell is asked whether it still runs a
-    /// command (`ShellJobLiveness`): the cadence of the session rechecks
-    /// (`abandonRecheckSeconds`). The ask is one sysctl and one child
-    /// listing per job, a few microseconds, so a lost `job end` holds the
-    /// strip at most this long past the settle.
+    /// How often, at least, a running job's shell is asked whether it still
+    /// runs a command (`ShellJobLiveness`): the cadence of the session
+    /// rechecks (`abandonRecheckSeconds`). The probe also runs at every
+    /// `sync()`; each is one `sysctl`, one `proc_pidpath`, one child listing
+    /// and one `sysctl` per child, per job, a few microseconds, so a lost
+    /// `job end` holds the strip at most this long past the settle.
     public static let jobProbeSeconds: TimeInterval = 15
     /// A shell seen at its prompt with no child started since the job began
     /// must be seen so again this much later before its job is cleared. The

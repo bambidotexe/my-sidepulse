@@ -90,7 +90,8 @@ final class ShellJobLivenessTests: XCTestCase {
         let since = at(100)
         let shell = Reading(isShell: true, pgid: 7, tpgid: 7, startedAt: at(10))
         // Powerlevel10k's gitstatusd lives beside every interactive shell from
-        // its start, in a process group of its own; an earlier `&` job likewise.
+        // its start, in the shell's own process group; an earlier `&` job
+        // likewise predates the job.
         let older = ShellJobLiveness.probe(shell, children: [at(11), at(50)], jobSince: since)
         XCTAssertFalse(older.hasChildren)
         var seen: Date?

@@ -178,7 +178,7 @@ are `docs/functional.md`.
 | what a hook event means; a state or a transition | `Core/SessionStore.swift` (`apply`, `set`, `applyStopVerdict`), `Core/Event.swift` — pinned by `SessionStoreTests`, `GoldenReplayTests`, `CodexTests` | §4 |
 | an agent: which there are, its colour, how its sessions are told apart, what its events mean | `Core/Agent.swift` (`AgentKind`, `Agents`), `Core/LedPalette.swift` (`rollColors`), `SessionStore.apply` (`Interrupt`, `request_user_input`), `Platform/ProcWalk.swift` (`agent(of:)`, `classify(_:agent:)`), `Platform/HookCommand.swift`, `CLI/CLIMain.swift` (`hook --agent`) — `CodexTests`, `CodexPlatformTests` | §1, §3, §4, `pitfalls.md` *Detecting Codex* |
 | holds, expiry, the settle, any session timer | `SessionStore.tick` and `nextDeadline` (every timer needs both), `Core/Constants.swift` — `TimerTests`, `SettleTests` | §4, §3 *Settle*, §13 |
-| the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`, `checkCodexTurns`, `daemonAnswered`, the launch check in `start` / `finishLaunch`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`, `CodexRollout.swift`, `CodexDaemonClient.swift` (`CodexDaemonClientTests`, a fake daemon), `ProcWalk.isCodexDaemon` / `isManagedCodexDaemon`; `Core/CodexRolloutTail.swift` (the rollout's verdict and decision, which paths are trusted — `CodexRolloutTailTests`), `Core/WebSocketFrame.swift` + `Core/CodexThreadRecord.swift` (the daemon's framing, messages and answers — `WebSocketFrameTests`, `CodexThreadRecordTests`); `SessionStore.abandonCandidates` / `codexCandidates` / `finishTurn` / `abandonTurn` / `noteBusy` / `dialogAnswered` | §4 *When hooks say nothing*, *Expiry*, `pitfalls.md` |
+| the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`, `checkCodexTurns`, `daemonAnswered`, the launch check in `start` / `finishLaunch`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`, `CodexRollout.swift`, `CodexDaemonClient.swift` (`CodexDaemonClientTests`, a fake daemon), `ProcWalk.isCodexDaemon` / `isManagedCodexDaemon`; `Core/CodexRolloutTail.swift` (the rollout's verdict and decision, which paths are trusted — `CodexRolloutTailTests`), `Core/WebSocketFrame.swift` + `Core/CodexThreadRecord.swift` (the daemon's framing, messages and answers — `WebSocketFrameTests`, `CodexThreadRecordTests`); `SessionStore.abandonCandidates` / `codexCandidates` / `finishTurn` / `abandonTurn` / `rescueStamp` / `applyVerdict` / `noteBusy` / `dialogAnswered`; the journaled verdicts: `TurnVerdict` (`Core/Event.swift`), `Engine.persist(_:sessionId:at:)` writing the `MySidepulseVerdict` line | §4 *When hooks say nothing*, *Expiry*, `pitfalls.md` |
 | which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `command(cliPath:agent:)`), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests`, `CodexPlatformTests` | §4 *Source*, §10, §11 |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
 | the precedence ladder, the split display, which agents a state names | `Core/Arbiter.swift` — `ArbiterTests`, `CodexTests` | §3 |
@@ -190,7 +190,7 @@ are `docs/functional.md`.
 | **what** a push says | `Core/StringsAlerts.swift` for the words, `Core/Alert.swift` (`AlertCopy`: the title is the agent's name, the body the kind's) — `NotifyTests` pins every string in both languages | §6, §15 |
 | how a push is sent, which sessions are silent, the click link | `Platform/Notifier.swift` (`Notifier`, `ClaudeSessions`), `Engine.deliver` | §6 |
 | notification settings | `Engine.applyNotifySettings`, `App/AppConfig.swift`, `CLI/RunCommand.swift` (`NotifyCommand`), `App/SettingsNotificationsPage.swift` | §6, §10, §11 |
-| terminal jobs, the block in `~/.zshrc` | `Core/JobStore.swift`, `Core/ShellInit.swift` (the snippet, and the block's text rules), `Platform/HookInstaller.swift`, `CLI/RunCommand.swift` — `JobTests`, `ShellInitTests` (runs a real zsh) | §7 |
+| terminal jobs, the block in `~/.zshrc` | `Core/JobStore.swift`, `Core/ShellInit.swift` (the snippet, and the block's text rules), `Core/ShellJobLiveness.swift` (`probe`, `judge`: whether a job's shell still runs a command), `Engine.probeJobs`, `Platform/ProcWalk.swift` (`childStartTimes`, `ProcInfo.shellReading`), `Platform/HookInstaller.swift`, `CLI/RunCommand.swift` — `JobTests`, `ShellInitTests` (runs a real zsh), `ShellJobLivenessTests` | §7 |
 | battery | `Core/BatteryRules.swift`, `App/PowerMonitor.swift`, `Engine.powerChanged` | §8 |
 | finding the strip, the eject guard | `App/DeviceMonitor.swift`, `Platform/LedDevice.swift`, `Core/EjectGuard.swift` | §2, `macOS.md` |
 | writing to the strip, keepalive | `Platform/LedWriter.swift`, `Keepalive.swift` | `device.md`, §2 |
@@ -227,8 +227,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (407, one opt-in skip) runs in about eighteen seconds;
-  `MySidepulsePlatformTests` (142) takes about 26 s, because it spawns real
+  `MySidepulseCoreTests` (493, one opt-in skip) runs in about twenty-two seconds;
+  `MySidepulsePlatformTests` (163) takes about 30 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -308,7 +308,8 @@ Full version in `docs/architecture.md`.
   (the journal line and its 4096-byte cap) · `CodexRolloutTail` (what a
   Codex rollout's tail says about a quiet turn, and which rollout paths are
   trusted) · `WebSocketFrame` + `CodexThreadRecord` (the framing, the
-  four messages and the answers of Codex's daemon) · `Arbiter` (mode, power, sessions,
+  four messages and the answers of Codex's daemon) · `TurnVerdict` (the outcome of a
+  rescue, journaled so a relaunch applies it again) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
   program text) · `LedPalette` (the nine colours the owner can change, which
   saved colour is trusted, and the colours a roll cycles through) ·
@@ -320,6 +321,7 @@ Full version in `docs/architecture.md`.
   · `Alert` (`AlertCopy`, the push text) · `Presence` · `JobStore` ·
   `BatteryRules` · `EjectGuard` · `HookConfig` (edits to `settings.json`) ·
   `ShellInit` (the zsh snippet, and the text of its block in `~/.zshrc`) ·
+  `ShellJobLiveness` (whether a running job's shell still runs a command) ·
   `UpdateCheck` (release versions, and what GitHub's reply means) +
   `UpdateSchedule` + `UpdatePanel` + `UpdateSession` + `StagedUpdateCheck` +
   `UpdateInstallScript` (the rest of the update's rules, and the text of the
@@ -465,7 +467,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (407 + 142, one opt-in skip) at
+`swift build` is clean and `swift test` is green (493 + 163, one opt-in skip) at
 this commit. The live journal replays.
 
 Checked on the strip by the owner: the brightness key over the roll carries the

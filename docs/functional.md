@@ -311,12 +311,14 @@ runs, the rollout tells how the turn ended: a `task_complete` that ends it is
 the lost `Stop` (`done`, with its push); a `turn_aborted`, or no end of this
 turn at all, is dark, with no push. Any other status decides nothing, and the
 rollout decides that session for the next `K.abandonRecheckSeconds`. Every
-question has 1 s to be answered, and an answer that arrives after a hook
-moved the session is dropped.
+question has 1 s to be answered, and an answer that arrives after a
+main-agent hook moved the session is dropped.
 
 Every verdict of these rescues, Claude's and Codex's, takes effect as of when
-the turn ended — the registry's stamp, the rollout's end marker, never before
-the last main-agent event — not when it was found, exactly as a replayed
+the turn ended — the registry's stamp, the rollout's end marker, or, when the
+daemon says nothing runs and the rollout shows no end of the turn, the
+`updatedAt` of the daemon's thread record; never before the last main-agent
+event — not when it was found, exactly as a replayed
 `Stop` would: `done` stays lit for what is left of `K.doneVisibleSeconds`
 counted from the end, and a finish found more than
 `K.notifyMaxLatenessSeconds` after its push was due, at launch after the app
@@ -476,7 +478,11 @@ The only other tool wired in is the terminal itself.
   older than the job (Powerlevel10k's `gitstatusd`, an earlier `&` job) says
   nothing about it. A shell replaced by its program keeps the job until that
   program exits. Such a clear leaves no outcome and is logged `job <id> ended
-  without a hook (<reason>)`.
+  without a hook (<reason>)`. A command that blocks the shell without a
+  child (`read`, `wait`, a long `for` loop of builtins) looks the same as a
+  shell at its prompt, so its job is cleared while it runs: 5 s after the
+  first probe that sees it, which comes up to 15 s after it began, so 5 to
+  20 s in all.
 - Settings › System › Terminal writes that line into `~/.zshrc`:
   `Set Up Terminal Hook` appends a block that opens and closes with
   `# ---------- MySidepulse ----------`, holding a few comment lines and
