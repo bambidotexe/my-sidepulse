@@ -8,7 +8,9 @@ public enum JobState: Equatable { case running, succeeded, failed }
 public struct Job: Equatable {
     public var id: String
     /// Watched for death: while this process is gone and the job is still
-    /// running, the job is cleared. For `mysidepulse run` this is the wrapper.
+    /// running, the job is cleared. For `mysidepulse run` this is the wrapper;
+    /// for the shell hooks, the shell, which is also asked whether it still
+    /// runs a command (`probe`).
     public var ownerPid: Int32?
     /// The job slot — one job per terminal. Beginning a job evicts whatever
     /// else holds the same slot. For `mysidepulse run` this is the shell that
@@ -26,6 +28,9 @@ public struct Job: Equatable {
     /// As for sessions: an outcome proves it will stick before it shows.
     public var settlingFrom: JobState?
     public var settlingUntil: Date?
+    /// When a probe first found the shell at its prompt with no child started
+    /// since the job began (`ShellJobLiveness.judge`).
+    public var promptSeenAt: Date?
 
     public var presentedState: JobState { settlingFrom ?? state }
 }
@@ -83,6 +88,24 @@ public struct JobStore {
         jobs = jobs.filter { $0.value.ownerPid != pid || $0.value.state != .running }
     }
 
+    /// What the job's shell answered (`ShellJobLiveness`), for a running
+    /// job; the reason when that clears it, else nil. A cleared job leaves no
+    /// outcome, like a cancellation: its end was never seen.
+    public mutating func probe(id: String, _ probe: ShellJobLiveness.Probe, now: Date) -> String? {
+        guard var job = jobs[id], job.state == .running else { return nil }
+        switch ShellJobLiveness.judge(probe, promptSeenAt: &job.promptSeenAt, now: now) {
+        case .keep:
+            jobs[id] = job
+            return nil
+        case .drop(let reason):
+            jobs.removeValue(forKey: id)
+            return reason
+        }
+    }
+
+    /// A running job with a pid is asked of that process and never timed
+    /// out; one without is dropped after `K.jobStaleSeconds`. A finished job
+    /// stays `K.jobVisibleSeconds`.
     public mutating func tick(now: Date) {
         for (id, original) in jobs {
             var job = original
@@ -91,8 +114,7 @@ public struct JobStore {
                 job.settlingFrom = nil
                 job.settlingUntil = nil
             }
-            let ttl = job.state == .running ? K.jobStaleSeconds : K.jobVisibleSeconds
-            if now.timeIntervalSince(job.stateSince) >= ttl {
+            if let ttl = Self.lifetime(of: job), now.timeIntervalSince(job.stateSince) >= ttl {
                 jobs.removeValue(forKey: id)
                 continue
             }
@@ -100,13 +122,26 @@ public struct JobStore {
         }
     }
 
+    /// How long a job lives in its state, nil for a running job with a pid.
+    static func lifetime(of job: Job) -> TimeInterval? {
+        guard job.state == .running else { return K.jobVisibleSeconds }
+        return job.ownerPid == nil ? K.jobStaleSeconds : nil
+    }
+
+    /// The next show-after, settle or expiry instant; for a running job with
+    /// a pid, the next probe (`K.jobProbeSeconds` from now) and the end of a
+    /// prompt sighting's settle.
     public func nextDeadline(after now: Date) -> Date? {
         var deadlines: [Date] = []
         for job in jobs.values {
             if let showAfter = job.showAfter { deadlines.append(showAfter) }
             if let settlingUntil = job.settlingUntil { deadlines.append(settlingUntil) }
-            let ttl = job.state == .running ? K.jobStaleSeconds : K.jobVisibleSeconds
-            deadlines.append(job.stateSince.addingTimeInterval(ttl))
+            if let ttl = Self.lifetime(of: job) {
+                deadlines.append(job.stateSince.addingTimeInterval(ttl))
+            } else {
+                deadlines.append(now.addingTimeInterval(K.jobProbeSeconds))
+                if let seen = job.promptSeenAt { deadlines.append(seen.addingTimeInterval(K.jobPromptSettleSeconds)) }
+            }
         }
         return deadlines.filter { $0 > now }.min()
     }

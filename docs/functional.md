@@ -445,7 +445,33 @@ The only other tool wired in is the terminal itself.
   commands stay dark. A command line is skipped when the head of *any* of its
   segments (split on `&& || | |& ; & ( ) { }`, quotes and directories stripped)
   is in `MYSIDEPULSE_SKIP` — by default editors, pagers, `ssh`, `tmux`, `top`,
-  `watch`, `claude`, `codex`, `grok`, `mysidepulse` and the like.
+  `watch`, `tig`, `lazygit`, `su`, `login`, `claude`, `codex`, `grok`,
+  `mysidepulse` and the like. Leading `VAR=value` words and the prefixes
+  `sudo`, `time`, `command`, `builtin`, `exec`, `nice`, `nohup`, `env`,
+  `noglob` and `caffeinate`, each with the `-` flags after it (and the
+  argument of `sudo -u`, `-g`, `-h`, `-p`, `-C`, `-D`, `-T`, `-U`, `-r`, `-t`,
+  `nice -n`, `env -u`, `-C`, `-S`), are skipped before a segment's head is
+  read: `sudo -u root vim` is `vim`, `sudo make` shows as `make`. A line of
+  prefixes alone (`sudo -i`, `sudo -s`) opens an interactive shell and begins
+  no job, nor does a line with no program (`FOO=1`). The shells in the list
+  (`zsh`, `bash`, `sh`, `fish`, `dash`, `ksh`) are skipped only when they run
+  interactively, every word after the shell's name being a flag (`zsh`,
+  `bash -l`, `zsh -f -i`); a shell that runs a script (`bash build.sh`,
+  `sh -c '…'`, `zsh script.zsh`) is a job like any other.
+- A shell that re-reads the snippet (`source ~/.zshrc`), or is replaced by
+  `exec` (`exec zsh`), ends the job it was running: an interactive shell
+  loading the snippet ends its own slot's job as a cancellation (`job end
+  --id zsh-<pid> --exit 130`), so an orphan never shows as an outcome.
+- While a job runs, its shell is asked whether it still runs a command, from
+  the job's begin on and at least every `K.jobProbeSeconds` (15 s). A shell
+  gone clears the job at once (kqueue), and so does a shell pid now held by a
+  process started after the job began. A shell back at its prompt with no
+  child it started since the job began clears it once seen so again
+  `K.jobPromptSettleSeconds` (5 s) later, the end having been lost; a child
+  older than the job (Powerlevel10k's `gitstatusd`, an earlier `&` job) says
+  nothing about it. A shell replaced by its program keeps the job until that
+  program exits. Such a clear leaves no outcome and is logged `job <id> ended
+  without a hook (<reason>)`.
 - Settings › System › Terminal writes that line into `~/.zshrc`:
   `Set Up Terminal Hook` appends a block that opens and closes with
   `# ---------- MySidepulse ----------`, holding a few comment lines and
@@ -463,7 +489,8 @@ One job per shell: a new one replaces the previous. Exit 0 → succeeded, green;
 anything else → failed, amber; exit 130 or 131 (Ctrl-C, Ctrl-\) → removed
 silently. A job that ends before it became visible is never shown. Outcomes
 stay for `K.jobVisibleSeconds` (20 min) or until acknowledged; a running job
-whose owner process dies is removed; a job that never reports back expires
+whose owner process dies is removed; a running job with an owner process is
+never timed out, however long it runs; a running job without one expires
 after `K.jobStaleSeconds` (2 h). If the app is not running, the command runs
 all the same.
 
@@ -1166,7 +1193,9 @@ agent's colour while it works.
 | `updateStallNoticeSeconds` | 20 s | an app still running that long after Install and Relaunch stops the helper and says it did not quit |
 | `updateQuitWaitSeconds` / `updateLaunchWaitSeconds` / `updateSettleSeconds` | 30 s / 15 s / 2 s | the install helper: its own limit on the quit, for the new version to show, and when it looks once more |
 | `updateResultShelfLifeSeconds` | 10 min | how long an install's outcome is news at a launch |
-| `jobVisibleSeconds` / `jobStaleSeconds` | 20 min / 2 h | job outcome lit / orphaned job |
+| `jobVisibleSeconds` / `jobStaleSeconds` | 20 min / 2 h | job outcome lit / running job with no owner pid |
+| `jobProbeSeconds` | 15 s | a running job's shell asked whether it still runs a command |
+| `jobPromptSettleSeconds` | 5 s | a shell seen at its prompt with no child of the job, seen so again this much later, clears the job |
 | `jobShowAfterDefaultSeconds` / `shellShowAfterDefaultSeconds` | 0 s / 5 s | delay before a job shows (`run` / zsh hooks) |
 | `glanceSeconds` | 7 s | battery glance |
 | `batteryCriticalPercent` / `batteryMidPercent` | 15 % / 50 % | battery bands |

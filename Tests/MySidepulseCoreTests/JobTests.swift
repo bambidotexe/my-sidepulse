@@ -165,6 +165,56 @@ final class JobTests: XCTestCase {
         XCTAssertTrue(s.jobs.isEmpty, "no pid to watch, so time is the only backstop")
     }
 
+    /// A job with a shell pid is asked of its shell, never timed out: a
+    /// three-hour build keeps its colour for as long as it runs.
+    func testAJobWithAShellIsNeverDroppedByStaleness() {
+        var s = store("zsh-900", pid: 900)
+        s.begin(id: "loose", pid: nil, slotPid: nil, label: nil, hostBundleId: nil,
+                showAfterSeconds: 0, now: at(0))
+        s.tick(now: at(K.jobStaleSeconds + 3600))
+        XCTAssertEqual(Set(s.jobs.keys), ["zsh-900"], "only the job without a pid is timed out")
+        XCTAssertEqual(s.displayable.map(\.state), [.running])
+    }
+
+    /// A `job end` that never arrived: the shell sits at its prompt with no
+    /// child of the job, seen so twice `K.jobPromptSettleSeconds` apart.
+    func testAProbeThatFindsTheShellAtItsPromptClearsTheJob() {
+        var s = store("zsh-900", pid: 900, showAfter: 5)
+        let prompt = ShellJobLiveness.Probe(alive: true, isShell: true, atPrompt: true, hasChildren: false)
+        XCTAssertNil(s.probe(id: "zsh-900", prompt, now: at(1)), "probed from the begin, shown or not")
+        XCTAssertEqual(s.jobs["zsh-900"]?.promptSeenAt, at(1))
+        XCTAssertEqual(s.nextDeadline(after: at(5)), at(1 + K.jobPromptSettleSeconds),
+                       "asked again once the settle has run, not at the next probe")
+        XCTAssertNil(s.probe(id: "zsh-900", prompt, now: at(3)))
+        XCTAssertEqual(s.probe(id: "zsh-900", prompt, now: at(1 + K.jobPromptSettleSeconds)), "shell at its prompt")
+        XCTAssertTrue(s.jobs.isEmpty, "cleared, with no outcome")
+        XCTAssertNil(s.probe(id: "zsh-900", prompt, now: at(8)), "an unknown job is not dropped twice")
+
+        var gone = store("zsh-901", pid: 901)
+        let dead = ShellJobLiveness.Probe(alive: false, isShell: false, atPrompt: false, hasChildren: false)
+        XCTAssertEqual(gone.probe(id: "zsh-901", dead, now: at(1)), "shell gone")
+        XCTAssertTrue(gone.jobs.isEmpty)
+    }
+
+    /// An outcome is not a command in flight: its shell at the prompt is
+    /// exactly what a finished job looks like.
+    func testAProbeLeavesAFinishedJobAlone() {
+        var s = store("zsh-900", pid: 900)
+        s.end(id: "zsh-900", exitCode: 0, now: at(5))
+        let prompt = ShellJobLiveness.Probe(alive: true, isShell: true, atPrompt: true, hasChildren: false)
+        XCTAssertNil(s.probe(id: "zsh-900", prompt, now: at(6)))
+        XCTAssertNil(s.probe(id: "zsh-900", prompt, now: at(20)))
+        XCTAssertEqual(s.jobs["zsh-900"]?.state, .succeeded)
+    }
+
+    func testARunningJobWithAPidIsProbedEveryProbeInterval() {
+        let s = store(pid: 900)
+        XCTAssertEqual(s.nextDeadline(after: at(30)), at(30 + K.jobProbeSeconds))
+        let loose = store(pid: nil)
+        XCTAssertEqual(loose.nextDeadline(after: at(30)), at(K.jobStaleSeconds),
+                       "a job without a pid is only timed out")
+    }
+
     // MARK: acknowledgement
 
     func testFocusingTheOriginatingTerminalAcknowledges() {

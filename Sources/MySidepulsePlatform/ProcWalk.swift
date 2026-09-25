@@ -13,10 +13,33 @@ public enum ProcWalk {
         /// the walk already reads — free, and what `tabTTY` compares across
         /// the chain.
         public let tty: String?
-        public init(pid: Int32, ppid: Int32, name: String, path: String?, tty: String? = nil) {
+        /// The process group, and the foreground process group of its
+        /// controlling terminal (0 without one). A shell at its prompt owns
+        /// its terminal's foreground group; one running a foreground command
+        /// has handed it to that command's group.
+        public let pgid: Int32
+        public let tpgid: Int32
+        /// When the process was forked; an `exec` keeps it.
+        public let startedAt: Date?
+        public init(pid: Int32, ppid: Int32, name: String, path: String?, tty: String? = nil,
+                    pgid: Int32 = 0, tpgid: Int32 = 0, startedAt: Date? = nil) {
             self.pid = pid; self.ppid = ppid; self.name = name; self.path = path; self.tty = tty
+            self.pgid = pgid; self.tpgid = tpgid; self.startedAt = startedAt
+        }
+
+        /// A shell's `p_comm`, a login shell's leading `-` stripped. A shell
+        /// replaced by `exec` carries its program's name instead.
+        public var isShell: Bool {
+            ProcWalk.shellNames.contains(name.hasPrefix("-") ? String(name.dropFirst()) : name)
+        }
+
+        /// What a terminal job's liveness rule reads of this process.
+        public var shellReading: ShellJobLiveness.Reading {
+            ShellJobLiveness.Reading(isShell: isShell, pgid: pgid, tpgid: tpgid, startedAt: startedAt)
         }
     }
+
+    static let shellNames: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh"]
 
     public struct Origin: Equatable {
         /// The agent's own process: the nearest Claude Code or Codex
@@ -48,7 +71,32 @@ public enum ProcWalk {
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         let path = length > 0 ? String(cString: buffer) : nil
         return ProcInfo(pid: pid, ppid: ppid, name: name, path: path,
-                        tty: ttyName(forDevice: proc.kp_eproc.e_tdev))
+                        tty: ttyName(forDevice: proc.kp_eproc.e_tdev),
+                        pgid: proc.kp_eproc.e_pgid, tpgid: proc.kp_eproc.e_tpgid,
+                        startedAt: startedAt(of: proc))
+    }
+
+    static func startedAt(of proc: kinfo_proc) -> Date? {
+        let start = proc.kp_proc.p_un.__p_starttime
+        guard start.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(start.tv_sec) + TimeInterval(start.tv_usec) / 1_000_000)
+    }
+
+    /// When each child of `pid` was forked, for the children that can still
+    /// be read; empty when it has none or cannot be read. A shell's children
+    /// include helpers that live beside it from its start (Powerlevel10k's
+    /// `gitstatusd`), so the fork time is what tells them from a command's.
+    public static func childStartTimes(pid: Int32) -> [Date] {
+        var children = [Int32](repeating: 0, count: 256)
+        let count = children.withUnsafeMutableBytes { proc_listchildpids(pid, $0.baseAddress, Int32($0.count)) }
+        guard count > 0 else { return [] }
+        return children.prefix(min(Int(count), children.count)).compactMap { child in
+            var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, child]
+            var proc = kinfo_proc()
+            var size = MemoryLayout<kinfo_proc>.stride
+            guard child > 0, sysctl(&mib, u_int(mib.count), &proc, &size, nil, 0) == 0, size > 0 else { return nil }
+            return startedAt(of: proc)
+        }
     }
 
     public static func chain(from pid: Int32, maxHops: Int = 15) -> [ProcInfo] {

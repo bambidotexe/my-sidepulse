@@ -534,6 +534,7 @@ final class Engine {
         let now = Date()
         var alerts = store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
         jobs.tick(now: now)
+        probeJobs(now: now)
         // A rescued finish is dated to the turn's real end, so its push can
         // already be due: tick once more, since `nextDeadline` only wakes
         // for deadlines still ahead.
@@ -998,6 +999,29 @@ final class Engine {
         guard !warnedDaemonSilent else { return }
         warnedDaemonSilent = true
         Log.app.notice("Codex daemon not answering; using the rollout")
+    }
+
+    /// Asks each running job's process whether it still runs a command
+    /// (`ShellJobLiveness`), from its begin on, at every pass: the job
+    /// store's deadline brings one at least every `K.jobProbeSeconds`, and
+    /// `K.jobPromptSettleSeconds` after a first sighting at the prompt. A
+    /// shell gone or recycled, or back at its prompt with no child started
+    /// since the job began, clears a job whose `job end` never came; a shell
+    /// replaced by its program keeps it until that program exits (kqueue).
+    /// A `mysidepulse run` wrapper is no shell, so its job is kept.
+    private func probeJobs(now: Date) {
+        var dropped = false
+        for job in jobs.jobs.values where job.state == .running {
+            guard let pid = job.ownerPid else { continue }
+            let info = ProcWalk.info(for: pid)
+            let probe = ShellJobLiveness.probe(info?.shellReading,
+                                               children: info == nil ? [] : ProcWalk.childStartTimes(pid: pid),
+                                               jobSince: job.stateSince)
+            guard let reason = jobs.probe(id: job.id, probe, now: now) else { continue }
+            dropped = true
+            Log.app.notice("job \(job.id, privacy: .public) ended without a hook (\(reason, privacy: .public))")
+        }
+        if dropped { armProcessWatchers() }
     }
 
     /// Wake re-evaluates everything against the wall clock at once.

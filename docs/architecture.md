@@ -87,6 +87,7 @@ queue. Every input funnels into one method:
 sync():
   alerts   = store.tick(now, userPresent)      // holds, settle, expiry, due pushes
   jobs.tick(now)
+  probeJobs(now)                               // each running job's shell: still running a command? (ShellJobLiveness)
   checkAbandonedTurns(now)                     // registry + transcript rescues; Codex: its daemon, else the rollout
   deliver(alerts)                              // → notify queue
   decision = Arbiter.decide(...)
@@ -151,6 +152,7 @@ after it.
 | Codex's daemon | its control socket, `~/.codex/app-server-control/app-server-control.sock` (`CodexDaemonClient`, a WebSocket over the unix socket on a utility queue, 1 s per call, completing on main; `WebSocketFrame` and `CodexThreadRecord` in Core read the frames and the answers): `thread/read` for a quiet `working` Codex session whose pid is the managed daemon (`ProcWalk.isManagedCodexDaemon`), one question out per session, the answer applied only if the session is still `working` with the same `lastMainEventAt`; `thread/loaded/list` once at launch. `notLoaded` / `idle` → the rollout tells finished from aborted, dark by default; `active` → `noteBusy`; anything else, or no answer, leaves the session to the rollout for 15 s | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read for quiet `working` Codex sessions (`SessionStore.codexCandidates`) the daemon does not host or could not decide, and after the daemon says a thread runs nothing; the recorded `transcript_path` when Core trusts it, else the daemon's `path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
+| A running job's shell | `ProcWalk.info` (`e_pgid`, `e_tpgid`, `p_comm`, `p_starttime`) and `ProcWalk.childStartTimes` (`proc_listchildpids`, each child's fork time), read at every `sync()` for each running job with a pid; `JobStore.nextDeadline` brings one at least every `K.jobProbeSeconds` and `K.jobPromptSettleSeconds` after a first sighting at the prompt; `ShellJobLiveness` in Core builds the probe and judges it | `JobStore.probe` |
 | Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
 | Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
 | User attention | `NSWorkspace` app activation; `HIDIdleTime` polled every 0.5 s only while an alert is displayed; screen-lock state | acknowledgement, presence |

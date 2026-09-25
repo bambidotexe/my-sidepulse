@@ -248,6 +248,39 @@ final class ProcWalkTests: XCTestCase {
         XCTAssertFalse(ProcWalk.isManagedCodexDaemon(gone("/Applications/ChatGPT.app/Contents/Resources/codex")))
     }
 
+    /// A job's shell exec'd into its program is no longer a shell: its
+    /// `p_comm` is the program's. A login shell's starts with a dash.
+    func testShellNamesAreRecognisedWithALoginDash() {
+        for name in ["zsh", "-zsh", "bash", "-bash", "sh", "-sh", "fish", "dash", "ksh", "tcsh", "-tcsh"] {
+            XCTAssertTrue(ProcWalk.ProcInfo(pid: 1, ppid: 0, name: name, path: nil).isShell, name)
+        }
+        for name in ["make", "sleep", "claude", "zshx", "-", "", "--zsh", "ssh", "mysidepulse"] {
+            XCTAssertFalse(ProcWalk.ProcInfo(pid: 1, ppid: 0, name: name, path: nil).isShell, name)
+        }
+    }
+
+    /// The process group, its terminal's foreground group, the fork time, and
+    /// each child's fork time, read from the same `kinfo_proc`.
+    func testTheProcessGroupStartAndChildrenAreRead() throws {
+        let own = try XCTUnwrap(ProcWalk.info(for: getpid()))
+        XCTAssertEqual(own.pgid, getpgrp())
+        let started = try XCTUnwrap(own.startedAt)
+        XCTAssertLessThan(started, Date())
+        XCTAssertGreaterThan(started, Date().addingTimeInterval(-24 * 3600))
+        let before = Date().addingTimeInterval(-1)
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        child.arguments = ["30"]
+        try child.run()
+        defer { child.terminate(); child.waitUntilExit() }
+        let childStart = try XCTUnwrap(ProcWalk.info(for: child.processIdentifier)?.startedAt)
+        XCTAssertGreaterThan(childStart, before)
+        XCTAssertTrue(ProcWalk.childStartTimes(pid: getpid()).contains(childStart), "the child is listed with its start")
+        XCTAssertEqual(ProcWalk.childStartTimes(pid: child.processIdentifier), [])
+        XCTAssertEqual(ProcWalk.childStartTimes(pid: 2_000_000), [])
+        XCTAssertNil(ProcWalk.info(for: 2_000_000))
+    }
+
     func testBootDateIsPast() throws {
         let boot = try XCTUnwrap(BootTime.bootDate())
         XCTAssertLessThan(boot, Date())

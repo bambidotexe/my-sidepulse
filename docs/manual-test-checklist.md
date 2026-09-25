@@ -127,3 +127,18 @@ Settings > System > **Show Onboarding Again** for the rest.
 | [ ] | Walk it again and press **Finish** | The window closes, the front goes back to whoever had it and keystrokes reach that app, `config.json` has `"onboardingDone": true`, and the next launch opens nothing |
 | [ ] | Reach the last page having granted nothing, finish, quit, and launch again twice | **No permission prompt appears by itself**, at launch or while the window sits open. Every prompt in the whole walk followed a click of yours |
 | [ ] | Run it in French (`-AppleLanguages '(fr)'`) | Every sentence is French, **Claude** is still the accented word, and each row's title reads exactly as the Settings window's own row for the same thing (`Hooks Claude Code`, `Hook de terminal`, `Démarrage`). No row's title or explanation is cut off |
+
+## 5. Terminal jobs
+
+In a new Terminal tab with the hook set up, and no agent working, so a running
+job's violet shows. Watch the log:
+`/usr/bin/log stream --predicate 'subsystem == "io.mysidepulse.app"'`.
+
+| | Do this | Expect |
+|---|---|---|
+| [ ] | `ps -o pid,pgid,tpgid,comm -p $$` at the prompt, then the same for that shell from another tab while `sleep 60` runs in it | At the prompt `pgid` and `tpgid` are equal; while `sleep` runs `tpgid` is the `sleep`'s group, in Terminal and in every other terminal in use |
+| [ ] | `exec zsh`, then type nothing for 20 s; the same with `source ~/.zshrc` | The strip never turns violet, and `mysidepulse status` lists no running job |
+| [ ] | `sleep 300`, then close the tab | The violet goes at once |
+| [ ] | `sudo -v`, then `sudo sleep 20`; then `sudo -i` and `exit` | `sudo sleep 20` shows, labelled `sleep` in `mysidepulse status`; `sudo -i` never shows |
+| [ ] | A lost end: `sleep 20; _mysidepulse_job=` (the assignment empties the job the hook would end) | Within about 20 s of the prompt coming back the violet goes, with no green, and the log has `job zsh-<pid> ended without a hook (shell at its prompt)` |
+| [ ] | `sleep 7300` | Still violet after 2 h |

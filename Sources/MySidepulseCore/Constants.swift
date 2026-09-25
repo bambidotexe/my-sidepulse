@@ -349,9 +349,23 @@ public enum K {
     /// A finished job stays lit for the same window as a Claude `.done`: both
     /// are unread notifications and both clear the same way.
     public static let jobVisibleSeconds: TimeInterval = doneVisibleSeconds
-    /// A job whose owner never reported back. Separate from `staleSeconds`
-    /// only so the two can be retuned apart.
+    /// A running job with no pid to ask, whose owner never reported back.
+    /// A job with a pid is asked of its process instead (`jobProbeSeconds`).
+    /// Separate from `staleSeconds` only so the two can be retuned apart.
     public static let jobStaleSeconds: TimeInterval = staleSeconds
+    /// How often a running job's shell is asked whether it still runs a
+    /// command (`ShellJobLiveness`): the cadence of the session rechecks
+    /// (`abandonRecheckSeconds`). The ask is one sysctl and one child
+    /// listing per job, a few microseconds, so a lost `job end` holds the
+    /// strip at most this long past the settle.
+    public static let jobProbeSeconds: TimeInterval = 15
+    /// A shell seen at its prompt with no child started since the job began
+    /// must be seen so again this much later before its job is cleared. The
+    /// shell owns its terminal between `preexec` and the command's fork, and
+    /// between two commands of one line: milliseconds, which one sighting
+    /// can catch and two this far apart do not. The same 5 s a shell's
+    /// command waits before it shows (`shellShowAfterDefaultSeconds`).
+    public static let jobPromptSettleSeconds: TimeInterval = 5
     /// `mysidepulse run` is explicit, so it lights the strip at once. The shell
     /// hooks fire on every command, so they wait — short commands stay dark.
     public static let jobShowAfterDefaultSeconds: Double = 0

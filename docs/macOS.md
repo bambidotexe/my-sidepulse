@@ -95,6 +95,34 @@ standalone release under `~/.codex/packages`, the `~/.local/bin` launcher and
 the copy inside `ChatGPT.app`), its host app and its terminal tab, and how the
 app tells Codex's daemon by its arguments.
 
+**A shell at its prompt owns its terminal's foreground process group.**
+`kinfo_proc.kp_eproc` carries the process group (`e_pgid`) and its terminal's
+foreground group (`e_tpgid`, 0 without a terminal; `ps -o pid,pgid,tpgid`).
+At the prompt the two are equal; while the shell runs a foreground command it
+has handed the group to the command's (a zsh running `claude` showed
+`claude`'s pid as its `tpgid`), and the command is its child
+(`proc_listchildpids`). A shell's children are not only its commands:
+Powerlevel10k starts a `gitstatusd` (`~/.cache/gitstatus/gitstatusd-darwin-arm64`)
+in the shell's own process group when the shell starts and keeps it for the
+shell's life, and an earlier `&` job stays a child too; only a child forked after a
+command began belongs to that command. `ProcWalk.info` reads the groups and
+the fork time (`p_starttime`, `ProcInfo.startedAt`), `ProcWalk.childStartTimes`
+each child's fork time. A builtin that blocks (`wait`, `read`, a loop of
+builtins) keeps the group and forks nothing: it looks like the prompt. `exec`
+keeps the pid and the fork time and changes `p_comm`; a login shell's `p_comm`
+starts with `-` (`-zsh`).
+
+**Re-reading the snippet.** `source ~/.zshrc` runs the snippet again inside the
+`source` command, between its `preexec` and its `precmd`; `exec zsh` starts a
+new image under the same pid that reads it from scratch. Any variable the
+snippet assigns at load is reset in both, so it declares its job variable
+without assigning it (`(( ${+_mysidepulse_job} )) ||
+typeset -g _mysidepulse_job=`), and an interactive shell loading it sends
+`job end --id zsh-$$ --exit 130`, which ends whatever job an earlier image of
+that pid began (a `job end` for an unknown id changes nothing). A subshell that
+re-reads it (`(source ~/.zshrc; make)`) is still interactive and its `$$` is
+the parent's, so its load ends the parent's running job.
+
 Claude Code's registry, `<config>/sessions/<pid>.json`, lives in the config
 directory, which `CLAUDE_CONFIG_DIR` relocates (an account switcher such as
 cswap sets it per account). The app finds it from the transcript path the

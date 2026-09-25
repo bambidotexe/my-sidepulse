@@ -127,40 +127,75 @@ public enum ShellInit {
 typeset -ga MYSIDEPULSE_SKIP
 (( ${#MYSIDEPULSE_SKIP} )) || MYSIDEPULSE_SKIP=(
   vi vim nvim emacs nano pico less more man info
-  ssh mosh tmux screen top htop btop watch
+  ssh mosh tmux screen top htop btop watch tig lazygit
+  zsh bash sh fish dash ksh su login
   claude codex grok mysidepulse
 )
 : ${MYSIDEPULSE_SHOW_AFTER:=@SHOWAFTER@}
-typeset -g _mysidepulse_job=
+# Declared, never reset: a `source ~/.zshrc` inside a command keeps the job it
+# belongs to.
+(( ${+_mysidepulse_job} )) || typeset -g _mysidepulse_job=
 
 _mysidepulse_preexec() {
   # $3 is the command line after alias expansion. Split it into shell words
   # through a real array: ${${(z)3}[1]} indexes the *string* and yields its
   # first character, so `true` would come out as `t`.
-  local -a words
+  local -a words heads checked
   words=(${(z)3})
   # The command to judge is not always the first word: a launcher generates
   # `cd '<dir>' && '<path>/cswap' run`, and matching words[1] put the skip
   # list out of reach of every one of them. Collect the head of each segment
-  # instead. (Q) strips the quotes a generated path carries — (z) leaves them
-  # on the word, so the tail of `'/bin/vim'` is `vim'` and matches nothing —
-  # and the tail makes /usr/bin/make and make one skip entry.
-  local -a heads
-  local word head=
-  for word in $words; do
+  # instead (split on && || | |& ; & and the group characters; the trailing
+  # `;` closes the last one). (Q) strips the quotes a generated path carries
+  # — (z) leaves them on the word, so the tail of `'/bin/vim'` is `vim'` and
+  # matches nothing — and the tail makes /usr/bin/make and make one entry.
+  # Leading VAR=value words and the prefixes below, with their -flags (and
+  # the argument of those that take one), are not the program: `sudo -u root
+  # vim` is vim. A segment of prefixes alone (`sudo -i`) opens an interactive
+  # shell. A shell's name is checked against the skip list only when every
+  # word after it is a flag (`bash -l`), not when it runs a script
+  # (`bash build.sh`, `sh -c …`).
+  local word bare head= prefix= skiparg= shell= skip=
+  for word in $words ';'; do
     case $word in
-      '&&'|'||'|'|'|'|&'|';'|'&'|'('|')'|'{'|'}') head= ;;
-      *) [[ -n $head ]] || { head=${${(Q)word}:t}; heads+=($head) } ;;
+      '&&'|'||'|'|'|'|&'|';'|'&'|'('|')'|'{'|'}')
+        [[ -n $prefix && -z $head ]] && skip=1
+        [[ -n $shell ]] && checked+=($head)
+        head= prefix= skiparg= shell= ;;
+      *)
+        if [[ -n $head ]]; then
+          [[ -n $shell && $word != -* ]] && shell=
+          continue
+        fi
+        if [[ -n $skiparg ]]; then skiparg=; continue; fi
+        if [[ -n $prefix && $word == -* ]]; then
+          case $prefix:$word in
+            sudo:-[ughpCDTUrt]|nice:-n|env:-[uCS]) skiparg=1 ;;
+          esac
+          continue
+        fi
+        bare=${word%%=*}
+        [[ $word == *=* && $bare == [A-Za-z_]* && $bare != *[^A-Za-z0-9_]* ]] && continue
+        bare=${${(Q)word}:t}
+        case $bare in
+          sudo|time|command|builtin|exec|nice|nohup|env|noglob|caffeinate) prefix=$bare; continue ;;
+          zsh|bash|sh|fish|dash|ksh) shell=1 ;;
+          *) checked+=($bare) ;;
+        esac
+        head=$bare; heads+=($head) ;;
     esac
   done
   # One skipped head skips the whole line: the shell waits on an interactive
   # program wherever it sits in the chain, so the line's duration is its
   # duration and means nothing about work.
-  for head in $heads; do
+  [[ -n $skip ]] && return
+  for head in $checked; do
     (( ${MYSIDEPULSE_SKIP[(I)$head]} )) && return
   done
-  # The first head still names the job, minus the quotes it used to keep.
-  local name=${heads[1]:-${${(Q)words[1]}:t}}
+  # A line with no program (`FOO=1`) runs nothing worth showing.
+  (( ${#heads} )) || return
+  # The first head names the job.
+  local name=${heads[1]}
   # One slot per shell: the app evicts a shell's previous job on begin, so a
   # stable id needs no randomness and no bookkeeping.
   _mysidepulse_job=zsh-$$
@@ -180,6 +215,10 @@ _mysidepulse_precmd() {
   return $code
 }
 
+# Loading the snippet ends the job this shell's pid holds: one an earlier
+# image began (`exec zsh`), or the `source` that is reading it now. As a
+# cancellation, so that job never shows as an outcome.
+[[ -o interactive ]] && @MYSIDEPULSE@ job end --id zsh-$$ --exit 130 >/dev/null 2>&1
 autoload -Uz add-zsh-hook
 add-zsh-hook preexec _mysidepulse_preexec
 add-zsh-hook precmd _mysidepulse_precmd
