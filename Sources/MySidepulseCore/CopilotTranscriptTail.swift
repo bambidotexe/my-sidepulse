@@ -22,7 +22,9 @@ import Foundation
 /// while the parent's turn goes on. `assistant.turn_end` ends every model
 /// call, not the turn, and `session.idle` is never written. The last marker
 /// wins, but for `session.shutdown`: the turn's own end before it, when
-/// there is one, says how the turn ended.
+/// there is one, says how the turn ended, and the shutdown's own stamp is
+/// kept beside it, so a shutdown after the last main-agent event ends the
+/// turn whatever older end precedes it.
 ///
 /// Only a line's `type`, `timestamp`, `data.hookType` and
 /// `data.input.sessionId` are ever read. The rest of a line is the
@@ -33,10 +35,13 @@ public enum CopilotTranscriptTail {
         /// the stamp of the last line the tail holds, of any type: when
         /// Copilot last wrote to the session.
         case running(writtenAt: Date)
-        case complete(at: Date)
-        case aborted(at: Date)
-        case failed(at: Date)
-        /// The session closed while its turn had no end of its own.
+        /// The turn's own end. `closedAt` is the stamp of a
+        /// `session.shutdown` written after it, when one was.
+        case complete(at: Date, closedAt: Date? = nil)
+        case aborted(at: Date, closedAt: Date? = nil)
+        case failed(at: Date, closedAt: Date? = nil)
+        /// The session closed while its turn had no end of its own, or one
+        /// with no stamp.
         case closed(at: Date)
         /// No marker, nothing parseable, or an end marker with no stamp.
         case unreadable
@@ -110,24 +115,30 @@ public enum CopilotTranscriptTail {
                   let type = object["type"] as? String else { continue }
             let stamp = (object["timestamp"] as? String).flatMap(JournalCodec.date(from:))
             if writtenAt == nil { writtenAt = stamp }
-            switch marker(type, object, sessionId: sessionId) {
+            let found = marker(type, object, sessionId: sessionId)
+            switch found {
             case .work?:
                 if let shutdownAt { return (.closed(at: shutdownAt), nil) }
                 guard let written = writtenAt ?? stamp else { return (.unreadable, nil) }
                 return (.running(writtenAt: written), latestPermission(in: lines[...index]))
-            case .complete?:
-                return (stamp.map { .complete(at: $0) } ?? .unreadable, nil)
-            case .aborted?:
-                return (stamp.map { .aborted(at: $0) } ?? .unreadable, nil)
-            case .failed?:
-                return (stamp.map { .failed(at: $0) } ?? .unreadable, nil)
+            case .complete?, .aborted?, .failed?:
+                // An end with no stamp cannot be weighed: after a shutdown,
+                // the session closed; else nothing is known.
+                guard let stamp else { return (shutdownAt.map { .closed(at: $0) } ?? .unreadable, nil) }
+                switch found {
+                case .complete?: return (.complete(at: stamp, closedAt: shutdownAt), nil)
+                case .aborted?: return (.aborted(at: stamp, closedAt: shutdownAt), nil)
+                default: return (.failed(at: stamp, closedAt: shutdownAt), nil)
+                }
             case .shutdown?:
                 if let shutdownAt { return (.closed(at: shutdownAt), nil) }
                 guard let stamp else { return (.unreadable, nil) }
-                // The look-back: the scan goes on for the turn's own end. A
-                // new prompt closed before Copilot wrote its `user.message`
-                // (a window of milliseconds) finds the previous turn's end,
-                // stamped before the last main-agent event: it decides nothing.
+                // The look-back: the scan goes on for the turn's own end,
+                // which says how the turn ended, and the shutdown's stamp is
+                // kept beside it. A new prompt closed before Copilot wrote its
+                // `user.message` (a window of milliseconds) finds the previous
+                // turn's end, stamped before the last main-agent event: the
+                // shutdown still ends the turn (`decision`).
                 shutdownAt = stamp
             case nil:
                 continue
@@ -151,14 +162,19 @@ public enum CopilotTranscriptTail {
     /// Copilot names no turn: an end marker ends the session's turn only
     /// when it is stamped after the last main-agent event. One stamped
     /// earlier is the previous turn's end, seen before Copilot wrote the new
-    /// prompt's `user.message`.
+    /// prompt's `user.message`; a `session.shutdown` after it, stamped after
+    /// the last main-agent event, still closes the session mid-turn.
     public static func decision(verdict: Verdict, lastMainEventAt: Date) -> Decision {
+        func closed(_ closedAt: Date?) -> Decision {
+            guard let closedAt, closedAt > lastMainEventAt else { return .nothing }
+            return .closed(endedAt: closedAt)
+        }
         switch verdict {
         case .running: return .busy
-        case .complete(let at): return at > lastMainEventAt ? .finished(endedAt: at) : .nothing
-        case .aborted(let at): return at > lastMainEventAt ? .aborted(endedAt: at) : .nothing
-        case .failed(let at): return at > lastMainEventAt ? .failed(endedAt: at) : .nothing
-        case .closed(let at): return at > lastMainEventAt ? .closed(endedAt: at) : .nothing
+        case .complete(let at, let closedAt): return at > lastMainEventAt ? .finished(endedAt: at) : closed(closedAt)
+        case .aborted(let at, let closedAt): return at > lastMainEventAt ? .aborted(endedAt: at) : closed(closedAt)
+        case .failed(let at, let closedAt): return at > lastMainEventAt ? .failed(endedAt: at) : closed(closedAt)
+        case .closed(let at): return closed(at)
         case .unreadable: return .nothing
         }
     }
@@ -182,7 +198,7 @@ public enum CopilotTranscriptTail {
     public static func waitDecision(tail: Data, sessionId: String, waitSince: Date) -> WaitDecision {
         let read = scan(tail: tail, sessionId: sessionId)
         switch read.verdict {
-        case .aborted(let at) where at > waitSince:
+        case .aborted(let at, _) where at > waitSince:
             return .aborted(endedAt: at)
         case .running:
             guard let permission = read.permission, permission.answered,

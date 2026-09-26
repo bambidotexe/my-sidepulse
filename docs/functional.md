@@ -440,7 +440,10 @@ the session's own `agentStop` hook is the lost `Stop` (`done`, with its
 push); a `session.error` is the failed turn, which takes the outcome a
 `StopFailure` gives (`waiting(error)`, with its push); a `session.shutdown`,
 Copilot closing the session, is dark (`idle`), with no push, unless the
-turn's own end comes before it, which then says how the turn ended. A step of the turn
+turn's own end comes before it, which then says how the turn ended. A
+shutdown stamped after the last main-agent event ends the turn whatever
+older end precedes it: an end stamped at or before that event is an earlier
+turn's, and the turn is dark. A step of the turn
 at work (`user.message`, `assistant.turn_start`, `assistant.message`,
 `tool.execution_start`, `tool.execution_complete`, `permission.requested`,
 `permission.completed`) keeps the session alive, and the 2 h backstop then
@@ -528,7 +531,7 @@ most.
 | Copilot: interrupted turn (Ctrl+C, Esc Esc) | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); the last marker of `events.jsonl` is an `abort` stamped after the last main-agent event | `idle` (dark), no push | 20–35 s |
 | Copilot: lost `Stop` | same, but the marker is the session's own `agentStop` hook starting | `done`, with its push | 20–35 s |
 | Copilot: failed turn | same, but the marker is a `session.error` | `waiting(error)`, with its push | 20–35 s |
-| Copilot: session closed mid-turn | same, but the marker is a `session.shutdown` with no end of the turn before it | `idle` (dark), no push | 20–35 s |
+| Copilot: session closed mid-turn | same, but the marker is a `session.shutdown` stamped after the last main-agent event, with no end of this turn before it (none, or only an earlier turn's) | `idle` (dark), no push | 20–35 s |
 | Copilot: a permission or question cancelled (Ctrl+C, Esc Esc at the prompt) | `waiting(permission)` or `waiting(question)`, from the moment the wait began; the last marker of `events.jsonl` is an `abort` stamped after the wait began | `idle` (dark), no push | ≤ 15 s |
 | Copilot: a permission answered | same wait; the turn is at work and the latest permission line of `events.jsonl` is `permission.completed`, stamped after the wait began | `working`, the push disarmed | ≤ 15 s after the answer |
 

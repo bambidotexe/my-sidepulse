@@ -121,20 +121,25 @@ final class CopilotTranscriptTailTests: XCTestCase {
     }
 
     /// `session.shutdown` closes the session. The turn's own end, when one
-    /// comes before it, still says how the turn ended; a turn with no end
-    /// closed with the session.
+    /// comes before it, still says how the turn ended, and the verdict keeps
+    /// the shutdown's stamp beside it; a turn with no end closed with the
+    /// session.
     func testAShutdownClosesTheSessionAndTheTurnsOwnEndSaysHow() {
         let shutdown = [hook("23:40:08.539", "sessionEnd", session: sid),
                         hookEnd("23:40:08.666", "sessionEnd"),
                         line("23:40:08.668", "session.usage_checkpoint"),
                         line("23:40:08.679", "session.shutdown")]
+        let closedAt = stamp("23:40:08.679")
         XCTAssertEqual(verdict([line("23:40:08.401", "assistant.message"),
                                 hook("23:40:08.403", "agentStop", session: sid),
                                 hookEnd("23:40:08.538", "agentStop")] + shutdown),
-                       .complete(at: stamp("23:40:08.403")))
-        XCTAssertEqual(verdict([line("23:40:08.300", "abort")] + shutdown), .aborted(at: stamp("23:40:08.300")))
+                       .complete(at: stamp("23:40:08.403"), closedAt: closedAt))
+        XCTAssertEqual(verdict([line("23:40:08.300", "abort")] + shutdown),
+                       .aborted(at: stamp("23:40:08.300"), closedAt: closedAt))
         XCTAssertEqual(verdict([line("23:40:08.300", "session.error")] + shutdown),
-                       .failed(at: stamp("23:40:08.300")))
+                       .failed(at: stamp("23:40:08.300"), closedAt: closedAt))
+        XCTAssertEqual(verdict([#"{"data":{},"type":"abort"}"#] + shutdown), .closed(at: closedAt),
+                       "an end with no stamp says nothing of how, and the session closed")
         XCTAssertEqual(verdict([line("23:40:08.300", "tool.execution_start")] + shutdown),
                        .closed(at: stamp("23:40:08.679")))
         XCTAssertEqual(verdict([line("23:40:00.000", "session.start")] + shutdown),
@@ -149,6 +154,36 @@ final class CopilotTranscriptTailTests: XCTestCase {
         XCTAssertEqual(CopilotTranscriptTail.decision(verdict: .closed(at: stamp("23:40:08.679")),
                                                       lastMainEventAt: stamp("23:40:08.000")),
                        .closed(endedAt: stamp("23:40:08.679")))
+    }
+
+    /// A shutdown stamped after the last main-agent event ends the turn,
+    /// whatever older end precedes it: the turn's own end chooses how it
+    /// ended when it is stamped after that event too, and when it is older
+    /// (the previous turn's, a new prompt being closed before Copilot wrote
+    /// its `user.message`) the session closed mid-turn. A shutdown at or
+    /// before our last event decides nothing.
+    func testAShutdownAfterOurLastEventEndsTheTurnWhateverOlderEndPrecedesIt() {
+        let end = stamp("23:40:08.403")
+        let closedAt = stamp("23:40:08.679")
+        func decide(_ v: CopilotTranscriptTail.Verdict, _ lastMain: String) -> CopilotTranscriptTail.Decision {
+            CopilotTranscriptTail.decision(verdict: v, lastMainEventAt: stamp(lastMain))
+        }
+        XCTAssertEqual(decide(.complete(at: end, closedAt: closedAt), "23:40:08.000"), .finished(endedAt: end))
+        XCTAssertEqual(decide(.aborted(at: end, closedAt: closedAt), "23:40:08.000"), .aborted(endedAt: end))
+        XCTAssertEqual(decide(.failed(at: end, closedAt: closedAt), "23:40:08.000"), .failed(endedAt: end))
+        for v in [CopilotTranscriptTail.Verdict.complete(at: end, closedAt: closedAt),
+                  .aborted(at: end, closedAt: closedAt), .failed(at: end, closedAt: closedAt)] {
+            XCTAssertEqual(decide(v, "23:40:08.500"), .closed(endedAt: closedAt), "\(v): an older end, then a prompt")
+            XCTAssertEqual(decide(v, "23:40:08.403"), .closed(endedAt: closedAt), "\(v): an end at our last event")
+            XCTAssertEqual(decide(v, "23:40:08.679"), .nothing, "\(v): nothing after our last event")
+        }
+        let promptThenClose = [line("23:40:08.401", "assistant.message"),
+                               hook("23:40:08.403", "agentStop", session: sid),
+                               hookEnd("23:40:08.538", "agentStop"),
+                               line("23:40:08.679", "session.shutdown")]
+        XCTAssertEqual(CopilotTranscriptTail.decision(verdict: verdict(promptThenClose),
+                                                      lastMainEventAt: stamp("23:40:08.600")),
+                       .closed(endedAt: closedAt), "read from the file")
     }
 
     func testEveryStepOfATurnIsWork() {
