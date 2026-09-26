@@ -10,20 +10,7 @@ public enum CodexRollout {
     /// from a journal line, and a FIFO there would otherwise hang the main
     /// queue.
     public static func read(path: String) -> Data? {
-        let fd = open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard fd >= 0 else { return nil }
-        defer { close(fd) }
-        var info = stat()
-        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return nil }
-        let size = Int(info.st_size)
-        let count = min(size, CodexRolloutTail.readBytes)
-        guard count > 0 else { return Data() }
-        var buffer = Data(count: count)
-        let read = buffer.withUnsafeMutableBytes { raw in
-            pread(fd, raw.baseAddress, count, off_t(size - count))
-        }
-        guard read >= 0 else { return nil }
-        return buffer.prefix(read)
+        FileTail.read(path: path, bytes: CodexRolloutTail.readBytes)
     }
 
     /// The newest rollout of a session under `<codexHome>/sessions/YYYY/MM/DD/`,

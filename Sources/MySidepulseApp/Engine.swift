@@ -79,8 +79,9 @@ final class Engine {
     /// has lost its hooks (both worth exactly one loud line).
     private var warnedNoRegistry: Set<String> = []
     private var warnedHooksSilent: Set<String> = []
-    /// The same canary for a quiet Codex session whose rollout cannot be
-    /// read or holds no turn marker.
+    /// The same canary for a quiet Codex session whose rollout, or a quiet
+    /// Copilot session whose `events.jsonl`, cannot be read or holds no turn
+    /// marker.
     private var warnedNoRollout: Set<String> = []
     /// The Codex sessions with a question out to Codex's daemon, skipped by
     /// the periodic check until it is answered, and, after an answer that
@@ -172,7 +173,8 @@ final class Engine {
             // Codex session's pid is a shared app-server (the managed daemon
             // for every TUI, the desktop app's own for its threads), which
             // proves nothing about the session: it is kept, and the launch
-            // check below reads its rollout.
+            // check below reads its rollout. A live `copilot` can hold
+            // several sessions: each is kept, and read from its events.jsonl.
             self.store.pruneDead(isAlive: { agent, pid in
                 guard kill(pid, 0) == 0 || errno == EPERM else { return false }
                 if agent == .codex, let info = ProcWalk.info(for: pid), ProcWalk.isCodexDaemon(info) {
@@ -190,9 +192,9 @@ final class Engine {
             // The time rules first, so a session silent past the staleness
             // backstop is dropped rather than revived by a rollout that
             // still says its turn runs; then every working turn is checked
-            // against the registry or its rollout before the first paint,
-            // with no quiet gate: the hooks that could have ended it fired
-            // while the app was away, or never.
+            // against the registry, its rollout or its events.jsonl before
+            // the first paint, with no quiet gate: the hooks that could have
+            // ended it fired while the app was away, or never.
             let now = Date()
             let alerts = self.store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
             self.jobs.tick(now: now)
@@ -223,7 +225,8 @@ final class Engine {
     }
 
     /// The rest of the launch: every working turn checked against the
-    /// registry or its rollout, with no quiet gate, then the first paint.
+    /// registry, its rollout or its events.jsonl, with no quiet gate, then
+    /// the first paint.
     private func finishLaunch(now: Date) {
         checkAbandonedTurns(now: now, quietSeconds: 0)
         launching = false
@@ -317,7 +320,7 @@ final class Engine {
         }
     }
 
-    /// The rescues' three verdicts, applied to the store and journaled.
+    /// The rescues' four verdicts, applied to the store and journaled.
     private func finishTurn(_ sessionId: String, now: Date, endedAt: Date?) {
         persist(.turnFinished, sessionId: sessionId,
                 at: store.finishTurn(sessionId: sessionId, now: now, endedAt: endedAt))
@@ -326,6 +329,11 @@ final class Engine {
     private func abandonTurn(_ sessionId: String, now: Date, endedAt: Date?) {
         persist(.turnAbandoned, sessionId: sessionId,
                 at: store.abandonTurn(sessionId: sessionId, now: now, endedAt: endedAt))
+    }
+
+    private func failTurn(_ sessionId: String, now: Date, endedAt: Date?) {
+        persist(.turnFailed, sessionId: sessionId,
+                at: store.failTurn(sessionId: sessionId, now: now, endedAt: endedAt))
     }
 
     private func dialogAnswered(_ sessionId: String, now: Date) {
@@ -700,7 +708,8 @@ final class Engine {
     /// session alive. Anything else — no record, wrong session, stale
     /// stamp, unknown status — proves nothing and changes nothing.
     /// A quiet Codex turn is asked about at Codex's daemon or read from its
-    /// rollout instead (`checkCodexTurns`). `quietSeconds` is the quiet
+    /// rollout instead (`checkCodexTurns`), and a quiet Copilot turn is read
+    /// from its `events.jsonl` (`checkCopilotTurns`). `quietSeconds` is the quiet
     /// gate: 0 for the launch check. A verdict is dated to when the source
     /// says the turn ended (`SessionStore.rescueStamp`). Returns whether any
     /// turn ended synchronously; the daemon's answers arrive later.
@@ -792,7 +801,10 @@ final class Engine {
                 """)
             dialogAnswered(sessionId, now: now)
         }
-        return checkCodexTurns(now: now, quietSeconds: quietSeconds) || ended
+        // Both run, whatever the other found: no short-circuit.
+        let codexEnded = checkCodexTurns(now: now, quietSeconds: quietSeconds)
+        let copilotEnded = checkCopilotTurns(now: now, quietSeconds: quietSeconds)
+        return ended || codexEnded || copilotEnded
     }
 
     /// Codex has no registry. A quiet session that Codex's managed daemon
@@ -881,6 +893,78 @@ final class Engine {
         return CodexRollout.path(recorded: trusted ?? recorded, sessionId: sessionId, codexHome: Paths.codexHome)
             .flatMap(CodexRollout.read(path:))
             .map(CodexRolloutTail.verdict(tail:)) ?? .unreadable
+    }
+
+    // MARK: Copilot's events.jsonl
+
+    /// Copilot has no registry and no daemon, and fires no hook for Ctrl+C,
+    /// Esc Esc or a failed turn. Every quiet Copilot session is read from
+    /// its `events.jsonl`: `CopilotTranscriptTail` decides; this only reads
+    /// the file (the recorded path when Core trusts it, else the session's
+    /// own under `~/.copilot/session-state`), maps the decision onto the
+    /// store and logs identifiers, never a line of the file.
+    private func checkCopilotTurns(now: Date, quietSeconds: TimeInterval) -> Bool {
+        var ended = false
+        for (sessionId, recorded) in store.copilotCandidates(at: now, quietSeconds: quietSeconds) {
+            guard let session = store.sessions[sessionId] else { continue }
+            let verdict = CopilotTranscript.verdict(sessionId: sessionId, recorded: recorded,
+                                                    root: Paths.copilotSessionState)
+            switch CopilotTranscriptTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt) {
+            case .finished(let endedAt):
+                Log.app.notice("""
+                    lost Stop recovered: Copilot session \(sessionId, privacy: .public) — events.jsonl \
+                    ends on its agentStop at \(endedAt, privacy: .public) — finished
+                    """)
+                finishTurn(sessionId, now: now, endedAt: endedAt)
+                ended = true
+            case .aborted(let endedAt):
+                Log.app.notice("""
+                    turn abandoned: Copilot session \(sessionId, privacy: .public) — events.jsonl \
+                    ends on abort at \(endedAt, privacy: .public) — going dark
+                    """)
+                abandonTurn(sessionId, now: now, endedAt: endedAt)
+                ended = true
+            case .failed(let endedAt):
+                Log.app.notice("""
+                    turn failed: Copilot session \(sessionId, privacy: .public) — events.jsonl \
+                    ends on session.error at \(endedAt, privacy: .public) — needs you
+                    """)
+                failTurn(sessionId, now: now, endedAt: endedAt)
+                ended = true
+            case .closed(let endedAt):
+                Log.app.notice("""
+                    turn abandoned: Copilot session \(sessionId, privacy: .public) — events.jsonl \
+                    ends on session.shutdown at \(endedAt, privacy: .public) — going dark
+                    """)
+                abandonTurn(sessionId, now: now, endedAt: endedAt)
+                ended = true
+            case .busy:
+                if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
+                   warnedHooksSilent.insert(sessionId).inserted {
+                    Log.app.warning("""
+                        hooks look dead for Copilot session \(sessionId, privacy: .public): its \
+                        events.jsonl says the turn runs but no hook event has arrived for over five \
+                        minutes — its finishes and questions cannot be shown until the hooks \
+                        run again
+                        """)
+                }
+                // Alive as of the file's last line: a turn that died with
+                // no end marker stops writing, and still meets the 2 h
+                // backstop that long after it.
+                var writtenAt = now
+                if case .running(let at) = verdict { writtenAt = min(at, now) }
+                store.noteBusy(sessionId: sessionId, now: writtenAt)
+            case .nothing:
+                if verdict == .unreadable, warnedNoRollout.insert(sessionId).inserted {
+                    Log.app.warning("""
+                        quiet Copilot turn undecidable: session \(sessionId, privacy: .public) — \
+                        its events.jsonl cannot be read or holds no turn marker; it stands until \
+                        the file says more, a hook arrives, or the 2 h staleness backstop
+                        """)
+                }
+            }
+        }
+        return ended
     }
 
     // MARK: Codex's daemon

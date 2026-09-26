@@ -372,7 +372,10 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
   session, when a registry record exists for the pid, names the same
   session: a Claude process hosts one session at a time, so a record naming
   another means the pid has moved on. A Codex session whose pid is a shared
-  app-server is kept, and the launch check below decides it.
+  app-server is kept, and the launch check below decides it. So is a
+  Copilot session whose `copilot` runs: one Copilot process can hold
+  several sessions, and each is decided by its `events.jsonl` below; the
+  process's exit still forgets every session it held.
 
 ### When hooks say nothing
 
@@ -381,8 +384,7 @@ stop mid-session. For Claude Code sessions, the rescues below read Claude
 Code's own registry and transcript.
 
 Copilot fires nothing either for Ctrl+C or Esc Esc, nor any end for a turn
-that fails; nothing reads its `events.jsonl` yet, so such a turn keeps
-rolling until the 2 h backstop, or until the Copilot process exits. OpenCode
+that fails; its `events.jsonl` says both (below). OpenCode
 ends every busy period with exactly one of `succeeded`, `failed` or
 `interrupted`, so it needs no such rescue: a terminal event that never came
 is covered by its server's exit, which forgets every session the server
@@ -405,6 +407,33 @@ there is read. Only the last 64 KB of the file are read, and of them only
 each line's type, the turn markers' turn ids and stamps, and the last line's
 stamp (when Codex last wrote to the session).
 
+Copilot has neither a registry nor a daemon, but writes every step of a
+session into `~/.copilot/session-state/<session id>/events.jsonl`, whose path
+the hook records on a Copilot start, prompt or stop. A working Copilot
+session quiet for `K.abandonQuietSeconds` with nothing out is checked against
+it every `K.abandonRecheckSeconds` and once at launch, and the last turn
+marker in it decides, when it is stamped after the last main-agent event
+(Copilot names no turn): an `abort` is the interrupt, Ctrl+C or Esc Esc
+(`idle`, dark), with no push; the `hook.start` Copilot writes when it runs
+the session's own `agentStop` hook is the lost `Stop` (`done`, with its
+push); a `session.error` is the failed turn, which takes the outcome a
+`StopFailure` gives (`waiting(error)`, with its push); a `session.shutdown`
+is the session closing, and the turn's own end before it, when there is one,
+says how the turn ended, else it is dark, with no push. A step of the turn
+at work (`user.message`, `assistant.turn_start`, `assistant.message`,
+`tool.execution_start`, `tool.execution_complete`, `permission.requested`,
+`permission.completed`) keeps the session alive, and the 2 h backstop then
+counts from the file's last line; an unreadable file, or one with no marker,
+decides nothing. An `agentStop` naming another session is a subagent's,
+mirrored into its parent's file, and ends nothing; `assistant.turn_end` ends
+every model call, not the turn. A recorded path is read only when it is
+exactly `<session-state>/<session id>/events.jsonl` under
+`~/.copilot/session-state`, absolute, with no `.` or `..`; otherwise, and for
+a session no line gave a path, that session's own file there is read. Only
+the last 64 KB of the file are read, and of them only each line's type and
+stamp and, for a `hook.start`, the hook's name and the session its payload
+names.
+
 When Codex's daemon is running it is asked first (`thread/read` on its
 control socket): a thread it has not loaded, or has idle, has nothing
 running; an active one keeps the session alive; the rollout decides when the
@@ -419,15 +448,17 @@ rollout decides that session for the next `K.abandonRecheckSeconds`. Every
 question has 1 s to be answered, and an answer that arrives after a
 main-agent hook moved the session is dropped.
 
-Every verdict of these rescues, Claude's and Codex's, takes effect as of when
-the turn ended — the registry's stamp, the rollout's end marker, or, when the
+Every verdict of these rescues, Claude's, Codex's and Copilot's, takes effect
+as of when the turn ended — the registry's stamp, the rollout's or the
+`events.jsonl`'s end marker, or, when the
 daemon says nothing runs and the rollout shows no end of the turn, the
 `updatedAt` of the daemon's thread record; never before the last main-agent
 event — not when it was found, exactly as a replayed
 `Stop` would: `done` stays lit for what is left of `K.doneVisibleSeconds`
 counted from the end, and a finish found more than
 `K.notifyMaxLatenessSeconds` after its push was due, at launch after the app
-was away for instance, shows `done` without a push.
+was away for instance, shows `done` without a push; so does a failure found
+that late show `waiting(error)` without one.
 
 At launch, after the journal is replayed, the time rules run first (a
 session silent past the 2 h backstop is forgotten); then, when a working
@@ -436,8 +467,8 @@ asked which threads it holds (`thread/loaded/list`, never `thread/read`): a
 working hosted session whose thread is missing from the complete list has
 nothing running and is decided by its rollout at once, dark when the rollout
 says nothing, while a partial list or no answer decides nothing; then every
-working Claude Code or Codex session is checked at once, with no quiet gate,
-before the strip is painted. The paint waits for the daemon's answer, 1 s at
+working Claude Code, Codex or Copilot session is checked at once, with no
+quiet gate, before the strip is painted. The paint waits for the daemon's answer, 1 s at
 most.
 
 | Situation | Signal | Result | Latency |
@@ -451,6 +482,10 @@ most.
 | Codex: interrupted turn, `Interrupt` lost | same, but the marker is a `turn_aborted` | `idle` (dark), no push | 20–35 s |
 | Codex, a TUI session: the turn ended with no hook | same quiet gate; Codex's daemon says the thread is `notLoaded` or `idle` | `done` with its push when the rollout ends the turn on `task_complete`, else `idle` (dark), no push | 20–36 s |
 | Codex, a TUI session: the turn runs with no hook | same quiet gate; the daemon says `active` | stays `working`, kept alive | — |
+| Copilot: interrupted turn (Ctrl+C, Esc Esc) | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); the last marker of `events.jsonl` is an `abort` stamped after the last main-agent event | `idle` (dark), no push | 20–35 s |
+| Copilot: lost `Stop` | same, but the marker is the session's own `agentStop` hook starting | `done`, with its push | 20–35 s |
+| Copilot: failed turn | same, but the marker is a `session.error` | `waiting(error)`, with its push | 20–35 s |
+| Copilot: session closed mid-turn | same, but the marker is a `session.shutdown` with no end of the turn before it | `idle` (dark), no push | 20–35 s |
 
 While the registry says `busy`, a quiet session is kept alive and stays
 `working`. The registry and open waits are re-read every
@@ -464,8 +499,8 @@ for, it is the process's own `CLAUDE_CONFIG_DIR` when macOS lets it be read,
 then `~/.claude`. Transcript entries marked `isSidechain` are ignored.
 
 The app records its own verdicts in the journal — a turn abandoned, a finish
-recovered, a dialog answered, whether the registry, a rollout or Codex's
-daemon gave it — each stamped when it took effect, so a relaunch replays
+recovered, a turn failed, a dialog answered, whether the registry, a rollout,
+Codex's daemon or a Copilot `events.jsonl` gave it — each stamped when it took effect, so a relaunch replays
 them and never resurrects a turn it had already closed: a replayed verdict
 applies the outcome it recorded as of its stamp, and is not decided again. A
 finish held behind a helper still out is not recorded; the hold rules end it,
@@ -1312,13 +1347,14 @@ agent's colour while it works.
 | `staleSeconds` | 2 h | silent session forgotten |
 | `abortQuarantineSeconds` | 120 s | after an `Interrupt`, a tool or permission event without a turn id changes nothing |
 | `idleSignalMinQuietSeconds` | 50 s | quiet needed before `idle_prompt` counts as a lost Stop |
-| `abandonQuietSeconds` | 20 s | quiet before Claude's registry or a Codex rollout is consulted |
-| `abandonRecheckSeconds` | 15 s | registry / rollout / open-wait recheck |
+| `abandonQuietSeconds` | 20 s | quiet before Claude's registry, a Codex rollout or a Copilot `events.jsonl` is consulted |
+| `abandonRecheckSeconds` | 15 s | registry / rollout / `events.jsonl` / open-wait recheck |
 | `CodexRolloutTail.tailBytes` | 64 KB | how much of a Codex rollout's end is read |
+| `CopilotTranscriptTail.tailBytes` | 64 KB | how much of a Copilot `events.jsonl`'s end is read |
 | `CodexDaemonClient.deadlineSeconds` | 1 s | the whole of one question to Codex's daemon, connection included |
 | `abandonUndecidedDarkSeconds` | 90 s | dark when the transcript cannot decide |
 | `dialogAnswerMinStampLeadSeconds` | 2 s | busy stamp must be this much newer than the dialog |
-| `hooksSilentWarnSeconds` | 5 min | registry `busy` with no hook event → one log warning per session |
+| `hooksSilentWarnSeconds` | 5 min | the registry, a rollout or an `events.jsonl` says the turn runs with no hook event → one log warning per session |
 | `inputPollSeconds` | 0.5 s | input poll while an alert shows |
 | `ttyProbeTimeoutSeconds` / `ttyProbeCacheSeconds` | 0.5 s / 2 s | front-tab probe |
 | `notifyDebounceSeconds` | 15 s | alert age before a push |

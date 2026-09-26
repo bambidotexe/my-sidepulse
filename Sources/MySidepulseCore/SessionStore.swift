@@ -372,27 +372,32 @@ public struct SessionStore {
 
     /// The app's own verdict, replayed after a relaunch or read back by the
     /// tailer. A line records an outcome, so replay applies that outcome as
-    /// of the line's stamp, which is when it took effect: dark, finished or
-    /// back to work, never decided again (a helper that was stale when the
-    /// live check ran can still be fresh at the stamp). It never creates a
-    /// session and never refreshes liveness. A main-agent event after the
-    /// stamp means the session moved on since, and the line changes nothing;
-    /// each outcome refuses a state it does not apply to, so the live store
-    /// reading its own line back changes nothing either. An unknown verdict
-    /// is ignored.
+    /// of the line's stamp, which is when it took effect: dark, finished,
+    /// failed or back to work, never decided again (a helper that was stale
+    /// when the live check ran can still be fresh at the stamp). It never
+    /// creates a session and never refreshes liveness. A main-agent event
+    /// after the stamp means the session moved on since, and the line
+    /// changes nothing; each outcome refuses a state it does not apply to,
+    /// so the live store reading its own line back changes nothing either.
+    /// An unknown verdict is ignored.
     private mutating func applyVerdict(_ e: JournalEvent, sessionId sid: String) {
         guard var s = sessions[sid], e.loggedAt >= s.lastMainEventAt,
               let verdict = e.verdict.flatMap(TurnVerdict.init(rawValue:)) else { return }
         let at = e.loggedAt
+        let outcome: SessionState
         switch verdict {
-        case .turnAbandoned, .turnFinished:
-            guard s.state == .working, !s.pendingDone else { return }
-            set(&s, verdict == .turnFinished ? .done : .idle, at)
-            closeTurn(&s, byInterrupt: false, now: at)
+        case .turnAbandoned: outcome = .idle
+        case .turnFinished: outcome = .done
+        case .turnFailed: outcome = .waiting(.error)
         case .dialogAnswered:
             guard s.state.isOpenWaiting else { return }
             set(&s, .working, at)
+            sessions[sid] = s
+            return
         }
+        guard s.state == .working, !s.pendingDone else { return }
+        set(&s, outcome, at)
+        closeTurn(&s, byInterrupt: false, now: at)
         sessions[sid] = s
     }
 
@@ -607,14 +612,15 @@ public struct SessionStore {
             if s.state == .done {
                 deadlines.append(s.stateSince.addingTimeInterval(K.doneVisibleSeconds))
             }
-            if s.state == .working, !s.pendingDone, s.agent == .codex || s.agentPid != nil {
+            if s.state == .working, !s.pendingDone, s.agent == .codex || s.agent == .copilot || s.agentPid != nil {
                 // The abandoned-turn watch: wake when the session becomes
                 // eligible for its first read, then keep waking on the
                 // recheck cadence while it stays eligible. See
-                // `abandonCandidates` and `codexCandidates`, and Engine's
-                // check. A Claude session is read through its pid's
-                // registry record; a Codex one through its rollout, which
-                // needs no pid.
+                // `abandonCandidates`, `codexCandidates` and
+                // `copilotCandidates`, and Engine's check. A Claude session
+                // is read through its pid's registry record; a Codex one
+                // through its rollout and a Copilot one through its
+                // `events.jsonl`, which need no pid.
                 let eligibleAt = s.lastEventAt.addingTimeInterval(K.abandonQuietSeconds)
                 deadlines.append(eligibleAt > now
                                  ? eligibleAt
@@ -650,7 +656,9 @@ public struct SessionStore {
     /// session's pid is Codex's managed daemon, alive across every TUI, and
     /// a desktop thread's is the app's own app-server, so such a session is
     /// kept and the launch check reads its rollout (`codexCandidates` with
-    /// no quiet gate). Codex has no registry.
+    /// no quiet gate). Codex has no registry. Nor is a live `copilot`
+    /// proof: one process can hold several sessions, and the launch check
+    /// reads a kept session's `events.jsonl` (`copilotCandidates`).
     public mutating func pruneDead(isAlive: (AgentKind, Int32) -> Bool,
                                    registrySession: (Int32, String?) -> String? = { _, _ in nil }) {
         sessions = sessions.filter { entry in
@@ -685,9 +693,10 @@ public struct SessionStore {
     /// helpers, no background shells for `quietSeconds` — and can be
     /// checked against Claude Code's own process registry. The read itself
     /// touches the filesystem and lives in the app; a session only reaches
-    /// it with a pid to look up, and only a Claude session does: Codex has
-    /// no registry, and its quiet sessions are `codexCandidates`. The
-    /// launch check passes no quiet gate (0).
+    /// it with a pid to look up, and only a Claude session does: Codex and
+    /// Copilot have no registry, and their quiet sessions are
+    /// `codexCandidates` and `copilotCandidates`. The launch check passes no
+    /// quiet gate (0).
     public func abandonCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
     -> [(sessionId: String, pid: Int32)] {
         sessions.values.sorted { $0.id < $1.id }.compactMap { s in
@@ -704,8 +713,24 @@ public struct SessionStore {
     /// line recorded one; the app then looks the rollout up by session id.
     public func codexCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
     -> [(sessionId: String, transcriptPath: String?)] {
+        quietCandidates(of: .codex, at: now, quietSeconds)
+    }
+
+    /// The same quiet turns among Copilot sessions, checked against the
+    /// session's `events.jsonl`, whose path the hook records on a Copilot
+    /// start, prompt or stop. No pid is needed: the file is the session's
+    /// own, and one `copilot` process can hold several sessions. The path
+    /// is nil when no line recorded one; the app then reads the session's
+    /// own file under Copilot's session state.
+    public func copilotCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
+    -> [(sessionId: String, transcriptPath: String?)] {
+        quietCandidates(of: .copilot, at: now, quietSeconds)
+    }
+
+    private func quietCandidates(of agent: AgentKind, at now: Date, _ quietSeconds: TimeInterval)
+    -> [(sessionId: String, transcriptPath: String?)] {
         sessions.values.sorted { $0.id < $1.id }.compactMap { s in
-            guard s.agent == .codex, Self.isQuietTurn(s, at: now, quietSeconds) else { return nil }
+            guard s.agent == agent, Self.isQuietTurn(s, at: now, quietSeconds) else { return nil }
             return (s.id, s.transcriptPath)
         }
     }
@@ -720,11 +745,12 @@ public struct SessionStore {
     /// idle_prompt, nothing), so the working roll would stand until the 2 h
     /// staleness backstop. When Claude's own registry says the process is
     /// sitting idle at its prompt and the transcript shows no completed
-    /// answer, or a Codex rollout ends on `turn_aborted`, the turn is over
-    /// and delivered nothing: dark, with no alert and no push. `endedAt` is
-    /// when the source says the turn ended (see `rescueStamp`). Returns the
-    /// instant the verdict took effect, for the journal, or nil when it
-    /// changed nothing.
+    /// answer, a Codex rollout ends on `turn_aborted`, or a Copilot
+    /// `events.jsonl` on an `abort` or, the turn having no end of its own, a
+    /// `session.shutdown`, the turn is over and delivered nothing: dark,
+    /// with no alert and no push. `endedAt` is when the source says the turn
+    /// ended (see `rescueStamp`). Returns the instant the verdict took
+    /// effect, for the journal, or nil when it changed nothing.
     @discardableResult
     public mutating func abandonTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
@@ -736,8 +762,8 @@ public struct SessionStore {
     }
 
     /// When a rescued verdict takes effect: when the turn ended, as the
-    /// registry's stamp, the rollout's end marker or the daemon's thread
-    /// record's `updatedAt` says, never before the
+    /// registry's stamp, the rollout's or the `events.jsonl`'s end marker or
+    /// the daemon's thread record's `updatedAt` says, never before the
     /// last main-agent event (an end marker naming the turn can be stamped
     /// before the aborted tool's late event) and never after now. A verdict
     /// dated to its real end is the `Stop` that was lost, replayed: `done`
@@ -758,7 +784,8 @@ public struct SessionStore {
     /// still-live helpers — and the "Finished" push that goes with it.
     /// Works during full hook outages, where the idle_prompt rescue (a
     /// hook itself) cannot. A Codex rollout that ends on `task_complete` is
-    /// the same proof.
+    /// the same proof, and so is a Copilot `events.jsonl` that ends on the
+    /// session's own `agentStop` hook.
     /// `endedAt` dates the finish as `abandonTurn`'s does; helpers still out
     /// hold it as of now. Returns the instant the finish took effect, for
     /// the journal, or nil when it changed nothing or was held: a held
@@ -783,6 +810,22 @@ public struct SessionStore {
         return stamp
     }
 
+    /// The failed turn Copilot reports with no hook: its `events.jsonl` ends
+    /// on a `session.error`, and no `agentStop` follows a failure. The turn
+    /// takes the outcome a `StopFailure` gives, `waiting(error)` with its
+    /// push, as of `endedAt` (see `rescueStamp`), and is closed. Returns the
+    /// instant it took effect, for the journal, or nil when it changed
+    /// nothing.
+    @discardableResult
+    public mutating func failTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
+        guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
+        let stamp = Self.rescueStamp(endedAt, in: s, now: now)
+        set(&s, .waiting(.error), stamp)
+        closeTurn(&s, byInterrupt: false, now: now)
+        sessions[sessionId] = s
+        return stamp
+    }
+
     /// The registry said "busy": Claude is genuinely running a turn even
     /// though no hook has arrived — which is what a session whose hooks
     /// died mid-flight looks like: a Ctrl-C can kill hook delivery for the
@@ -791,10 +834,10 @@ public struct SessionStore {
     /// that is demonstrably still working, and so the quiet gate re-arms.
     /// It re-arms nothing else: no state change, no alert, no ack churn.
     /// `now` is when the agent was last seen working: the registry's read
-    /// time, or the last line of a Codex rollout that says its turn runs,
-    /// so a turn that died without an end marker, and so stopped writing,
-    /// still meets the backstop 2 h after its last line. Liveness never
-    /// moves backwards.
+    /// time, or the last line of a Codex rollout or a Copilot `events.jsonl`
+    /// that says its turn runs, so a turn that died without an end marker,
+    /// and so stopped writing, still meets the backstop 2 h after its last
+    /// line. Liveness never moves backwards.
     public mutating func noteBusy(sessionId: String, now: Date) {
         guard var s = sessions[sessionId], s.state == .working else { return }
         s.lastEventAt = max(s.lastEventAt, now)

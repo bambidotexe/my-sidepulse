@@ -251,10 +251,28 @@ component names Copilot. While a session is open,
 leaves it behind.
 
 **The session's log.** `~/.copilot/session-state/<id>/events.jsonl`, one JSON
-object per line, `{type, data, id, timestamp, parentId}`: `user.message`,
-`assistant.turn_start`, `tool.execution_start`, `abort` (a user's interrupt),
-`session.error` (a failed turn), `session.shutdown`, and a `hook.start` for
-every hook that ran. `session.idle` is never written.
+object per line, `{type, data, id, timestamp, parentId}`, `timestamp` in ISO
+8601 with milliseconds. A turn at work writes `user.message`,
+`assistant.turn_start`, `assistant.message`, `tool.execution_start`,
+`tool.execution_complete`, `permission.requested` and `permission.completed`;
+`assistant.turn_end` ends every model call, not the turn. Its ends: `abort`
+(`data.reason` `user_initiated` for Ctrl+C or Esc Esc), `session.error` (a
+failed turn: the retries of a model call write only their `errorOccurred`
+hook's mirror, and only the last failure writes it), and `session.shutdown`
+(the session closing: after every `-p` turn, at an interactive exit).
+Every hook that runs is mirrored as a `hook.start` (`data.hookType`, and
+the hook's payload in `data.input`) and a `hook.end`, so with MySidepulse's
+hooks set up a natural end is the `hook.start` of the session's `agentStop`;
+a subagent's `agentStop` is mirrored into its parent's file under the
+subagent's id (`data.input.sessionId`), before the parent's own. There is no
+finished marker without hooks: `session.idle` and `assistant.idle` are never
+written. A turn's opening `system.message` is up to 91 KB, and a `/compact`
+writes about 95 KB of model lines; everything else written after a turn's end
+came to at most 6.7 KB in the five probe sessions of 2026-09-25. MySidepulse
+reads the last 64 KB of the file of a quiet working session
+(`CopilotTranscript`, a regular file only, opened without blocking), and of
+its lines only the type, the stamp, and a `hook.start`'s hook name and
+session.
 
 ## OpenCode: its plugin and its server
 

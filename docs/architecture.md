@@ -88,7 +88,7 @@ sync():
   alerts   = store.tick(now, userPresent)      // holds, settle, expiry, due pushes
   jobs.tick(now)
   probeJobs(now)                               // each running job's shell: still running a command? (ShellJobLiveness)
-  checkAbandonedTurns(now)                     // registry + transcript rescues; Codex: its daemon, else the rollout
+  checkAbandonedTurns(now)                     // registry + transcript rescues; Codex: its daemon, else the rollout; Copilot: its events.jsonl
   deliver(alerts)                              // → notify queue
   decision = Arbiter.decide(...)
   pre-paint acknowledgement if the user is typing in the host app
@@ -153,6 +153,7 @@ after it.
 | Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
 | Codex's daemon | its control socket, `~/.codex/app-server-control/app-server-control.sock` (`CodexDaemonClient`, a WebSocket over the unix socket on a utility queue, 1 s per call, completing on main; `WebSocketFrame` and `CodexThreadRecord` in Core read the frames and the answers): `thread/read` for a quiet `working` Codex session whose pid is the managed daemon (`ProcWalk.isManagedCodexDaemon`), one question out per session, the answer applied only if the session is still `working` with the same `lastMainEventAt`; `thread/loaded/list` once at launch. `notLoaded` / `idle` → the rollout tells finished from aborted, dark by default; `active` → `noteBusy`; anything else, or no answer, leaves the session to the rollout for 15 s | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read for quiet `working` Codex sessions (`SessionStore.codexCandidates`) the daemon does not host or could not decide, and after the daemon says a thread runs nothing; the recorded `transcript_path` when Core trusts it, else the daemon's `path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
+| Copilot's `events.jsonl` | last 64 KB of `~/.copilot/session-state/<session id>/events.jsonl` (`CopilotTranscript` reads, through the same non-blocking regular-file reader as the rollout, `FileTail`; `CopilotTranscriptTail` in Core decides from the lines' types and stamps and the session an `agentStop` mirror names), read for quiet `working` Copilot sessions (`SessionStore.copilotCandidates`) by `Engine.checkCopilotTurns`; the recorded path when it is exactly the session's own under that folder, else the session's own. `abort` and `session.shutdown` → dark, the session's `agentStop` → finished, `session.error` → `waiting(error)` | `finishTurn`, `abandonTurn`, `failTurn`, `noteBusy` |
 | Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
 | A running job's shell | `ProcWalk.info` (`e_pgid`, `e_tpgid`, `p_comm`, `p_starttime`) and `ProcWalk.childStartTimes` (`proc_listchildpids`, each child's fork time), read at every `sync()` for each running job with a pid; `JobStore.nextDeadline` brings one at least every `K.jobProbeSeconds` and `K.jobPromptSettleSeconds` after a first sighting at the prompt; `ShellJobLiveness` in Core builds the probe and judges it | `JobStore.probe` |
 | Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
@@ -162,12 +163,14 @@ after it.
 | The onboarding's five rows | a 2 s `Timer` while the wizard is up, plus `didBecomeKey`; nothing tells an app that a grant was made in System Settings | each row's own trailing control (`OnboardingCatalog`, `GrantRow`) |
 | The Settings window | a 2 s `Timer` while it is open (`SettingsModel.windowVisible`): the engine's status and the notification permission. The hook files when the window opens, when System or Health is shown and after a hook button. The doctor and the crash reports (`CrashReports`) when Health is shown and on Check Again, never on a timer | the pages; Health's two tables are `HealthReport.checks(for:)` and `readings(for:)` of `SettingsModel.healthFacts`, built in Core |
 
-Nothing polls either agent. The registry and transcript (Claude sessions),
-Codex's daemon and the rollout (Codex sessions) are asked on the engine's own
+Nothing polls an agent. The registry and transcript (Claude sessions),
+Codex's daemon and the rollout (Codex sessions) and the `events.jsonl`
+(Copilot sessions) are asked on the engine's own
 deadlines (`K.abandonQuietSeconds`, `K.abandonRecheckSeconds`), never on a
 free-running timer, and once at launch: after the replay, `pruneDead` (which
-reads each Claude session's registry record, and keeps a Codex session whose
-pid is a shared app-server, `ProcWalk.isCodexDaemon`),
+reads each Claude session's registry record, keeps a Codex session whose
+pid is a shared app-server, `ProcWalk.isCodexDaemon`, and a Copilot session
+whose `copilot` runs, since one process can hold several sessions),
 then `dropStaleNotifications`, the stores' `tick`, the daemon's
 `thread/loaded/list` when it hosts a working session, `checkAbandonedTurns`
 with no quiet gate, and only then the first `sync()`.
@@ -232,7 +235,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 
 | File | Writer | Content |
 |---|---|---|
-| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is (OpenCode's server for OpenCode): the key kept its name. Copilot's and OpenCode's events are written under the journal's own names (`SessionStart`, `Stop`, …), never their own; an OpenCode subagent's line carries its top session as `session_id` and its own session as `agent_id`. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. An older app version skips both names. |
+| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is (OpenCode's server for OpenCode): the key kept its name. Copilot's and OpenCode's events are written under the journal's own names (`SessionStart`, `Stop`, …), never their own; an OpenCode subagent's line carries its top session as `session_id` and its own session as `agent_id`. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `turn-failed`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. An older app version skips both names. |
 | `journal.1.jsonl` | the app, by rename | The previous journal. Rotation at 20 MB, or at 5 MB when no session is active. |
 | `config.json` | the app only, mode `0600`, atomic | `AppConfig`, below. |
 | `control.sock` | the app | The control socket. |

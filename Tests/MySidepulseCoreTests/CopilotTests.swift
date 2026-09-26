@@ -268,4 +268,138 @@ final class CopilotTests: XCTestCase {
         store.apply(ev(.sessionStart, 1, source: "resume"))
         XCTAssertEqual(store.sessions["s1"]?.state, .idle)
     }
+
+    // MARK: the events.jsonl check
+
+    func at(_ t: TimeInterval) -> Date { t0.addingTimeInterval(t) }
+    let transcript = "/Users/u/.copilot/session-state/c1/events.jsonl"
+
+    /// A quiet working Copilot session is checked against its `events.jsonl`,
+    /// pid or not; the registry rescue stays Claude's and the rollout check
+    /// Codex's.
+    func testAQuietCopilotSessionIsACandidate() {
+        var store = SessionStore()
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1", "transcriptPath": transcript], 0))
+        store.apply(line("postToolUse", ["sessionId": "c1", "toolName": "bash"], 1))
+        var withPid = line("userPromptSubmitted", ["sessionId": "c2"], 0)
+        withPid.agentPid = 4242
+        store.apply(withPid)
+        var codex = ev(.userPromptSubmit, 0, sid: "x1", turn: "t1")
+        codex.agent = .codex
+        store.apply(codex)
+
+        XCTAssertTrue(store.copilotCandidates(at: at(5)).isEmpty, "not quiet yet")
+        let quiet = store.copilotCandidates(at: at(1 + K.abandonQuietSeconds))
+        XCTAssertEqual(quiet.map(\.sessionId), ["c1", "c2"])
+        XCTAssertEqual(quiet.first?.transcriptPath, transcript)
+        XCTAssertNil(quiet.last?.transcriptPath)
+        XCTAssertEqual(store.copilotCandidates(at: at(2), quietSeconds: 0).map(\.sessionId), ["c1", "c2"],
+                       "the launch check has no quiet gate")
+        XCTAssertEqual(store.codexCandidates(at: at(100)).map(\.sessionId), ["x1"])
+        XCTAssertTrue(store.abandonCandidates(at: at(100)).isEmpty, "a Copilot pid has no Claude registry")
+
+        store.apply(line("agentStop", ["sessionId": "c1"], 30))
+        store.apply(line("notification", ["sessionId": "c2", "notification_type": "permission_prompt"], 30))
+        XCTAssertTrue(store.copilotCandidates(at: at(100)).isEmpty, "a finished or waiting session is not one")
+    }
+
+    func testNextDeadlineCoversTheCopilotRecheck() {
+        var store = SessionStore()
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        store.apply(line("postToolUse", ["sessionId": "c1", "toolName": "bash"], 1))
+        XCTAssertEqual(store.nextDeadline(after: at(5)), at(1 + K.abandonQuietSeconds),
+                       "wake when the session becomes a candidate")
+        XCTAssertEqual(store.nextDeadline(after: at(100)), at(100 + K.abandonRecheckSeconds),
+                       "then on the recheck cadence, with no pid: the file is the session's")
+    }
+
+    /// `abort` is the interrupt: dark, no alert, no push. The agentStop
+    /// mirror is the lost `Stop`, with the push a `Stop` earns.
+    func testAnAbortGoesDarkAndAnAgentStopFinishes() {
+        var store = SessionStore()
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        XCTAssertEqual(store.abandonTurn(sessionId: "c1", now: at(40), endedAt: at(30)), at(30))
+        XCTAssertEqual(store.sessions["c1"]?.state, .idle)
+        XCTAssertNil(store.sessions["c1"]?.notifyAt)
+        XCTAssertTrue(store.tick(now: at(30 + K.notifyDebounceSeconds + 1)).isEmpty)
+
+        store.apply(line("userPromptSubmitted", ["sessionId": "c2"], 100))
+        XCTAssertEqual(store.finishTurn(sessionId: "c2", now: at(130), endedAt: at(125)), at(125))
+        let pushed = store.tick(now: at(125 + K.notifyDebounceSeconds))
+        XCTAssertEqual(pushed.map(\.kind), [.finished])
+        XCTAssertEqual(pushed.map(\.agent), [.copilot])
+    }
+
+    /// `session.error` is the `StopFailure` Copilot never sends: amber with
+    /// the error reason and its push, as of the marker's stamp; a new prompt
+    /// is work again.
+    func testAFailedTurnTakesTheStopFailureOutcome() {
+        var store = SessionStore()
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        XCTAssertEqual(store.failTurn(sessionId: "c1", now: at(40), endedAt: at(30)), at(30))
+        XCTAssertEqual(store.sessions["c1"]?.state, .waiting(.error))
+        XCTAssertEqual(store.sessions["c1"]?.stateSince, at(30))
+        let pushed = store.tick(now: at(30 + K.notifyDebounceSeconds))
+        XCTAssertEqual(pushed.map(\.kind), [.needsYou(.error)])
+        XCTAssertEqual(pushed.map(\.agent), [.copilot])
+        XCTAssertNil(store.failTurn(sessionId: "c1", now: at(60), endedAt: at(30)),
+                     "only a working turn fails: a verdict that changes nothing has nothing to record")
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1"], 70))
+        XCTAssertEqual(store.sessions["c1"]?.state, .working)
+
+        var stopFailure = SessionStore()
+        stopFailure.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        var hook = JournalEvent(loggedAt: at(30), event: .stopFailure)
+        hook.sessionId = "c1"
+        stopFailure.apply(hook)
+        var failed = SessionStore()
+        failed.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        failed.failTurn(sessionId: "c1", now: at(30), endedAt: at(30))
+        XCTAssertEqual(failed.sessions["c1"]?.state, stopFailure.sessions["c1"]?.state,
+                       "the outcome a StopFailure hook gives")
+        XCTAssertEqual(failed.sessions["c1"]?.notifyAt, stopFailure.sessions["c1"]?.notifyAt)
+
+        var late = SessionStore()
+        late.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        let found = at(30 + K.notifyMaxLatenessSeconds + K.notifyDebounceSeconds + 30)
+        late.failTurn(sessionId: "c1", now: found, endedAt: at(30))
+        XCTAssertTrue(late.tick(now: found).isEmpty, "a failure found long after it pushes nothing")
+        XCTAssertEqual(late.sessions["c1"]?.state, .waiting(.error))
+
+        var held = SessionStore()
+        held.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        held.apply(line("agentStop", ["sessionId": "c1"], 5))
+        XCTAssertNil(held.failTurn(sessionId: "c1", now: at(40), endedAt: at(30)), "a finished turn does not fail")
+    }
+
+    /// The failure is journaled as `turn-failed`, stamped when it took
+    /// effect: replaying the lines gives the session the live store holds,
+    /// and the live store reading its own line back changes nothing.
+    func testAJournaledFailureReplaysAsTheSameVerdict() {
+        let turn = [line("userPromptSubmitted", ["sessionId": "c1"], 0),
+                    line("postToolUse", ["sessionId": "c1", "toolName": "bash"], 5)]
+        func replay(_ lines: [JournalEvent]) -> SessionStore {
+            var s = SessionStore()
+            for l in lines { s.apply(l) }
+            return s
+        }
+        var live = replay(turn)
+        let failedAt = live.failTurn(sessionId: "c1", now: at(60), endedAt: at(40))
+        XCTAssertEqual(failedAt, at(40))
+        var verdict = JournalEvent(loggedAt: at(40), event: .verdict)
+        verdict.sessionId = "c1"
+        verdict.verdict = TurnVerdict.turnFailed.rawValue
+        XCTAssertEqual(TurnVerdict.turnFailed.rawValue, "turn-failed")
+        XCTAssertEqual(replay(turn + [verdict]).sessions["c1"], live.sessions["c1"])
+        let before = live.sessions["c1"]
+        live.apply(verdict)
+        XCTAssertEqual(live.sessions["c1"], before, "the app's own line read back is a no-op")
+
+        var moved = replay(turn + [line("postToolUse", ["sessionId": "c1", "toolName": "bash"], 50)])
+        moved.apply(verdict)
+        XCTAssertEqual(moved.sessions["c1"]?.state, .working, "a main-agent event after the stamp wins")
+        var ghost = SessionStore()
+        ghost.apply(verdict)
+        XCTAssertTrue(ghost.sessions.isEmpty, "a verdict never creates a session")
+    }
 }

@@ -40,6 +40,9 @@ public enum TurnVerdict: String, Equatable {
     case turnAbandoned = "turn-abandoned"
     /// The turn finished and only its `Stop` was lost (`finishTurn`).
     case turnFinished = "turn-finished"
+    /// The turn failed and no hook said so: the outcome a `StopFailure`
+    /// gives (`failTurn`).
+    case turnFailed = "turn-failed"
     /// An open dialog was answered with no hook (`dialogAnswered`).
     case dialogAnswered = "dialog-answered"
 }
@@ -87,7 +90,8 @@ public struct JournalEvent: Codable, Equatable {
     /// says idle, to tell an interrupt (last entry: an unanswered user
     /// message) from a finish whose Stop was lost (last entry: an assistant
     /// message that says end_turn). For Codex it is the session's rollout,
-    /// read when a turn goes quiet (`CodexRolloutTail`).
+    /// read when a turn goes quiet (`CodexRolloutTail`); for Copilot, the
+    /// session's `events.jsonl` (`CopilotTranscriptTail`).
     public var transcriptPath: String?
     public var cwd: String?
     public var permissionMode: String?
