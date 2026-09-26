@@ -92,6 +92,14 @@ final class Engine {
     /// decides.
     private var askingDaemon: Set<String> = []
     private var daemonAskAgainAt: [String: Date] = [:]
+    /// When each Codex session's rollout, and each Copilot session's
+    /// `events.jsonl`, was last read: with no event of the session since, it
+    /// is read again `K.abandonRecheckSeconds` later at the earliest, however
+    /// often the journal delivers other lines (`SessionStore.sourceReadIsDue`).
+    /// One map per agent's file; a Copilot session is never both working and
+    /// waiting, so its two checks share one.
+    private var rolloutCheckedAt: [String: Date] = [:]
+    private var transcriptCheckedAt: [String: Date] = [:]
     /// Once per launch, and once per status value the daemon reports that
     /// the verdict does not know.
     private var warnedDaemonSilent = false
@@ -817,10 +825,12 @@ final class Engine {
     /// check on; its answer arrives later, on main (`daemonAnswered`). Every
     /// other session, one the daemon could not decide, and every session
     /// while the daemon is down or the launch checks run, is read from its
-    /// rollout (`checkCodexRollout`).
+    /// rollout (`checkCodexRollout`); live, a rollout read with no event of
+    /// the session since is read again 15 s later at the earliest.
     private func checkCodexTurns(now: Date, quietSeconds: TimeInterval) -> Bool {
         let candidates = store.codexCandidates(at: now, quietSeconds: quietSeconds)
         daemonAskAgainAt = daemonAskAgainAt.filter { store.sessions[$0.key] != nil }
+        rolloutCheckedAt = rolloutCheckedAt.filter { store.sessions[$0.key] != nil }
         guard !candidates.isEmpty else { return false }
         let daemonUp = !launching && CodexDaemonClient.socketExists()
         var ended = false
@@ -828,6 +838,9 @@ final class Engine {
             guard let session = store.sessions[sessionId] else { continue }
             if daemonUp, isHostedByDaemon(session), daemonAskAgainAt[sessionId].map({ now >= $0 }) ?? true {
                 askDaemon(sessionId: sessionId, asked: session.lastMainEventAt)
+                continue
+            }
+            if !launching, !SessionStore.sourceReadIsDue(session, checkedAt: rolloutCheckedAt[sessionId], now: now) {
                 continue
             }
             ended = checkCodexRollout(sessionId: sessionId, recorded: recorded, now: now) || ended
@@ -842,6 +855,7 @@ final class Engine {
     /// file.
     private func checkCodexRollout(sessionId: String, recorded: String?, now: Date) -> Bool {
         guard let session = store.sessions[sessionId] else { return false }
+        rolloutCheckedAt[sessionId] = now
         let verdict = rolloutVerdict(sessionId: sessionId, recorded: recorded)
         var ended = false
         switch CodexRolloutTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt,
@@ -908,11 +922,18 @@ final class Engine {
     /// is read from its `events.jsonl`: `CopilotTranscriptTail` decides;
     /// this only reads the file (the recorded path when Core trusts it, else
     /// the session's own under `~/.copilot/session-state`), maps the decision
-    /// onto the store and logs identifiers, never a line of the file.
+    /// onto the store and logs identifiers, never a line of the file. Live,
+    /// a file read with no event of the session since is read again 15 s
+    /// later at the earliest.
     private func checkCopilotTurns(now: Date, quietSeconds: TimeInterval) -> Bool {
         var ended = false
+        transcriptCheckedAt = transcriptCheckedAt.filter { store.sessions[$0.key] != nil }
         for (sessionId, recorded) in store.copilotCandidates(at: now, quietSeconds: quietSeconds) {
             guard let session = store.sessions[sessionId] else { continue }
+            if !launching, !SessionStore.sourceReadIsDue(session, checkedAt: transcriptCheckedAt[sessionId], now: now) {
+                continue
+            }
+            transcriptCheckedAt[sessionId] = now
             let verdict = CopilotTranscript.verdict(sessionId: sessionId, recorded: recorded,
                                                     root: Paths.copilotSessionState)
             switch CopilotTranscriptTail.decision(verdict: verdict, lastMainEventAt: session.lastMainEventAt) {
@@ -978,6 +999,11 @@ final class Engine {
         // is the answer, and the session is back to working; anything else
         // leaves the wait standing.
         for (sessionId, recorded, waitSince) in store.copilotWaitCandidates() {
+            guard let session = store.sessions[sessionId] else { continue }
+            if !launching, !SessionStore.sourceReadIsDue(session, checkedAt: transcriptCheckedAt[sessionId], now: now) {
+                continue
+            }
+            transcriptCheckedAt[sessionId] = now
             let tail = CopilotTranscript.tail(sessionId: sessionId, recorded: recorded,
                                               root: Paths.copilotSessionState)
             switch tail.map({ CopilotTranscriptTail.waitDecision(tail: $0, sessionId: sessionId, waitSince: waitSince) })

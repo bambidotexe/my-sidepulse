@@ -752,6 +752,18 @@ public struct SessionStore {
         }
     }
 
+    /// Whether a Codex rollout or a Copilot `events.jsonl` that a check read
+    /// at `checkedAt` is due to be read again: never read, an event of the
+    /// session since, or `K.abandonRecheckSeconds` gone by. A read that
+    /// decided nothing is not repeated however often the journal delivers
+    /// other lines; the deadline timer brings the next one. Liveness from the
+    /// source itself (`noteBusy`, dated to its last write) is no event. The
+    /// launch check reads every source whatever this says.
+    public static func sourceReadIsDue(_ s: Session, checkedAt: Date?, now: Date) -> Bool {
+        guard let checkedAt else { return true }
+        return s.lastEventAt > checkedAt || now.timeIntervalSince(checkedAt) >= K.abandonRecheckSeconds
+    }
+
     private func quietCandidates(of agent: AgentKind, at now: Date, _ quietSeconds: TimeInterval)
     -> [(sessionId: String, transcriptPath: String?)] {
         sessions.values.sorted { $0.id < $1.id }.compactMap { s in

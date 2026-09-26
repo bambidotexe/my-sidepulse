@@ -173,7 +173,13 @@ pid is a shared app-server, `ProcWalk.isCodexDaemon`, and a Copilot session
 whose `copilot` runs, since one process can hold several sessions),
 then `dropStaleNotifications`, the stores' `tick`, the daemon's
 `thread/loaded/list` when it hosts a working session, `checkAbandonedTurns`
-with no quiet gate, and only then the first `sync()`.
+with no quiet gate, and only then the first `sync()`. Every `sync()` runs the
+checks, and a busy journal brings many: a Codex rollout or a Copilot
+`events.jsonl` read while its session had no event since is read again
+`K.abandonRecheckSeconds` later at the earliest (`Engine.rolloutCheckedAt`,
+`transcriptCheckedAt`, `SessionStore.sourceReadIsDue`), so the reads stay
+bounded however much else the journal delivers; the launch check reads every
+one.
 
 ## Threading
 

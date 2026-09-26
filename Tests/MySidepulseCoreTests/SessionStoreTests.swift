@@ -1169,6 +1169,28 @@ final class SessionStoreTests: XCTestCase {
                        "a Claude session without a pid has no registry to read")
     }
 
+    /// A rollout or an `events.jsonl` that decided nothing is read again
+    /// `K.abandonRecheckSeconds` after the last read at the earliest,
+    /// however often the journal delivers other lines, unless the session
+    /// had an event since; one never read is read at once.
+    func testAQuietSourceIsReadAgainOnlyOnTheRecheckOrAfterAnEvent() {
+        var s = SessionStore()
+        s.apply(codex(.userPromptSubmit, 0, turn: "t1"))
+        let session = s.sessions["c1"]!
+        XCTAssertTrue(SessionStore.sourceReadIsDue(session, checkedAt: nil, now: at(30)), "never read")
+        XCTAssertFalse(SessionStore.sourceReadIsDue(session, checkedAt: at(30), now: at(31)))
+        XCTAssertFalse(SessionStore.sourceReadIsDue(session, checkedAt: at(30),
+                                                    now: at(30 + K.abandonRecheckSeconds - 0.001)))
+        XCTAssertTrue(SessionStore.sourceReadIsDue(session, checkedAt: at(30),
+                                                   now: at(30 + K.abandonRecheckSeconds)))
+        s.apply(codex(.postToolUse, 32, tool: "shell", turn: "t1"))
+        XCTAssertTrue(SessionStore.sourceReadIsDue(s.sessions["c1"]!, checkedAt: at(30), now: at(33)),
+                      "an event since the last read")
+        s.noteBusy(sessionId: "c1", now: at(30))
+        XCTAssertFalse(SessionStore.sourceReadIsDue(s.sessions["c1"]!, checkedAt: at(32), now: at(33)),
+                       "liveness from the source's own last write is no event")
+    }
+
     /// A rescued finish is dated to the turn's real end: found later than
     /// the lateness window, it is the `Stop` that was lost, replayed —
     /// `done` for what is left of its time, and no push.
