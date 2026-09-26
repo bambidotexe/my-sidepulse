@@ -108,8 +108,8 @@ final class JobTests: XCTestCase {
         XCTAssertEqual(s.jobs.count, 2, "two terminals, two jobs")
     }
 
-    /// `mysidepulse run` sends job-end and then exits, so its own death arrives
-    /// a moment later. Clearing on death unconditionally would erase the green
+    /// `mysidepulse run` appends its end line and then exits, so its own death
+    /// arrives a moment later. Clearing on death unconditionally would erase the green
     /// it just asked for.
     func testOwnerDeathClearsARunningJobButNotAFinishedOne() {
         var running = store()

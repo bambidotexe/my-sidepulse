@@ -236,8 +236,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (606, one opt-in skip) runs in about thirty seconds;
-  `MySidepulsePlatformTests` (204) takes about 30 s, because it spawns real
+  `MySidepulseCoreTests` (615, one opt-in skip) runs in about thirty seconds;
+  `MySidepulsePlatformTests` (207) takes about 30 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -489,7 +489,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (606 + 204, one opt-in skip) at
+`swift build` is clean and `swift test` is green (615 + 207, one opt-in skip) at
 this commit. The live journal replays.
 
 Checked on the strip by the owner: the brightness key over the roll carries the
