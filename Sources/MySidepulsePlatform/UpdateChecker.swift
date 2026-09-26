@@ -137,14 +137,14 @@ public final class UpdateDownload: NSObject, URLSessionDownloadDelegate {
         guard let expected = release.dmgSHA256 else { return true }
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
-        var hasher = SHA256()
+        var hasher = CryptoKit.SHA256()
         while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
         return hex(hasher.finalize()) == expected
     }
 
-    static func sha256(of data: Data) -> String { hex(SHA256.hash(data: data)) }
+    static func sha256(of data: Data) -> String { hex(CryptoKit.SHA256.hash(data: data)) }
 
-    private static func hex(_ digest: SHA256.Digest) -> String {
+    private static func hex(_ digest: CryptoKit.SHA256.Digest) -> String {
         digest.map { String(format: "%02x", $0) }.joined()
     }
 }
