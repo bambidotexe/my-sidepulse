@@ -114,6 +114,14 @@ final class SettingsModel: ObservableObject {
 
     /// nil until first read, and when settings.json exists but cannot be read.
     @Published private(set) var claudeHooksSetUp: Bool?
+    /// How many of the agent's events are ours, read alongside `claudeHooksSetUp`/`codexHooksSetUp`/
+    /// `copilotHooksSetUp`: nil when the file cannot be read, 0 when nothing of ours is there, which the
+    /// Health page shows no differently from an agent that has never been set up at all. Copilot's and
+    /// OpenCode's Health lines read `copilotHooksSetUp` and `opencodeState` instead, whose own states
+    /// already tell "nothing of ours" apart from "unreadable" and "stale".
+    @Published private(set) var claudeHooksInstalledCount: Int?
+    @Published private(set) var codexHooksInstalledCount: Int?
+    @Published private(set) var copilotHooksInstalledCount: Int?
     /// The same for Codex's hooks.json.
     @Published private(set) var codexHooksSetUp: Bool?
     /// Whether Codex is on this Mac (`~/.codex` exists), read with the hook files: its group and its
@@ -156,9 +164,12 @@ final class SettingsModel: ObservableObject {
     /// they change when a button here is pressed.
     func refreshHooks() {
         claudeHooksSetUp = HookInstaller.hooksSetUp(for: .claude)
+        claudeHooksInstalledCount = HookInstaller.hooksInstalled(for: .claude)
         codexHooksSetUp = HookInstaller.hooksSetUp(for: .codex)
+        codexHooksInstalledCount = HookInstaller.hooksInstalled(for: .codex)
         codexInstalled = HookInstaller.codexInstalled()
         copilotHooksSetUp = HookInstaller.hooksSetUp(for: .copilot)
+        copilotHooksInstalledCount = HookInstaller.hooksInstalled(for: .copilot)
         copilotInstalled = HookInstaller.copilotInstalled()
         copilotHooksDisabled = HookInstaller.copilotHooksDisabled()
         opencodeState = HookInstaller.opencodePluginState()
@@ -398,21 +409,24 @@ final class SettingsModel: ObservableObject {
         facts.notificationsGranted = notificationsGranted
 
         if hooksRead {
-            func state(_ setUp: Bool?) -> HealthFacts.HookFile {
-                switch setUp {
-                case true?: .setUp
-                case false?: .missing
-                case nil: .unreadable
-                }
+            // A count of nil is a file that cannot be read; zero is nothing of ours there, never set up
+            // or removed; anything short of the full count is something of ours but not all of it.
+            func state(count: Int?, setUpCount: Int) -> HealthFacts.HookFile {
+                guard let count else { return .unreadable }
+                if count <= 0 { return .notSetUp }
+                return count >= setUpCount ? .setUp : .missing
             }
-            facts.claudeHooks = state(claudeHooksSetUp)
-            facts.codexHooks = state(codexHooksSetUp)
-            facts.codexInstalled = codexInstalled
-            facts.copilotHooks = state(copilotHooksSetUp)
-            facts.copilotInstalled = copilotInstalled
+            facts.claudeHooks = state(count: claudeHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .claude))
+            facts.codexHooks = state(count: codexHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .codex))
+            facts.copilotHooks = state(count: copilotHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .copilot))
             facts.copilotHooksDisabled = copilotHooksDisabled
-            facts.opencodeHooks = state(opencodeHooksSetUp)
-            facts.opencodeInstalled = opencodeInstalled
+            // OpenCode's three-way state already tells "nothing of ours" (absent) apart from "unreadable"
+            // (a foreign or another copy's file): `hooksInstalled` alone cannot, since both read as zero.
+            facts.opencodeHooks = switch opencodeState {
+            case .absent: .notSetUp
+            case .current: .setUp
+            case .stale: .unreadable
+            }
             facts.terminalHookSetUp = zshHookSetUp
         }
         let checks = doctor?.checks ?? []

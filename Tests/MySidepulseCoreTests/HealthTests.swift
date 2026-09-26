@@ -63,6 +63,32 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(check("claude code hooks", facts)?.fix, Loc.settings.system.settingsUnreadableWarning)
     }
 
+    func testNothingSetUpAnywhereLeavesOnlyTheRedClaudeCodeLine() {
+        var facts = healthy()
+        facts.claudeHooks = .notSetUp
+        XCTAssertEqual(check("claude code hooks", facts)?.level, .failure,
+                       "no agent at all is set up: the strip follows nothing, so Claude's line stays red")
+        XCTAssertEqual(check("claude code hooks", facts)?.word, Loc.settings.words.disabled)
+        facts.codexHooks = .notSetUp
+        facts.copilotHooks = .notSetUp
+        facts.opencodeHooks = .notSetUp
+        XCTAssertNotNil(check("claude code hooks", facts), "still red: nothing of any agent's is set up")
+        XCTAssertNil(check("codex hooks", facts))
+        XCTAssertNil(check("copilot hooks", facts))
+        XCTAssertNil(check("opencode plugin", facts))
+    }
+
+    func testAnotherAgentSetUpAndNothingOfClaudesLeavesTheClaudeLine() {
+        var facts = healthy()
+        facts.claudeHooks = .notSetUp
+        facts.codexHooks = .setUp
+        XCTAssertNil(check("claude code hooks", facts), "the owner may be using Codex instead of Claude Code")
+        XCTAssertEqual(check("codex hooks", facts)?.level, .good)
+        facts.codexHooks = .notSetUp
+        facts.copilotHooks = .missing
+        XCTAssertNil(check("claude code hooks", facts), "something of Copilot's, even broken, is still something")
+    }
+
     func testHooksPointingAtAMissingCopyOrUnableToWriteAreRedOnTheirOneLine() {
         var facts = healthy()
         facts.hookBinary = .init(ok: false, detail: "binary missing")
@@ -76,21 +102,20 @@ final class HealthTests: XCTestCase {
 
     // MARK: Copilot
 
-    func testCopilotHooksAreALineOnlyWhileCopilotIsOnThisMacOrSetUp() {
+    func testCopilotHooksAreALineOnlyOnceSomethingOfOursIsAtItsHookFile() {
         var facts = healthy()
-        XCTAssertNil(check("copilot hooks", facts), "not on this Mac, nothing set up: no line")
-        facts.copilotInstalled = false
+        XCTAssertNil(check("copilot hooks", facts), "nothing read yet")
+        facts.copilotHooks = .notSetUp
+        XCTAssertNil(check("copilot hooks", facts), "never set up, or removed: no line, whether or not Copilot is on this Mac")
         facts.copilotHooks = .setUp
-        XCTAssertNotNil(check("copilot hooks", facts), "set up keeps the line even once Copilot is gone")
+        XCTAssertNotNil(check("copilot hooks", facts))
         facts.copilotHooks = .missing
-        facts.copilotInstalled = true
         XCTAssertNotNil(check("copilot hooks", facts))
     }
 
     func testMissingCopilotHooksAreOrangeAndSayWhichButton() {
         withLanguage(.en) {
             var facts = healthy()
-            facts.copilotInstalled = true
             facts.copilotHooks = .missing
             XCTAssertEqual(check("copilot hooks", facts)?.level, .warning)
             XCTAssertEqual(check("copilot hooks", facts)?.word, "Disabled")
@@ -100,7 +125,6 @@ final class HealthTests: XCTestCase {
 
     func testAStaleOrUnreadableCopilotFileIsInvalidAndOrange() {
         var facts = healthy()
-        facts.copilotInstalled = true
         facts.copilotHooks = .unreadable
         XCTAssertEqual(check("copilot hooks", facts)?.level, .warning)
         XCTAssertEqual(check("copilot hooks", facts)?.fix, Loc.settings.system.copilotHooksInvalidWarning)
@@ -108,7 +132,6 @@ final class HealthTests: XCTestCase {
 
     func testDisableAllHooksTurnsTheSetUpLineOrangeWithItsOwnFix() {
         var facts = healthy()
-        facts.copilotInstalled = true
         facts.copilotHooks = .setUp
         facts.copilotHooksDisabled = true
         XCTAssertEqual(check("copilot hooks", facts)?.level, .warning)
@@ -119,10 +142,11 @@ final class HealthTests: XCTestCase {
 
     // MARK: OpenCode
 
-    func testOpencodePluginIsALineOnlyWhileOpenCodeIsOnThisMacOrSetUp() {
+    func testOpencodePluginIsALineOnlyOnceSomethingOfOursIsAtThePluginPath() {
         var facts = healthy()
         XCTAssertNil(check("opencode plugin", facts))
-        facts.opencodeInstalled = true
+        facts.opencodeHooks = .notSetUp
+        XCTAssertNil(check("opencode plugin", facts), "never set up, or removed: no line, whether or not OpenCode is on this Mac")
         facts.opencodeHooks = .missing
         XCTAssertNotNil(check("opencode plugin", facts))
     }
@@ -130,7 +154,6 @@ final class HealthTests: XCTestCase {
     func testAPluginOfAnotherCopyIsInvalidNotMissing() {
         withLanguage(.en) {
             var facts = healthy()
-            facts.opencodeInstalled = true
             facts.opencodeHooks = .unreadable
             XCTAssertEqual(check("opencode plugin", facts)?.level, .warning)
             XCTAssertEqual(check("opencode plugin", facts)?.word, "Invalid")
@@ -140,16 +163,21 @@ final class HealthTests: XCTestCase {
 
     func testAWorkingOpenCodePluginIsGreen() {
         var facts = healthy()
-        facts.opencodeInstalled = true
         facts.opencodeHooks = .setUp
         XCTAssertEqual(check("opencode plugin", facts)?.level, .good)
     }
 
-    func testTheOptionalGrantsAreOrange() {
+    func testTheTerminalHookIsALineOnlyOnceTheZshBlockIsThere() {
         var facts = healthy()
         facts.terminalHookSetUp = false
+        XCTAssertNil(check("terminal hook", facts), "nothing of ours in ~/.zshrc: no line")
+        facts.terminalHookSetUp = true
+        XCTAssertEqual(check("terminal hook", facts)?.level, .good)
+    }
+
+    func testTheOptionalGrantsAreOrange() {
+        var facts = healthy()
         facts.notificationsGranted = false
-        XCTAssertEqual(check("terminal hook", facts)?.level, .warning)
         XCTAssertEqual(check("notifications permission", facts)?.level, .warning)
     }
 
@@ -248,13 +276,10 @@ final class HealthTests: XCTestCase {
     func testTheTablesStayShortInTheWorstCase() {
         var facts = healthy()
         facts.claudeHooks = .missing
-        facts.codexInstalled = true
         facts.codexHooks = .missing
-        facts.copilotInstalled = true
         facts.copilotHooks = .missing
-        facts.opencodeInstalled = true
         facts.opencodeHooks = .missing
-        facts.terminalHookSetUp = false
+        facts.terminalHookSetUp = true
         facts.notificationsGranted = false
         facts.devices = [.init(name: "SidePulseDot", leds: 8, path: "/Volumes/SidePulseDot", stalled: true)]
         facts.launchAgent = .notSupervised
@@ -262,8 +287,8 @@ final class HealthTests: XCTestCase {
         facts.control = .init(ok: false, detail: "control socket unreachable")
         facts.recentCrashes = [Date(), Date()]
         XCTAssertEqual(HealthReport.checks(for: facts).count, HealthLimits.checks,
-                       "the worst case is exactly the limit: every agent installed and missing, both " +
-                       "only-while-wrong lines, and a crash")
+                       "the worst case is exactly the limit: every hook present and broken, the terminal " +
+                       "hook set up, the one only-while-wrong line, and a crash")
         XCTAssertLessThanOrEqual(HealthReport.checks(for: facts).count, HealthLimits.checks)
 
         var busy = healthy()

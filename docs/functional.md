@@ -954,13 +954,23 @@ preference is on neither table, and neither are the version and updates (they
 are General's), the mode, the battery, how long the app has run, its memory or
 where it is installed.
 
+**A hook line is on the table only once something of MySidepulse's is at the agent's hook file: never set
+up, or removed, is no line at all**, whether or not the agent itself is on this Mac — the owner may simply
+not use it, and an orange line for an agent nobody has set up would say nothing worth a glance. Claude
+Code's hooks are the one exception that can still show empty: they are the required line, and stay it while
+no other agent's hooks have something of ours instead; once another agent's do (Codex's, Copilot's or
+OpenCode's) and Claude Code's do not, the Claude Code line leaves too — the owner may be using that agent
+instead of Claude Code. With no agent at all set up, the Claude Code line stays red: the strip then follows
+nothing. The terminal hook follows the same rule on its own single flag: no zsh block is no line, not an
+orange one.
+
 | Health line | When | Reads |
 |---|---|---|
-| Claude Code hooks | always, once the hook files are read | Enabled; Disabled in red; Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
-| Codex hooks | once the hook files are read, while Codex is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional); Invalid in orange when `~/.codex/hooks.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
-| Copilot hooks | once the hook files are read, while Copilot is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional) when an event is missing, when `disableAllHooks` turns them off in `~/.copilot/settings.json` or `~/.copilot/config.json`, or when the file belongs to another copy of MySidepulse (its events do not match); Invalid in orange when the hook file cannot be parsed as JSON; Failed in orange when the hooks cannot append to the journal |
-| OpenCode plugin | once the hook files are read, while OpenCode is on this Mac or the plugin is set up | Enabled; Disabled in orange (optional) with no plugin file; Invalid in orange when the plugin file is not this copy's — a stale plugin of another copy of MySidepulse, which Set Up replaces, or a foreign file, which Set Up refuses and must be removed by hand; Failed in orange when the plugin cannot append to the journal |
-| Terminal hook | always, once read | Enabled, or Disabled in orange |
+| Claude Code hooks | always, once the hook files are read, except while another agent's hooks have something of ours and Claude Code's have nothing | Enabled; Disabled in red (also while nothing of any agent's is set up); Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
+| Codex hooks | once something of ours is at `~/.codex/hooks.json` | Enabled; Disabled in orange (optional) when an event is missing; Invalid in orange when the file cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
+| Copilot hooks | once something of ours is at Copilot's hook file | Enabled; Disabled in orange (optional) when an event is missing, when `disableAllHooks` turns them off in `~/.copilot/settings.json` or `~/.copilot/config.json`, or when the file belongs to another copy of MySidepulse (its events do not match); Invalid in orange when the hook file cannot be parsed as JSON; Failed in orange when the hooks cannot append to the journal |
+| OpenCode plugin | once something of ours is at OpenCode's plugin path | Enabled; Invalid in orange when the plugin file is not this copy's — a stale plugin of another copy of MySidepulse, which Set Up replaces, or a foreign file, which Set Up refuses and must be removed by hand; Failed in orange when the plugin cannot append to the journal |
+| Terminal hook | only while the zsh block is there | Enabled, in green |
 | Notifications permission | always, once read | Granted, or Denied in orange |
 | SidePulse strip | always, once the engine has answered | Available (each strip's name, LEDs and mount path as the tooltip); Missing in orange with none plugged in; Stalled in orange |
 | Open at login and reopen after a crash (the launch agent) | always, once the engine has answered | Enabled; Disabled in orange (a crash would leave the strip frozen); Opened by hand in orange while this process is not the one launchd supervises, with the General page's warning |
@@ -968,8 +978,8 @@ where it is installed.
 | The mysidepulse command | only while a command cannot reach the app over its socket | Failed in orange |
 | Crashes in the last 7 days | only while there is one (`K.healthCrashWindow`, read from `~/Library/Logs/DiagnosticReports`) | the count in orange, the last one's date as the tooltip |
 
-Five lines on a Mac where everything works, up to eight with every agent on
-it, eleven at most (`HealthLimits`).
+Four lines on a Mac where nothing is set up (Claude Code's red among them), five where Claude Code's and the
+terminal's hooks work, up to eight with every agent's set up and working, eleven at most (`HealthLimits`).
 
 | Information line | When | Reads |
 |---|---|---|
@@ -1281,12 +1291,17 @@ restart it when it left. The white is paint only, like the Playground preview;
 the off step lights nothing.
 
 `doctor` checks: app reachable; auto-start & restart (this process is the one
-launchd supervises); hooks installed (all 15); hook binary exists; hook command
-(informational); codex hooks (a word when Codex is not installed; with it, all
-12 subscribed to a binary that exists); copilot hooks (a word when Copilot is
-not installed; with it, all 7 subscribed to a binary that exists, and
-`disableAllHooks` fails the check even then); opencode plugin (a word when
-OpenCode is not installed; with it, present and written by this copy of
+launchd supervises); hooks installed (all 15, except a "not set up" word while
+another agent's hooks have something of ours and Claude Code's have nothing —
+the owner may be using that agent instead — or a failure once nothing of any
+agent's is set up); hook binary exists; hook command (informational); codex
+hooks (a "not set up" word when nothing of ours is at `~/.codex/hooks.json`,
+whether or not Codex itself is on this Mac; with something there, all 12
+subscribed to a binary that exists); copilot hooks (the same "not set up" word
+when nothing of ours is at Copilot's hook file; with something there, all 7
+subscribed to a binary that exists, and `disableAllHooks` fails the check even
+then); opencode plugin (the same "not set up" word when no plugin file is at
+OpenCode's plugin path; with one there, present and written by this copy of
 MySidepulse); journal writable; last event age
 (informational); strips (informational, shows `STALLED`); notifications (fails
 only on an unusable server or topic).

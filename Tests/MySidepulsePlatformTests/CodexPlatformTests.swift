@@ -182,14 +182,13 @@ final class CodexPlatformTests: XCTestCase {
 
     // MARK: the doctor
 
-    func probes(codexInstalled: Bool, codexRoot: [String: Any]?) -> Doctor.Probes {
+    func probes(codexRoot: [String: Any]?) -> Doctor.Probes {
         Doctor.Probes(
             appResponse: { ControlResponse(ok: true, mode: "auto", loginItem: "enabled") },
             settingsRoot: {
                 HookConfig.install(into: [:], command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook")
             },
             codexHooksRoot: { codexRoot },
-            codexInstalled: { codexInstalled },
             binaryExists: { !$0.contains("gone") },
             journalWritable: { true },
             lastEventAge: { 42 })
@@ -199,20 +198,24 @@ final class CodexPlatformTests: XCTestCase {
         report.lines.first { $0.contains("codex hooks") } ?? ""
     }
 
-    func testTheCodexLineIsAWordWithoutCodexAndACheckWithIt() {
+    func testTheCodexLineIsAWordUntilSetUpAndACheckOnceItIs() {
         let command = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"
         let full = HookConfig.install(into: [:], command: command, events: HookConfig.codexEvents)
 
-        let absent = Doctor.run(probes(codexInstalled: false, codexRoot: nil))
+        // Nothing of ours at hooks.json passes with a "not set up" sentence, whether or not Codex itself
+        // is on this Mac.
+        let absent = Doctor.run(probes(codexRoot: [:]))
         XCTAssertEqual(absent.failures, 0)
         XCTAssertTrue(codexLine(absent).hasPrefix("[OK]"), codexLine(absent))
-        XCTAssertTrue(codexLine(absent).contains("not installed"))
+        XCTAssertTrue(codexLine(absent).contains("not set up"), codexLine(absent))
 
-        let noFile = Doctor.run(probes(codexInstalled: true, codexRoot: nil))
-        XCTAssertEqual(noFile.failures, 1)
-        XCTAssertTrue(codexLine(noFile).hasPrefix("[FAIL]") && codexLine(noFile).contains("hooks.json"), codexLine(noFile))
+        // A hooks.json that is there and cannot be read is a real failure, distinct from never having one.
+        let unreadable = Doctor.run(probes(codexRoot: nil))
+        XCTAssertEqual(unreadable.failures, 1)
+        XCTAssertTrue(codexLine(unreadable).hasPrefix("[FAIL]") && codexLine(unreadable).contains("hooks.json"),
+                      codexLine(unreadable))
 
-        let good = Doctor.run(probes(codexInstalled: true, codexRoot: full))
+        let good = Doctor.run(probes(codexRoot: full))
         XCTAssertEqual(good.failures, 0, good.lines.joined(separator: "\n"))
         XCTAssertTrue(codexLine(good).contains("12 events"))
 
@@ -220,14 +223,14 @@ final class CodexPlatformTests: XCTestCase {
         var hooks = partial["hooks"] as! [String: Any]
         hooks.removeValue(forKey: "Interrupt")
         partial["hooks"] = hooks
-        let missing = Doctor.run(probes(codexInstalled: true, codexRoot: partial))
+        let missing = Doctor.run(probes(codexRoot: partial))
         XCTAssertTrue(codexLine(missing).hasPrefix("[FAIL]") && codexLine(missing).contains("Interrupt"))
 
         let stale = HookConfig.install(into: [:], command: "/gone/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
                                        events: HookConfig.codexEvents)
-        let staleReport = Doctor.run(probes(codexInstalled: true, codexRoot: stale))
+        let staleReport = Doctor.run(probes(codexRoot: stale))
         XCTAssertTrue(codexLine(staleReport).hasPrefix("[FAIL]") && codexLine(staleReport).contains("missing binary"))
-        XCTAssertEqual(Doctor.run(probes(codexInstalled: true, codexRoot: full)).checks.count, 12,
+        XCTAssertEqual(Doctor.run(probes(codexRoot: full)).checks.count, 12,
                        "app, auto-start, hooks installed, hook binary, hook command, codex hooks, " +
                        "copilot hooks, opencode plugin, journal, last event, device, notifications")
     }

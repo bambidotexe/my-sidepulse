@@ -553,16 +553,14 @@ final class CodexTests: XCTestCase {
         HealthReport.checks(for: facts).first { $0.id == "codex hooks" }
     }
 
-    func testTheCodexLineIsThereOnlyWhileCodexIsOrItsHooksAre() {
+    func testTheCodexLineIsThereOnlyOnceSomethingOfOursIsAtItsHooksFile() {
         var facts = healthy()
         XCTAssertNil(codexRow(facts), "nothing read yet")
+        facts.codexHooks = .notSetUp
+        XCTAssertNil(codexRow(facts), "nothing of ours: never set up, or removed")
         facts.codexHooks = .missing
-        facts.codexInstalled = false
-        XCTAssertNil(codexRow(facts), "a Mac without Codex has nothing to set up")
-        facts.codexInstalled = true
         XCTAssertEqual(codexRow(facts)?.level, .warning, "optional: orange, never red")
         XCTAssertEqual(codexRow(facts)?.fix, Loc.settings.system.withoutCodexHooksWarning)
-        facts.codexInstalled = false
         facts.codexHooks = .setUp
         XCTAssertEqual(codexRow(facts)?.level, .good, "set up, so Remove stays reachable")
         facts.codexHooksCheck = .init(ok: false, detail: "binary missing")
@@ -570,9 +568,7 @@ final class CodexTests: XCTestCase {
         XCTAssertEqual(codexRow(facts)?.fix, Loc.settings.health.codexHookCommandFix)
         facts.codexHooksCheck = nil
         facts.codexHooks = .unreadable
-        XCTAssertNil(codexRow(facts), "unreadable is not set up, and Codex is not there")
-        facts.codexInstalled = true
-        XCTAssertEqual(codexRow(facts)?.level, .warning)
+        XCTAssertEqual(codexRow(facts)?.level, .warning, "the file is there and cannot be read")
         XCTAssertEqual(HealthReport.checks(for: facts).map(\.id).prefix(3),
                        ["claude code hooks", "codex hooks", "terminal hook"], "right after Claude's")
     }
@@ -582,7 +578,6 @@ final class CodexTests: XCTestCase {
             var facts = healthy()
             facts.claudeHooks = .missing
             facts.codexHooks = .setUp
-            facts.codexInstalled = true
             facts.sessions = [.init(id: "0123456789", agent: .codex, phase: .working, ageSeconds: 12, cwd: nil),
                               .init(id: "abcdefghij", agent: .claude, phase: .done, ageSeconds: 60, cwd: nil)]
             let reading = HealthReport.readings(for: facts).first { $0.id == "sessions" }

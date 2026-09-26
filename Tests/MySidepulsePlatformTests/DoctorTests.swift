@@ -66,25 +66,29 @@ final class DoctorTests: XCTestCase {
                                                  notify: NotifyStatus(enabled: true, server: "https://ntfy.sh",
                                                                       topicMasked: "not a…", topicUsable: false)) }
         var copilotOn = probes()
-        copilotOn.copilotInstalled = { true }
         copilotOn.copilotHooksRoot = { HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse") }
         var copilotDisabled = copilotOn
         copilotDisabled.copilotHooksDisabled = { true }
         var copilotUnreadable = probes()
-        copilotUnreadable.copilotInstalled = { true }
         copilotUnreadable.copilotHooksRoot = { nil }
         var opencodeOn = probes()
-        opencodeOn.opencodeInstalled = { true }
         opencodeOn.opencodePluginPresent = { true }
         opencodeOn.opencodePluginCurrent = { true }
         var opencodeStale = opencodeOn
         opencodeStale.opencodePluginCurrent = { false }
+        var claudeNotSetUp = probes()
+        claudeNotSetUp.settingsRoot = { [:] }
+        claudeNotSetUp.codexHooksRoot = {
+            HookConfig.install(into: [:],
+                               command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
+                               events: HookConfig.codexEvents)
+        }
         for language in Language.allCases {
             let saved = Loc.language
             Loc.language = language
             defer { Loc.language = saved }
             for p in [probes(), down, unreadable, stale, off, unusable, copilotOn, copilotDisabled,
-                      copilotUnreadable, opencodeOn, opencodeStale] {
+                      copilotUnreadable, opencodeOn, opencodeStale, claudeNotSetUp] {
                 for check in Doctor.run(p).checks {
                     XCTAssertFalse(check.detail.contains { longDashes.contains($0) },
                                    "\(language) \(check.name): \(check.detail)")
@@ -150,7 +154,6 @@ final class DoctorTests: XCTestCase {
 
     func testCopilotWithEveryEventSubscribedPasses() {
         var p = probes()
-        p.copilotInstalled = { true }
         p.copilotHooksRoot = { HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse") }
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("copilot hooks") },
@@ -159,7 +162,6 @@ final class DoctorTests: XCTestCase {
 
     func testCopilotMissingAnEventIsAFailure() {
         var p = probes()
-        p.copilotInstalled = { true }
         p.copilotHooksRoot = {
             var root = HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse")
             var hooks = root["hooks"] as! [String: Any]
@@ -173,7 +175,6 @@ final class DoctorTests: XCTestCase {
 
     func testCopilotDisableAllHooksIsAFailureEvenWithEveryEventSubscribed() {
         var p = probes()
-        p.copilotInstalled = { true }
         p.copilotHooksRoot = { HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse") }
         p.copilotHooksDisabled = { true }
         let report = Doctor.run(p)
@@ -181,9 +182,21 @@ final class DoctorTests: XCTestCase {
                       report.lines.joined(separator: "\n"))
     }
 
+    /// `disableAllHooks` is Copilot's own setting: with nothing of ours in the file it turns nothing of
+    /// ours off, so the line passes as not set up, and it does not stand in for Claude Code's hooks.
+    func testCopilotDisableAllHooksWithNothingOfOursIsNotSetUp() {
+        var p = probes()
+        p.settingsRoot = { [:] }
+        p.copilotHooksRoot = { [:] }
+        p.copilotHooksDisabled = { true }
+        let report = Doctor.run(p)
+        let all = report.lines.joined(separator: "\n")
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("copilot hooks") && $0.contains("not set up") }, all)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("hooks installed") }, all)
+    }
+
     func testCopilotUnparseableFileIsAFailure() {
         var p = probes()
-        p.copilotInstalled = { true }
         p.copilotHooksRoot = { nil }
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("copilot hooks") })
@@ -198,28 +211,62 @@ final class DoctorTests: XCTestCase {
 
     func testOpenCodeCurrentPluginPasses() {
         var p = probes()
-        p.opencodeInstalled = { true }
         p.opencodePluginPresent = { true }
         p.opencodePluginCurrent = { true }
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("opencode plugin") })
     }
 
-    func testOpenCodeMissingPluginIsAFailure() {
+    func testOpenCodeAbsentPluginPassesWithNotSetUp() {
         var p = probes()
-        p.opencodeInstalled = { true }
         p.opencodePluginPresent = { false }
         let report = Doctor.run(p)
-        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("opencode plugin") })
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("opencode plugin") },
+                      "nothing of ours at the plugin path passes, whether or not OpenCode is on this Mac")
     }
 
     func testOpenCodeStalePluginIsAFailure() {
         var p = probes()
-        p.opencodeInstalled = { true }
         p.opencodePluginPresent = { true }
         p.opencodePluginCurrent = { false }
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("opencode plugin") })
+    }
+
+    // MARK: Claude Code hooks mirror the Health rule
+
+    func testClaudeHooksFailEmptyWhenNoAgentAtAllIsSetUp() {
+        var p = probes()
+        p.settingsRoot = { [:] }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("hooks installed") },
+                      "nothing of any agent's is set up: the strip follows nothing, so this stays red")
+    }
+
+    func testClaudeHooksPassEmptyOnceAnotherAgentHasSomething() {
+        var p = probes()
+        p.settingsRoot = { [:] }
+        p.codexHooksRoot = {
+            HookConfig.install(into: [:],
+                               command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
+                               events: HookConfig.codexEvents)
+        }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("hooks installed") },
+                      "the owner may be using Codex instead of Claude Code")
+    }
+
+    func testUnreadableClaudeSettingsAreAFailureEvenWithAnotherAgentSetUp() {
+        var p = probes()
+        p.settingsRoot = { nil }
+        p.codexHooksRoot = {
+            HookConfig.install(into: [:],
+                               command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
+                               events: HookConfig.codexEvents)
+        }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("hooks installed") },
+                      "a settings.json that cannot be read is broken, not merely unused")
     }
 
     func testMissingHookEventIsAFailure() {

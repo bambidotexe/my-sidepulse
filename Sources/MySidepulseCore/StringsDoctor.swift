@@ -86,6 +86,15 @@ public struct DoctorStrings {
         }
     }
 
+    /// Nothing of MySidepulse's is in ~/.claude/settings.json, and another agent's hooks are set up: the
+    /// owner may be using that agent instead of Claude Code, so this passes rather than failing.
+    public var claudeHooksNotSetUp: String {
+        switch language {
+        case .en: "Claude Code hooks not set up. Run mysidepulse install-hooks to subscribe"
+        case .fr: "Hooks Claude Code non configurés. Lancez mysidepulse install-hooks pour les abonner"
+        }
+    }
+
     public var settingsMissingOrUnparseable: String {
         switch language {
         case .en: "~/.claude/settings.json missing or unparseable"
@@ -121,10 +130,12 @@ public struct DoctorStrings {
         }
     }
 
-    public var codexNotInstalled: String {
+    /// Nothing of MySidepulse's is in Codex's hooks.json: never set up, or removed. Shown whether or not
+    /// Codex itself is on this Mac; the Health page mirrors the same rule.
+    public var codexHooksNotSetUp: String {
         switch language {
-        case .en: "Codex not installed (no ~/.codex), nothing to subscribe"
-        case .fr: "Codex non installé (pas de ~/.codex), rien à abonner"
+        case .en: "Codex hooks not set up. Run mysidepulse install-hooks to subscribe"
+        case .fr: "Hooks Codex non configurés. Lancez mysidepulse install-hooks pour les abonner"
         }
     }
 
@@ -135,10 +146,12 @@ public struct DoctorStrings {
         }
     }
 
-    public var copilotNotInstalled: String {
+    /// Nothing of MySidepulse's is in Copilot's hook file: never set up, or removed. Shown whether or not
+    /// Copilot itself is on this Mac; the Health page mirrors the same rule.
+    public var copilotHooksNotSetUp: String {
         switch language {
-        case .en: "GitHub Copilot not installed (no ~/.copilot), nothing to subscribe"
-        case .fr: "GitHub Copilot non installé (pas de ~/.copilot), rien à abonner"
+        case .en: "Copilot hooks not set up. Run mysidepulse install-hooks to subscribe"
+        case .fr: "Hooks Copilot non configurés. Lancez mysidepulse install-hooks pour les abonner"
         }
     }
 
@@ -158,17 +171,12 @@ public struct DoctorStrings {
         }
     }
 
-    public var opencodeNotInstalled: String {
+    /// No plugin of MySidepulse's at OpenCode's plugin path: never set up, or removed. Shown whether or
+    /// not OpenCode itself is on this Mac; the Health page mirrors the same rule.
+    public var opencodePluginNotSetUp: String {
         switch language {
-        case .en: "OpenCode not installed (no ~/.config/opencode, ~/.opencode or OpenCode.app), nothing to load"
-        case .fr: "OpenCode non installé (pas de ~/.config/opencode, ~/.opencode ni OpenCode.app), rien à charger"
-        }
-    }
-
-    public var opencodePluginMissing: String {
-        switch language {
-        case .en: "~/.config/opencode/plugins/mysidepulse.js missing. Run mysidepulse install-hooks"
-        case .fr: "~/.config/opencode/plugins/mysidepulse.js manquant. Lancez mysidepulse install-hooks"
+        case .en: "OpenCode plugin not set up. Run mysidepulse install-hooks to load it"
+        case .fr: "Plugin OpenCode non configuré. Lancez mysidepulse install-hooks pour le charger"
         }
     }
 

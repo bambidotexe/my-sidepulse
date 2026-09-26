@@ -18,8 +18,13 @@ public struct HealthFacts: Equatable {
     public enum HookFile: Equatable {
         /// Every event is subscribed.
         case setUp
-        /// At least one event is not.
+        /// Something of MySidepulse's is there (an event, an entry), but not all of it: some events
+        /// missing, a stale binary, disableAllHooks, a plugin from another copy.
         case missing
+        /// Nothing of MySidepulse's is there: never set up, or removed. Not a line on the Health page,
+        /// except Claude Code's, which stays the one required line while no other agent's hooks have
+        /// something of ours instead.
+        case notSetUp
         /// The file is there and cannot be read, which no button can fix.
         case unreadable
     }
@@ -117,9 +122,6 @@ public struct HealthFacts: Equatable {
     public var sessions: [Session] = []
 
     // Codex
-    /// Whether Codex is on this Mac (`~/.codex` exists). Nil until read. Its hooks are a line only while
-    /// it is, or while they are set up.
-    public var codexInstalled: Bool?
     public var codexHooks: HookFile?
     /// The doctor's "codex hooks".
     public var codexHooksCheck: Check?
@@ -127,9 +129,6 @@ public struct HealthFacts: Equatable {
     public var codexHookCommand: String?
 
     // GitHub Copilot
-    /// Whether Copilot is on this Mac (`~/.copilot` exists). Nil until read. Its hooks are a line only
-    /// while it is, or while they are set up.
-    public var copilotInstalled: Bool?
     public var copilotHooks: HookFile?
     /// The doctor's "copilot hooks".
     public var copilotHooksCheck: Check?
@@ -139,9 +138,6 @@ public struct HealthFacts: Equatable {
     public var copilotHooksDisabled: Bool?
 
     // OpenCode
-    /// Whether OpenCode is on this Mac. Nil until read. Its line is there only while it is, or while the
-    /// plugin is set up.
-    public var opencodeInstalled: Bool?
     public var opencodeHooks: HookFile?
     /// The doctor's "opencode plugin".
     public var opencodeHooksCheck: Check?
@@ -221,15 +217,23 @@ public enum HealthReport {
     }
 
     /// Required: without them the strip never shows Claude. One line says whether they work at all: set up,
-    /// pointing at a copy of MySidepulse that exists, and able to write the journal the app reads.
+    /// pointing at a copy of MySidepulse that exists, and able to write the journal the app reads. Nothing
+    /// of Claude Code's is the one case that can still pass: the owner may be using another agent instead,
+    /// so the line leaves once that agent's hooks have something of ours and Claude's do not. With no agent
+    /// at all set up, the line stays red: the strip then follows nothing.
     static func claudeHooks(_ facts: HealthFacts) -> HealthRow? {
         guard let hooks = facts.claudeHooks else { return nil }
         let t = Loc.settings.health
         let system = Loc.settings.system
         let words = Loc.settings.words
         let label = system.claudeCodeHooksLabel
+        if hooks == .notSetUp {
+            let anotherAgentHasSomething = [facts.codexHooks, facts.copilotHooks, facts.opencodeHooks]
+                .contains { $0 != nil && $0 != .notSetUp }
+            if anotherAgentHasSomething { return nil }
+        }
         switch hooks {
-        case .missing:
+        case .notSetUp, .missing:
             return HealthRow(id: "claude code hooks", label: label, level: HealthRules.grant(held: false, required: true),
                              word: words.disabled, detail: facts.hooksCheck?.detail, fix: system.withoutHooksWarning)
         case .unreadable:
@@ -249,15 +253,16 @@ public enum HealthReport {
         }
     }
 
-    /// Optional: a Mac without Codex has nothing to set up, so the line is there only while Codex is
-    /// installed or the hooks are, and missing is orange. The same one-line rule as Claude's otherwise.
+    /// Optional: a line only once something of ours is at `~/.codex/hooks.json`, whether or not Codex
+    /// itself is on this Mac. Nothing of ours is no line at all; something there but not working is orange.
     static func codexHooks(_ facts: HealthFacts) -> HealthRow? {
-        guard let hooks = facts.codexHooks, facts.codexInstalled == true || hooks == .setUp else { return nil }
+        guard let hooks = facts.codexHooks else { return nil }
         let t = Loc.settings.health
         let system = Loc.settings.system
         let words = Loc.settings.words
         let label = system.codexHooksLabel
         switch hooks {
+        case .notSetUp: return nil
         case .missing:
             return HealthRow(id: "codex hooks", label: label, level: HealthRules.grant(held: false, required: false),
                              word: words.disabled, detail: facts.codexHooksCheck?.detail,
@@ -279,15 +284,17 @@ public enum HealthReport {
         }
     }
 
-    /// Optional, like Codex's: a Mac without Copilot has nothing to set up. `disableAllHooks` turns every
-    /// user hook off without touching the file, so it is checked even while every event is subscribed.
+    /// Optional, like Codex's: a line only once something of ours is at Copilot's hook file, whether or
+    /// not Copilot itself is on this Mac. `disableAllHooks` turns every user hook off without touching the
+    /// file, so it is checked even while every event is subscribed.
     static func copilotHooks(_ facts: HealthFacts) -> HealthRow? {
-        guard let hooks = facts.copilotHooks, facts.copilotInstalled == true || hooks == .setUp else { return nil }
+        guard let hooks = facts.copilotHooks else { return nil }
         let t = Loc.settings.health
         let system = Loc.settings.system
         let words = Loc.settings.words
         let label = system.copilotHooksLabel
         switch hooks {
+        case .notSetUp: return nil
         case .missing:
             return HealthRow(id: "copilot hooks", label: label, level: HealthRules.grant(held: false, required: false),
                              word: words.disabled, detail: facts.copilotHooksCheck?.detail,
@@ -313,17 +320,19 @@ public enum HealthReport {
         }
     }
 
-    /// Optional, like Copilot's: a Mac without OpenCode has no plugin to set up. A plugin that is there but
-    /// is not this copy's reads Invalid: a stale plugin of another copy of MySidepulse, which Set Up
-    /// replaces, or a foreign file, which Set Up refuses and must be removed by hand — the two cannot be
-    /// told apart from here, so the fix names both.
+    /// Optional, like Copilot's: a line only once something of ours is at OpenCode's plugin path, whether
+    /// or not OpenCode itself is on this Mac. A plugin that is there but is not this copy's reads Invalid:
+    /// a stale plugin of another copy of MySidepulse, which Set Up replaces, or a foreign file, which Set
+    /// Up refuses and must be removed by hand — the two cannot be told apart from here, so the fix names
+    /// both.
     static func opencodeHooks(_ facts: HealthFacts) -> HealthRow? {
-        guard let hooks = facts.opencodeHooks, facts.opencodeInstalled == true || hooks == .setUp else { return nil }
+        guard let hooks = facts.opencodeHooks else { return nil }
         let t = Loc.settings.health
         let system = Loc.settings.system
         let words = Loc.settings.words
         let label = system.opencodePluginLabel
         switch hooks {
+        case .notSetUp: return nil
         case .missing:
             return HealthRow(id: "opencode plugin", label: label, level: HealthRules.grant(held: false, required: false),
                              word: words.disabled, detail: facts.opencodeHooksCheck?.detail,
@@ -341,13 +350,13 @@ public enum HealthReport {
         }
     }
 
+    /// A line only once the zsh block is there: the block itself is the whole of MySidepulse's terminal
+    /// hook, so its absence is nothing of ours to check, not a broken setup.
     static func terminalHook(_ facts: HealthFacts) -> HealthRow? {
-        guard let setUp = facts.terminalHookSetUp else { return nil }
+        guard facts.terminalHookSetUp == true else { return nil }
         let words = Loc.settings.words
         return HealthRow(id: "terminal hook", label: Loc.settings.system.terminalHookLabel,
-                         level: HealthRules.grant(held: setUp, required: false),
-                         word: setUp ? words.enabled : words.disabled,
-                         fix: Loc.settings.system.withoutTerminalHookWarning)
+                         level: .good, word: words.enabled)
     }
 
     static func notifications(_ facts: HealthFacts) -> HealthRow? {
