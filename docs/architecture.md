@@ -356,7 +356,9 @@ verdict closed changes nothing, but a prompt, and a main-agent `PreToolUse` of
 a turn a verdict closed (`interruptedTurnIds` holds the ones an `Interrupt`
 closed); a line written before the field reads as one without a turn.
 
-Lines stay under 4096 bytes through three shrink passes (`Trim.cappedLine`), so
+Every identifier a line copies is clamped at 200 characters and a transcript
+path at `K.pathMaxChars` (1024), since a cut path names no file. Lines stay
+under 4096 bytes through three shrink passes (`Trim.cappedLine`), so
 concurrent hook processes appending with `O_APPEND` cannot interleave.
 
 ## Build and signing

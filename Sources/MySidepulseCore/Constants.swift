@@ -254,6 +254,14 @@ public enum K {
     public static let journalSoftMaxBytes = 5 * 1024 * 1024
     public static let journalHardMaxBytes = 20 * 1024 * 1024
     public static let journalLineMaxBytes = 4096
+    /// How long a transcript path the hook records may be. The ones on this
+    /// Mac run about 100 characters; the identifiers' 200 would cut a deep
+    /// home or project folder, and a cut path names no file (a Claude Code
+    /// path cut before `projects` loses its config folder, a Codex or Copilot
+    /// one falls back to its session id). A line holding one this long still
+    /// fits `journalLineMaxBytes`, and `Trim.cappedLine`'s last resort, the
+    /// minimal line, leaves it out.
+    public static let pathMaxChars = 1024
     /// How much of a hook payload is retained for parsing. Stdin is
     /// still drained past this so Claude Code's write never blocks or breaks;
     /// the excess is discarded. Real payloads sit far below it — the cap

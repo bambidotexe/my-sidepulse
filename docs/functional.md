@@ -1473,6 +1473,7 @@ agent's colour while it works.
 | `controlRetrySeconds` | 30 s | control socket bind retry |
 | `journalSoftMaxBytes` / `journalHardMaxBytes` | 5 MB / 20 MB | journal rotation |
 | `journalLineMaxBytes` / `hookStdinMaxBytes` / `messageTailMaxChars` | 4096 / 8 MB / 500 | hook and journal caps |
+| `pathMaxChars` | 1024 | a transcript path the hook records; identifiers stay at 200 |
 | `playgroundPreviewSeconds` | 30 s | a Playground state or effect, or a Colours row, holds the strip this long, and each page's hint says the number |
 | `brightnessGamma` | 2.0 | perceived brightness to the strip's `brightness N`, measured on the owner's strip |
 | `brightnessCycleDefaultSteps` / `brightnessCycleMaxSteps` | 4 / 10 | `brightness cycle` without `--steps`; the most it takes, beyond which the dim end's steps land on the same value |

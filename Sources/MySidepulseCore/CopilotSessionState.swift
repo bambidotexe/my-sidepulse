@@ -41,7 +41,7 @@ public enum CopilotSessionState {
         var e = event
         if [.sessionStart, .userPromptSubmit, .stop].contains(e.event), e.transcriptPath == nil,
            let sid = e.sessionId, isFolderName(sid) {
-            e.transcriptPath = transcriptPath(root: root, sessionId: sid)
+            e.transcriptPath = Trim.clampPath(transcriptPath(root: root, sessionId: sid))
         }
         return e
     }

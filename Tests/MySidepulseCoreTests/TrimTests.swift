@@ -190,6 +190,52 @@ final class TrimTests: XCTestCase {
         XCTAssertNil(tool.transcriptPath)
     }
 
+    /// A transcript path is kept up to `K.pathMaxChars` (1024), since a cut
+    /// path names no file; identifiers stay clamped at 200. Copilot's path,
+    /// given or filled in from its session state, the same.
+    func testATranscriptPathIsClampedAt1024AndIdentifiersAt200() {
+        let deep = "/Users/x/" + String(repeating: "d/", count: 450) + "rollout-s1.jsonl"
+        XCTAssertGreaterThan(deep.count, 200)
+        XCTAssertLessThan(deep.count, K.pathMaxChars)
+        let kept = Trim.journalEvent(fromHookPayload: payload([
+            "hook_event_name": "Stop", "session_id": String(repeating: "s", count: 300), "transcript_path": deep,
+        ]), agent: .claude, loggedAt: t0)
+        XCTAssertEqual(kept.transcriptPath, deep, "a deep path is kept whole")
+        XCTAssertEqual(kept.sessionId?.count, 200)
+        let huge = "/" + String(repeating: "p", count: 5000)
+        let cut = Trim.journalEvent(fromHookPayload: payload([
+            "hook_event_name": "UserPromptSubmit", "session_id": "s1", "transcript_path": huge,
+        ]), agent: .codex, loggedAt: t0)
+        XCTAssertEqual(cut.transcriptPath?.count, K.pathMaxChars)
+        XCTAssertEqual(K.pathMaxChars, 1024)
+        let copilot = Trim.copilotEvent(fromHookPayload: payload(["sessionId": "c1", "transcriptPath": huge]),
+                                        named: "agentStop", loggedAt: t0)
+        XCTAssertEqual(copilot.transcriptPath?.count, K.pathMaxChars)
+        let root = "/" + String(repeating: "r", count: 2000)
+        let filled = CopilotSessionState.line(
+            Trim.copilotEvent(fromHookPayload: payload(["sessionId": "c1"]), named: "agentStop", loggedAt: t0),
+            root: root, directoryExists: { _ in true })
+        XCTAssertEqual(filled?.transcriptPath?.count, K.pathMaxChars, "a path filled in is clamped the same")
+    }
+
+    /// The longest path, beside every identifier at its clamp, still makes
+    /// a line under the cap.
+    func testALineWithTheLongestPathStillFits() throws {
+        let e = Trim.journalEvent(fromHookPayload: payload([
+            "hook_event_name": "Stop",
+            "session_id": String(repeating: "s", count: 8000), "turn_id": String(repeating: "t", count: 8000),
+            "agent_id": String(repeating: "a", count: 8000), "agent_type": String(repeating: "y", count: 8000),
+            "transcript_path": "/" + String(repeating: "p", count: 8000),
+            "cwd": "/" + String(repeating: "d", count: 3000),
+            "last_assistant_message": String(repeating: "é", count: 2000),
+            "background_tasks": (0..<16).map { ["id": String(repeating: "b", count: 40) + "\($0)", "type": "shell"] },
+        ]), agent: .claude, loggedAt: t0)
+        XCTAssertEqual(e.transcriptPath?.count, K.pathMaxChars)
+        let line = try Trim.cappedLine(e)
+        XCTAssertLessThanOrEqual(line.count, K.journalLineMaxBytes)
+        XCTAssertNotNil(JournalCodec.decodeLine(line), "capped line must stay valid JSON")
+    }
+
     /// The turn's id is Codex's `turn_id` or Claude Code's `prompt_id`,
     /// whichever the payload carries, clamped like every other id.
     func testTheTurnIdIsKeptFromTurnIdOrPromptId() {

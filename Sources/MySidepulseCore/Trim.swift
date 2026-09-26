@@ -48,7 +48,7 @@ public enum Trim {
         // without paying the path on every tool event. Codex's `Interrupt`
         // is one, so a session first seen at its interrupt names its rollout.
         if event == .sessionStart || event == .userPromptSubmit || event == .stop || event == .interrupt {
-            e.transcriptPath = clamp(obj["transcript_path"])
+            e.transcriptPath = clampPath(obj["transcript_path"])
         }
         e.cwd = obj["cwd"] as? String
         e.permissionMode = clamp(obj["permission_mode"])
@@ -94,7 +94,7 @@ public enum Trim {
         e.source = clamp(obj["source"])
         e.stopHookActive = (obj["stop_hook_active"] ?? obj["stopHookActive"]) as? Bool
         if event == .sessionStart || event == .userPromptSubmit || event == .stop {
-            e.transcriptPath = clamp(obj["transcriptPath"]) ?? clamp(obj["transcript_path"])
+            e.transcriptPath = clampPath(obj["transcriptPath"]) ?? clampPath(obj["transcript_path"])
         }
         e.cwd = obj["cwd"] as? String
         return e
@@ -199,6 +199,13 @@ public enum Trim {
     static func clamp(_ value: Any?) -> String? {
         guard let text = value as? String else { return nil }
         return String(text.prefix(metadataMaxChars))
+    }
+
+    /// A transcript path, kept up to `K.pathMaxChars`: a cut path names no
+    /// file.
+    static func clampPath(_ value: Any?) -> String? {
+        guard let path = value as? String else { return nil }
+        return String(path.prefix(K.pathMaxChars))
     }
 
     static func taskIds(_ raw: Any) -> [String]? {
