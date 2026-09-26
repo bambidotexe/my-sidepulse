@@ -66,9 +66,9 @@ final class CodexPlatformTests: XCTestCase {
     /// when Codex is there, which is said rather than failed.
     func testInstallAllSkipsAnAbsentCodexWithAWord() {
         let missing = HookInstaller.installAllHooks(cliPath: dir.appendingPathComponent("gone").path,
-                                                    codexInstalled: false)
+                                                    installed: { _ in false })
         XCTAssertFalse(missing.ok, "Claude's install failed on the missing CLI")
-        XCTAssertEqual(missing.lines.last, Loc.hookInstall.codexNotInstalledSkipped)
+        XCTAssertTrue(missing.lines.contains(Loc.hookInstall.codexNotInstalledSkipped))
     }
 
     // MARK: the process
@@ -148,17 +148,6 @@ final class CodexPlatformTests: XCTestCase {
         ]
         XCTAssertEqual(ProcWalk.classify(claudeUnderCopilot).agent, .claude, "the nearest agent wins")
         XCTAssertNil(ProcWalk.classify([proc(600, 1, "opencodex", nil)]).agent, "a name, not a prefix")
-    }
-
-    /// Copilot's and OpenCode's hooks are set up nowhere yet: counting them
-    /// reads no file and finds none, and removing them touches nothing.
-    func testNoFileIsReadOrWrittenForCopilotOrOpenCode() {
-        for agent in [AgentKind.copilot, .opencode] {
-            XCTAssertNil(HookInstaller.files(for: agent), "\(agent)")
-            XCTAssertEqual(HookInstaller.hooksInstalled(for: agent, cliPath: cli), 0, "\(agent)")
-            XCTAssertTrue(HookInstaller.removeHooks(for: agent).ok, "\(agent)")
-            XCTAssertFalse(HookInstaller.installHooks(for: agent, cliPath: cli).ok, "\(agent)")
-        }
     }
 
     // MARK: the hook

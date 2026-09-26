@@ -75,6 +75,34 @@ final class ProcWalkTests: XCTestCase {
         XCTAssertFalse(ProcWalk.isClaudePath("/Applications/MySidepulse.app/Contents/MacOS/mysidepulse"))
     }
 
+    /// Copilot's executable is `copilot` wherever it lives; OpenCode's server
+    /// runs `opencode`, `opencode-cli` or `.opencode`. A path is theirs by its
+    /// last component only: a `copilot` folder holds other programs.
+    func testCopilotAndOpenCodePathsAreKnownByTheirExecutable() {
+        XCTAssertTrue(ProcWalk.isCopilotPath("/Users/u/.local/bin/copilot"))
+        XCTAssertTrue(ProcWalk.isCopilotPath("/Users/u/Library/Caches/github-copilot-sdk/cli/1.0.87-0/copilot"))
+        XCTAssertFalse(ProcWalk.isCopilotPath("/Applications/GitHub Copilot.app/Contents/MacOS/github"))
+        XCTAssertFalse(ProcWalk.isCopilotPath("/Users/u/Library/Caches/copilot/pkg/darwin-arm64/1.0.88/rg"))
+        XCTAssertTrue(ProcWalk.isOpencodePath("/Users/u/.opencode/bin/opencode"))
+        XCTAssertTrue(ProcWalk.isOpencodePath("/Applications/OpenCode.app/Contents/Resources/opencode-cli"))
+        XCTAssertTrue(ProcWalk.isOpencodePath("/usr/local/lib/node_modules/@opencode/cli/bin/.opencode"))
+        XCTAssertFalse(ProcWalk.isOpencodePath("/Users/u/.opencode/bin/opencode2"), "the sh launcher execs the real one")
+        XCTAssertFalse(ProcWalk.isOpencodePath("/Applications/OpenCode.app/Contents/MacOS/OpenCode"))
+
+        func proc(_ pid: Int32, _ ppid: Int32, _ name: String, _ path: String?) -> ProcWalk.ProcInfo {
+            ProcWalk.ProcInfo(pid: pid, ppid: ppid, name: name, path: path)
+        }
+        XCTAssertEqual(ProcWalk.classify([proc(500, 1, "copilot-1.0.88", "/opt/homebrew/bin/copilot")]).agent, .copilot,
+                       "by the path when the name says otherwise")
+        XCTAssertEqual(ProcWalk.classify([proc(500, 1, "bun", "/Users/u/.opencode/bin/opencode")]).agent, .opencode)
+        let app = [
+            proc(600, 500, "copilot", "/Users/u/Library/Caches/github-copilot-sdk/cli/1.0.87-0/copilot"),
+            proc(500, 1, "github", "/Applications/GitHub Copilot.app/Contents/MacOS/github"),
+        ]
+        XCTAssertEqual(ProcWalk.classify(app).agentPid, 600)
+        XCTAssertEqual(ProcWalk.classify(app).hostBundlePath, "/Applications/GitHub Copilot.app")
+    }
+
     func testClassifyFindsClaudeFromAVersionedExecPath() {
         func proc(_ pid: Int32, _ ppid: Int32, _ name: String, _ path: String?) -> ProcWalk.ProcInfo {
             ProcWalk.ProcInfo(pid: pid, ppid: ppid, name: name, path: path)

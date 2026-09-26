@@ -7,8 +7,8 @@ import MySidepulsePlatform
 /// Everything MySidepulse put on this Mac outside its own bundle, taken off.
 ///
 /// **Dragging the bundle to the Trash is not an uninstall.** It removes the app and nothing else: the
-/// launch agent stays and launchd tries to start a binary that is not there at every login, the Claude
-/// Code and Codex hooks fire at a missing command once per event, the zsh line runs at every shell, and
+/// launch agent stays and launchd tries to start a binary that is not there at every login, every agent's
+/// hooks fire at a missing command once per event, the zsh line runs at every shell, and
 /// the journal, the settings and the ntfy topic stay in Application Support.
 ///
 /// The order is the whole of it, and the last of it cannot run here at all: this process is usually the
@@ -28,7 +28,10 @@ enum Uninstall {
 
         // The hooks first: they name a binary inside the bundle, which is still there.
         // nil when a hook file cannot be read, and the removal is still worth trying then.
-        for agent in AgentKind.allCases where HookInstaller.hooksInstalled(for: agent) ?? 1 > 0 {
+        // Copilot's hook file and OpenCode's plugin are MySidepulse's whole: removed whichever copy of
+        // the app wrote them, and left when they are someone else's.
+        for agent in AgentKind.allCases
+        where HookInstaller.ownedFile(for: agent) != nil || HookInstaller.hooksInstalled(for: agent) ?? 1 > 0 {
             let result = HookInstaller.removeHooks(for: agent)
             if !result.ok {
                 outcome.failed.append(t.uninstallHooksFailed(agent, result.lines.joined(separator: " ")))

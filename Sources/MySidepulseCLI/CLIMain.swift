@@ -6,15 +6,13 @@ enum CLIMain {
     static func run(_ args: [String]) -> Int32 {
         switch args.first {
         case "hook":
-            // `hook [--agent claude|codex]`: Codex's hooks say who they are,
-            // Claude Code's never had to. With no flag the nearest agent
-            // process in the chain says, and Claude is the fallback. An
-            // unknown flag value is ignored the same way, since the hook
-            // must never fail.
-            var flagged: AgentKind?
-            if let index = args.firstIndex(of: "--agent"), args.indices.contains(index + 1) {
-                flagged = AgentKind(rawValue: args[index + 1].lowercased())
-            }
+            // `hook [--agent claude|codex|copilot|opencode] [--event NAME]`:
+            // every agent's hooks but Claude Code's say who they are, and
+            // Copilot's name their event, which its payloads do not. With no
+            // flag the nearest agent process in the chain says, and Claude is
+            // the fallback. An unknown value or flag is ignored the same way,
+            // since the hook must never fail.
+            let flags = HookCommand.Arguments(args)
             // 64 KB chunks, retaining at most the 8 MB cap while still
             // draining stdin to EOF — stopping early could block or break the
             // agent's process writing to us, and the hook must never do
@@ -26,9 +24,10 @@ enum CLIMain {
                     input.append(chunk.prefix(K.hookStdinMaxBytes - input.count))
                 }
             }
-            let origin = ProcWalk.classify(ProcWalk.chain(from: getppid()), agent: flagged)
+            let origin = HookCommand.origin(for: ProcWalk.chain(from: getppid()), agent: flags.agent, input: input)
             return HookCommand.run(input: input, environment: ProcessInfo.processInfo.environment,
-                                   journalURL: Paths.journal, now: Date(), origin: origin, agent: flagged)
+                                   journalURL: Paths.journal, now: Date(), origin: origin,
+                                   agent: flags.agent, event: flags.event)
         case "led":
             // "toggle" is passed through verbatim for the app to resolve
             // against the mode it currently holds; everything else is
@@ -165,8 +164,9 @@ enum CLIMain {
         default:
             print("""
             usage: mysidepulse <command>
-              hook [--agent claude|codex]
-                                (internal) the hook entry Claude Code and Codex run;
+              hook [--agent claude|codex|copilot|opencode] [--event NAME]
+                                (internal) the hook entry Claude Code, Codex and
+                                GitHub Copilot run, and OpenCode's plugin;
                                 reads the payload on stdin
               led auto|off|toggle|#RRGGBB|<effect>
                                 set LED mode; toggle flips off <-> auto (skhd-friendly)
@@ -177,9 +177,11 @@ enum CLIMain {
                                 N steps of 100/N % each, default \(K.brightnessCycleDefaultSteps)
               status [--json]   sessions, display, device, battery
               doctor            health checks; exit code = failure count
-              install-hooks     subscribe Claude Code events in ~/.claude/settings.json,
-                                and Codex events in ~/.codex/hooks.json when Codex is installed
-              uninstall-hooks   remove MySidepulse hook entries from both
+              install-hooks     subscribe Claude Code events in ~/.claude/settings.json;
+                                when each is installed, Codex events in ~/.codex/hooks.json,
+                                GitHub Copilot events in ~/.copilot/hooks/mysidepulse.json
+                                and the OpenCode plugin ~/.config/opencode/plugins/mysidepulse.js
+              uninstall-hooks   remove MySidepulse hook entries, the Copilot file and the plugin
               run [--show-after N] [--label L] -- <cmd...>
                                 run a command with the strip following it;
                                 exits with the command's own status

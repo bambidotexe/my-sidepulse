@@ -49,6 +49,131 @@ public enum Trim {
         return e
     }
 
+    /// A GitHub Copilot payload. Its event comes from the hook's `--event`,
+    /// one of `HookConfig.copilotEvents`, since a camelCase payload names
+    /// none; without the flag, the payload's own `hook_event_name`, which a
+    /// `notification` and the PascalCase shape carry. The body is camelCase
+    /// (`sessionId`, `toolName`, `transcriptPath`), but for
+    /// `notification_type`; the snake-case spellings are taken too. Copilot
+    /// names no turn. An event outside the seven is a `ParseError` that keeps
+    /// the name it was given and none of the body, whose prompt or tool
+    /// input a `preToolUse` or a `userPromptTransformed` would carry. Which
+    /// sessions are subagents' is `CopilotSessionState`'s to say.
+    public static func copilotEvent(fromHookPayload data: Data, named name: String?, loggedAt: Date) -> JournalEvent {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
+            e.agent = .copilot
+            e.rawPrefix = String(decoding: data.prefix(300), as: UTF8.self)
+            return e
+        }
+        let given = name ?? obj["hook_event_name"] as? String
+        guard let given, let event = copilotEventNames[given] else {
+            var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
+            e.agent = .copilot
+            e.rawPrefix = given.map { "copilot event: " + String($0.prefix(64)) }
+            return e
+        }
+        var e = JournalEvent(loggedAt: loggedAt, event: event)
+        e.agent = .copilot
+        e.sessionId = clamp(obj["sessionId"]) ?? clamp(obj["session_id"])
+        e.toolName = clamp(obj["toolName"]) ?? clamp(obj["tool_name"])
+        e.notificationType = clamp(obj["notification_type"]) ?? clamp(obj["notificationType"])
+        e.reason = clamp(obj["reason"])
+        e.source = clamp(obj["source"])
+        e.stopHookActive = (obj["stop_hook_active"] ?? obj["stopHookActive"]) as? Bool
+        if event == .sessionStart || event == .userPromptSubmit || event == .stop {
+            e.transcriptPath = clamp(obj["transcriptPath"]) ?? clamp(obj["transcript_path"])
+        }
+        e.cwd = obj["cwd"] as? String
+        return e
+    }
+
+    /// Copilot's seven subscribed events, and the PascalCase aliases it
+    /// accepts for them, onto the journal's names.
+    static let copilotEventNames: [String: HookEventName] = [
+        "sessionStart": .sessionStart, "SessionStart": .sessionStart,
+        "userPromptSubmitted": .userPromptSubmit, "UserPromptSubmit": .userPromptSubmit,
+        "postToolUse": .postToolUse, "PostToolUse": .postToolUse,
+        "postToolUseFailure": .postToolUseFailure, "PostToolUseFailure": .postToolUseFailure,
+        "notification": .notification, "Notification": .notification,
+        "agentStop": .stop, "Stop": .stop,
+        "sessionEnd": .sessionEnd, "SessionEnd": .sessionEnd,
+    ]
+
+    /// An OpenCode payload, which MySidepulse's plugin writes: OpenCode's own
+    /// event type as `hook_event_name`, mapped onto the journal's names
+    /// (`opencodeEventName`). A session with a `parent_id` is a subagent's,
+    /// and its events are helper events of that top session (`sessionId`
+    /// the top session, `agentId` the subagent's). OpenCode names no turn.
+    /// Nil is no line at all: an event outside the mapping, a form that asks
+    /// the user nothing, an event of no session (`null`, or `global` for a
+    /// form outside any). A body that is not an event is a `ParseError`.
+    public static func opencodeEvent(fromHookPayload data: Data, loggedAt: Date) -> JournalEvent? {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let type = obj["hook_event_name"] as? String else {
+            var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
+            e.agent = .opencode
+            e.rawPrefix = String(decoding: data.prefix(300), as: UTF8.self)
+            return e
+        }
+        guard let session = clamp(obj["session_id"]), !session.isEmpty, session != "global" else { return nil }
+        let parent = clamp(obj["parent_id"]).flatMap { $0.isEmpty ? nil : $0 }
+        guard let (event, notification) = opencodeEventName(type, subagent: parent != nil,
+                                                            status: obj["status"] as? String,
+                                                            question: obj["question"] as? Bool ?? false)
+        else { return nil }
+        var e = JournalEvent(loggedAt: loggedAt, event: event)
+        e.agent = .opencode
+        if let parent { e.sessionId = parent; e.agentId = session } else { e.sessionId = session }
+        // A permission's action (`shell`, `edit`, …) names the tool it guards.
+        e.toolName = clamp(obj["tool_name"]) ?? (type == "permission.asked" ? clamp(obj["permission"]) : nil)
+        e.notificationType = notification
+        e.reason = clamp(obj["reason"])
+        e.errorType = clamp(obj["error_name"])
+        return e
+    }
+
+    /// OpenCode's event type onto the journal's name, for a top session or a
+    /// subagent, with the notification type a question to the user carries.
+    /// A subagent's end of any kind is its `SubagentStop`; its question or
+    /// permission holds its top session's turn; a permission it is refused
+    /// is a reply like any other, and a refused one at the top a denial. Nil:
+    /// nothing is written.
+    static func opencodeEventName(_ type: String, subagent: Bool, status: String?,
+                                  question: Bool) -> (HookEventName, String?)? {
+        switch type {
+        case "session.created", "session.forked": return (subagent ? .subagentStart : .sessionStart, nil)
+        case "session.inbox.enqueued", "session.execution.started": return (.userPromptSubmit, nil)
+        case "session.tool.called": return (.preToolUse, nil)
+        case "session.tool.success": return (.postToolUse, nil)
+        case "session.tool.failed": return (.postToolUseFailure, nil)
+        case "permission.asked": return (.permissionRequest, nil)
+        case "permission.replied": return (status == "reject" && !subagent ? .permissionDenied : .postToolUse, nil)
+        case "form.created":
+            guard question else { return nil }
+            return subagent ? (.permissionRequest, nil) : (.notification, "elicitation_dialog")
+        case "form.replied", "form.cancelled": return (.postToolUse, nil)
+        case "session.compaction.started": return (.preCompact, nil)
+        case "session.compaction.ended", "session.compaction.failed": return (.postCompact, nil)
+        case "session.execution.succeeded": return (subagent ? .subagentStop : .stop, nil)
+        case "session.execution.failed": return (subagent ? .subagentStop : .stopFailure, nil)
+        case "session.execution.interrupted": return (subagent ? .subagentStop : .interrupt, nil)
+        case "session.deleted": return (subagent ? .subagentStop : .sessionEnd, nil)
+        default: return nil
+        }
+    }
+
+    /// The OpenCode server the payload names: the plugin's own process, the
+    /// hook's parent. A claim, which the hook keeps only when that pid is an
+    /// OpenCode ancestor of its own (`ProcWalk.classify`).
+    public static func opencodePid(fromHookPayload data: Data) -> Int32? {
+        // Never 1: launchd is no OpenCode, and a JSON `true` reads as 1.
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let value = obj["opencode_pid"] as? Int,
+              let pid = Int32(exactly: value), pid > 1 else { return nil }
+        return pid
+    }
+
     /// The event names are Claude Code's spellings, which Codex shares. Codex
     /// spells the same names in snake case in its own configuration, so that
     /// spelling is taken too, in case a payload ever carries it.

@@ -12,10 +12,10 @@ third-party dependency, no firmware in this repository.
 
 | Target | Kind | Imports | Role |
 |---|---|---|---|
-| `MySidepulseCore` | library | Foundation only | Every rule: the four agents (`AgentKind`, `Agents`), session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits for Claude Code and Codex, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
+| `MySidepulseCore` | library | Foundation only | Every rule: the four agents (`AgentKind`, `Agents`), session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, the hook setup of every agent (the entries in Claude Code's and Codex's files, Copilot's whole hook file, OpenCode's plugin source) and the trim of each agent's payload, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
 | `MySidepulsePlatform` | library | Foundation, Darwin, MachO | Headless, testable I/O: journal append and tail, process inspection, LED file writer, keepalive, ntfy client, control socket, doctor, the hook installer, and the update's I/O: the GitHub check, the download held against GitHub's digest, the stager (disk image, copy, signature), the installer and the detached helper process. |
 | `MySidepulseApp` | executable | AppKit, SwiftUI, IOKit, DiskArbitration, ServiceManagement, UserNotifications | The menu-bar app: `Engine`, device/power/attention monitors, launch agent, the settings window and the onboarding wizard. |
-| `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code and Codex run. |
+| `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code, Codex and GitHub Copilot run, and OpenCode's plugin runs. |
 | `MySidepulseCoreTests`, `MySidepulsePlatformTests` | tests | XCTest | |
 
 Dependencies point one way: Core ← Platform ← App and CLI. `PurityTests` fails
@@ -145,8 +145,10 @@ after it.
 |---|---|---|
 | Claude Code | 15 hooks → `mysidepulse hook` → one line appended to the journal | `JournalTailer` → `Engine.handle` |
 | Codex | 12 hooks → `mysidepulse hook --agent codex` → the same journal, the line saying `codex` | the same |
+| GitHub Copilot | 7 hooks in `~/.copilot/hooks/mysidepulse.json` → `mysidepulse hook --agent copilot --event <name>` → the same journal, the line saying `copilot`; no line for a subagent's session | the same |
+| OpenCode | the plugin `~/.config/opencode/plugins/mysidepulse.js`, inside OpenCode's server → `mysidepulse hook --agent opencode` per forwarded event → the same journal, mapped onto its names, the line saying `opencode` | the same |
 | Journal | kqueue on the file (`DispatchSourceFileSystemObject`: write, extend, rename, delete); follows rotation, retries a failed reopen every 0.5 s | `SessionStore.apply` |
-| Agent processes, Claude's and Codex's | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
+| Agent processes, every agent's (for OpenCode, its server) | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
 | Claude's own registry | `<config>/sessions/<pid>.json`, `<config>` taken from the session's transcript path (`ClaudeProcessRegistry.configDir(fromTranscriptPath:)`), read only for quiet `working` turns and open waits of Claude sessions, and once per Claude session by the launch prune (`ClaudeProcessRegistry`); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered`, `pruneDead` |
 | Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, when the registry says idle |
 | Codex's daemon | its control socket, `~/.codex/app-server-control/app-server-control.sock` (`CodexDaemonClient`, a WebSocket over the unix socket on a utility queue, 1 s per call, completing on main; `WebSocketFrame` and `CodexThreadRecord` in Core read the frames and the answers): `thread/read` for a quiet `working` Codex session whose pid is the managed daemon (`ProcWalk.isManagedCodexDaemon`), one question out per session, the answer applied only if the session is still `working` with the same `lastMainEventAt`; `thread/loaded/list` once at launch. `notLoaded` / `idle` → the rollout tells finished from aborted, dark by default; `active` → `noteBusy`; anything else, or no answer, leaves the session to the rollout for 15 s | `finishTurn`, `abandonTurn`, `noteBusy` |
@@ -230,7 +232,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 
 | File | Writer | Content |
 |---|---|---|
-| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude` or `codex`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is: the key kept its name. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. An older app version skips both names. |
+| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is (OpenCode's server for OpenCode): the key kept its name. Copilot's and OpenCode's events are written under the journal's own names (`SessionStart`, `Stop`, …), never their own; an OpenCode subagent's line carries its top session as `session_id` and its own session as `agent_id`. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. An older app version skips both names. |
 | `journal.1.jsonl` | the app, by rename | The previous journal. Rotation at 20 MB, or at 5 MB when no session is active. |
 | `config.json` | the app only, mode `0600`, atomic | `AppConfig`, below. |
 | `control.sock` | the app | The control socket. |
@@ -282,26 +284,58 @@ Outside the app's own directory, `HookInstaller` — behind both
 edits `~/.claude/settings.json` (after copying it to
 `settings.json.backup-mysidepulse`), `~/.codex/hooks.json` (after copying it
 to `hooks.json.backup-mysidepulse`; Codex is on the Mac when `~/.codex` is a
-directory) and the app's block in `~/.zshrc`; every path is resolved first, so
-a symlinked dotfile stays a symlink. The launch agent lives at
+directory) and the app's block in `~/.zshrc`, and writes or deletes two files
+that are MySidepulse's whole, so they take no backup:
+`~/.copilot/hooks/mysidepulse.json` (Copilot is on the Mac when `~/.copilot` is
+a directory) and `~/.config/opencode/plugins/mysidepulse.js` (OpenCode is on
+the Mac when `~/.config/opencode`, `~/.opencode` or `/Applications/OpenCode.app`
+is). Either is ours when every entry in it runs a `mysidepulse` inside an app
+bundle with `hook --agent copilot` (`HookConfig.copilotFileIsOurs`), or when
+it names the hook command and the plugin id `io.mysidepulse.app.opencode`
+(`HookConfig.isOurOpencodePlugin`); one that is not is never replaced or
+deleted. Every path is resolved first, so a symlinked dotfile stays a
+symlink. The launch agent lives at
 `~/Library/LaunchAgents/io.mysidepulse.agent.plist`.
 
 ## The hook path
 
-`mysidepulse hook` runs inside every Claude Code and Codex turn, so it is
-built to be harmless: it drains stdin to EOF (keeping at most 8 MB), walks its
-ancestry with `sysctl` (no subprocess) for the nearest agent process, its
-host app and its tab, trims the payload to a bounded `JournalEvent`, appends
-one line, and returns 0 on every path — including unreadable input, which
-becomes a `ParseError` line, and an unknown `--agent` value, which is ignored.
-`--agent codex` names the agent outright, which is how Codex's hooks are
-installed; without the flag the nearest agent process says, and Claude is the
-fallback. `MYSIDEPULSE_DISABLE=1` makes it return at once. Tool inputs, tool
-outputs and prompts never reach the journal.
+`mysidepulse hook` runs inside every agent's turn, so it is built to be
+harmless: it drains stdin to EOF (keeping at most 8 MB), walks its ancestry
+with `sysctl` (no subprocess) for the nearest agent process, its host app and
+its tab, trims the payload to a bounded `JournalEvent`, appends one line, and
+returns 0 on every path — including unreadable input, which becomes a
+`ParseError` line, and an unknown `--agent` value, a flag without its value
+or one it does not know, which are ignored (`HookCommand.Arguments`). Copilot
+denies a tool whose `preToolUse` hook fails, which is one reason none is
+subscribed and the other reason the hook never fails. `--agent` names the
+agent outright, which is how every agent's hooks but Claude Code's are
+installed, and it always wins; without the flag the nearest agent process the
+walk recognises says, whichever agent it is, and Claude is the fallback.
+`MYSIDEPULSE_DISABLE=1` makes it return at once. Tool inputs, tool outputs
+and prompts never reach the journal.
+
+Each agent's payload has its own trim in Core. Claude Code's and Codex's name
+their event (`Trim.journalEvent`). Copilot's camelCase payloads do not, so
+the entry passes `--event` (`Trim.copilotEvent`); an event outside the seven
+subscribed is a `ParseError` that keeps its name and none of the body. The
+hook then drops a Copilot line whose session has no folder under Copilot's
+session state, `$COPILOT_HOME/session-state` when the hook's environment sets
+`COPILOT_HOME`, else `~/.copilot/session-state` (a subagent's own prompt and
+stop carry the subagent's id, which has none), unless that root does not
+exist, and names the session's `events.jsonl` on a start, a prompt or a stop
+whose payload named none (`CopilotSessionState`). OpenCode's plugin writes
+OpenCode's own event type, the session, the top session of a subagent's, the
+server's pid and a few words; `Trim.opencodeEvent` maps it onto the journal's
+names (functional.md §4), and an event outside the mapping, a form that asks
+nothing, or an event of no session writes no line at all. The pid the plugin
+names is taken as the agent's when it is an OpenCode ancestor of the hook,
+else the nearest OpenCode is (`HookCommand.origin`, `ProcWalk.classify`'s
+`claimed`); an OpenCode session records no tab, since its server hosts every
+session of every client.
 
 Each line names the turn it belongs to as `turn_id`: the payload's `turn_id`
 (Codex) or, without one, its `prompt_id` (Claude Code, which also stays under
-its own key). `SessionStore` keys the closing of a turn on it
+its own key). Copilot and OpenCode name none. `SessionStore` keys the closing of a turn on it
 (`changesNothing`, `closeTurn`), so a late event of a turn an `Interrupt` or a
 verdict closed changes nothing, but a prompt, and a main-agent `PreToolUse` of
 a turn a verdict closed (`interruptedTurnIds` holds the ones an `Interrupt`

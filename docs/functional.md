@@ -165,7 +165,7 @@ what a mid-pulse cut costs, are in [device.md](device.md).
 
 Colours, shapes and exact program text are in [device.md](device.md).
 
-## 4. Agent status: Claude Code and Codex
+## 4. Agent status: Claude Code, Codex, GitHub Copilot and OpenCode
 
 ### Source
 
@@ -181,13 +181,44 @@ to the 12 Codex events in `~/.codex/hooks.json`, which holds the same shape
 under the same `hooks` key: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
 `PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop`, `SubagentStart`,
 `SubagentStop`, `PreCompact`, `PostCompact`, `Interrupt`. Codex is on this Mac
-when `~/.codex` exists; when it is not, `install-hooks` says so and sets up
-Claude Code's hooks alone, and `uninstall-hooks` removes both agents' entries
-whether Codex is there or not. The `--agent` flag is how a journal line says
-who fired the hook; a hook without it records the nearest agent process in its
-ancestry, and Claude Code when there is none. **Codex runs a hook only once it
-has been trusted in Codex itself**, which MySidepulse cannot do for it; the
-group's note says so.
+when `~/.codex` exists. **Codex runs a hook only once it has been trusted in
+Codex itself**, which MySidepulse cannot do for it; the group's note says so.
+
+GitHub Copilot CLI reads every file in `~/.copilot/hooks/` at each start, with
+no trust step. `install-hooks` writes `~/.copilot/hooks/mysidepulse.json` whole,
+creating the folder, with seven entries in Copilot's `exec` form (no shell):
+each runs `<bundle>/Contents/MacOS/mysidepulse` with the arguments
+`hook --agent copilot --event <name>`, 5 s at most, for `sessionStart`,
+`userPromptSubmitted`, `postToolUse`, `postToolUseFailure`, `notification`,
+`agentStop` and `sessionEnd`. Copilot's payloads name no event, so each entry
+names its own. **Never `preToolUse` or `permissionRequest`**: Copilot denies
+the tool when either hook fails or its binary is missing, so a file that
+outlived the app would block every Copilot tool call. Copilot is on this Mac
+when `~/.copilot` exists. `disableAllHooks: true` in Copilot's `settings.json`
+or `config.json` turns every user hook off, ours included.
+
+OpenCode runs no command hooks. `install-hooks` writes a plugin,
+`~/.config/opencode/plugins/mysidepulse.js`, creating the folder; a running
+OpenCode server loads it, reloads it when it changes and drops it when it is
+deleted, within a second, with no registration and no trust step. It runs
+`<bundle>/Contents/MacOS/mysidepulse hook --agent opencode` once for each
+OpenCode event it forwards, one at a time in OpenCode's order, 2 s at most
+each, with one small JSON object on the hook's stdin: the event's type, its
+session, the top session a subagent's session runs under (however deep), the
+server's pid, and a few words (a tool's name, a permission's action, the
+reply, whether a form is a question, a reason); never a prompt, an answer, a
+tool's input or output, or a path. OpenCode is on this Mac when
+`~/.config/opencode`, `~/.opencode` or `/Applications/OpenCode.app` exists.
+The plugin is set up when the file is byte for byte what this app writes.
+
+Copilot's file and OpenCode's plugin are MySidepulse's whole: a file at either
+path that holds anything else is neither replaced nor deleted, and
+`install-hooks` says so and fails. Every agent but Claude Code is set up only
+when it is on this Mac; `install-hooks` says which were not, and
+`uninstall-hooks` removes every agent's hooks, on the Mac or not. The
+`--agent` flag is how a journal line says who fired the hook, and it always
+wins; a hook without it records the nearest agent process its ancestry shows,
+whichever agent that is, and Claude Code when there is none.
 
 Settings › System › Claude Code does the same from the window: `Set Up Hooks`
 subscribes, `Remove Hooks` unsubscribes. The `Claude Code hooks` row reads
@@ -203,10 +234,56 @@ run this CLI with `--agent codex`, `Disabled` in orange otherwise (Codex is
 optional), and `Invalid` in orange when `hooks.json` cannot be parsed.
 
 Each event becomes one trimmed line in the journal, enriched with the agent
-(`claude` or `codex`; a line without it is Claude's), the agent's process id,
-the hosting app's bundle id, and the terminal tab's tty. The app follows the
-journal. Every session id seen gets its own state, and keeps the agent of its
-lines.
+(`claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's),
+the agent's process id, the hosting app's bundle id, and the terminal tab's
+tty. The app follows the journal. Every session id seen gets its own state,
+and keeps the agent of its lines.
+
+Copilot's and OpenCode's events carry their own names, and each is written
+under the journal's name for what it means:
+
+| Copilot | Journal |
+|---|---|
+| `sessionStart` | `SessionStart` |
+| `userPromptSubmitted` | `UserPromptSubmit` |
+| `postToolUse`, `postToolUseFailure` | `PostToolUse`, `PostToolUseFailure` |
+| `notification` | `Notification`, with Copilot's `notification_type`: `permission_prompt` (a permission), `elicitation_dialog` (an `ask_user` question), `shell_completed` and the rest (nothing) |
+| `agentStop` | `Stop` |
+| `sessionEnd` | `SessionEnd`: at every interactive exit, and after every `copilot -p` turn |
+
+A Copilot event whose session has no folder under Copilot's session state
+(`~/.copilot/session-state/<id>/`, or under `$COPILOT_HOME` for a Copilot run
+with it) is a subagent's own prompt or stop, which carries the subagent's id,
+and writes no line, so a subagent's stop never finishes its parent's turn;
+when that session-state folder does not exist at all, every line is written.
+A Copilot start, prompt or stop names the session's `events.jsonl` when its
+payload names none. Answering a Copilot permission or question fires no hook:
+the next `postToolUse` is the answer.
+
+| OpenCode | Top session | Subagent's session (its events are its top session's helper events) |
+|---|---|---|
+| `session.created`, `session.forked` | `SessionStart` | `SubagentStart` |
+| `session.inbox.enqueued` (a user's prompt), `session.execution.started` | `UserPromptSubmit` | `UserPromptSubmit` |
+| `session.tool.called` | `PreToolUse`, with the tool's name | `PreToolUse` |
+| `session.tool.success` | `PostToolUse` | `PostToolUse` |
+| `session.tool.failed` | `PostToolUseFailure` | `PostToolUseFailure` |
+| `permission.asked` | `PermissionRequest`, the permission's action as the tool | `PermissionRequest`: the top session waits |
+| `permission.replied` `once` or `always` | `PostToolUse` | `PostToolUse` |
+| `permission.replied` `reject` | `PermissionDenied` | `PostToolUse` |
+| `form.created`, a question | `Notification` `elicitation_dialog`: `waiting(question)` | `PermissionRequest` |
+| `form.created`, any other form | nothing | nothing |
+| `form.replied`, `form.cancelled` | `PostToolUse` | `PostToolUse` |
+| `session.compaction.started` | `PreCompact` | `PreCompact` |
+| `session.compaction.ended`, `.failed` | `PostCompact` | `PostCompact` |
+| `session.execution.succeeded` | `Stop` | `SubagentStop` |
+| `session.execution.failed` | `StopFailure` | `SubagentStop` |
+| `session.execution.interrupted`, whatever its reason | `Interrupt` | `SubagentStop` |
+| `session.deleted` | `SessionEnd` | `SubagentStop` |
+| anything else, or an event of no session | nothing | nothing |
+
+"Nothing" writes no line. OpenCode names no turn. `permission.asked` fires
+even for a permission granted at once, whose reply comes about 3 ms later:
+the settle keeps that wait off the strip and its push is disarmed with it.
 
 ### States
 
@@ -215,25 +292,25 @@ lines.
 
 | Event | Result |
 |---|---|
-| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept, a held `Stop` stays held and the state `PreCompact` remembered is kept — the mid-flight marker of a compaction already under way. |
+| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept, a held `Stop` stays held and the state `PreCompact` remembered is kept — the mid-flight marker of a compaction already under way. Copilot's changes nothing either: Copilot fires it with the first prompt, after it. |
 | `UserPromptSubmit` | `working` |
 | `PreToolUse` | `AskUserQuestion` or Codex's `request_user_input` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
 | `PostToolUse`, `PostToolUseFailure`, `PermissionDenied` | `working` |
 | `PreCompact` | `working`, remembering the state it found; a second `PreCompact` with no `PostCompact` and no turn boundary since keeps what the first remembered. A turn boundary — a prompt, a `Stop`, an `Interrupt`, a `SessionStart` that is not a compaction's — forgets it. |
 | `PostCompact` | the state `PreCompact` found, or `working` when it found none: a compaction inside a turn leaves it working, one at the prompt leaves it idle, finished or waiting, a finish or a wait with its alert — since when, seen or not, its push, whether a helper raised it, its settle — untouched |
 | `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
-| `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan` |
+| `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan`; a Copilot or OpenCode `elicitation_dialog` is `waiting(question)` |
 | `Notification` `idle_prompt`, `agent_needs_input` | Never an alert. See "lost Stop" below. |
 | other `Notification` types | nothing |
 | `Stop` | `done` — or held, see below |
 | `StopFailure` | `waiting(error)` |
-| `Interrupt` (Codex only) | `idle`: the user stopped the turn, dialog or not; the turn delivered nothing, its helpers and background shells are forgotten, and the strip goes dark with no alert |
+| `Interrupt` (Codex and OpenCode) | `idle`: the user stopped the turn, dialog or not; the turn delivered nothing, its helpers and background shells are forgotten, and the strip goes dark with no alert |
 | `SubagentStart`, other subagent events | mark that subagent live |
 | `SubagentStop` | that subagent is no longer live |
 | `SessionEnd` | the session is forgotten |
 
 Every event of a turn carries the turn's id: Claude Code's `prompt_id`,
-Codex's `turn_id`. An `Interrupt`, or a verdict that the turn is over (*When
+Codex's `turn_id`; Copilot's and OpenCode's carry none. An `Interrupt`, or a verdict that the turn is over (*When
 hooks say nothing*), closes the turn named by the last main-agent event that
 carried an id: the prompt that opened it, or the later event of a turn
 followed from mid-turn or going on under a new id. A finish held behind
@@ -299,6 +376,14 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
 Esc and Ctrl-C end a Claude Code turn without any hook, and hook delivery can
 stop mid-session. For Claude Code sessions, the rescues below read Claude
 Code's own registry and transcript.
+
+Copilot fires nothing either for Ctrl+C or Esc Esc, nor any end for a turn
+that fails; nothing reads its `events.jsonl` yet, so such a turn keeps
+rolling until the 2 h backstop, or until the Copilot process exits. OpenCode
+ends every busy period with exactly one of `succeeded`, `failed` or
+`interrupted`, so it needs no such rescue: a terminal event that never came
+is covered by its server's exit, which forgets every session the server
+hosted, and by the 2 h backstop.
 
 Codex has no registry, but every Codex hook names the session's rollout file
 (`transcript_path`). A working Codex session quiet for `K.abandonQuietSeconds`
@@ -1021,14 +1106,16 @@ under a hint, with an orange warning that always stands there. The warning is
 not a state that can be put right but the hazard of the other way out:
 **dragging the bundle to the Trash is not an uninstall.** It removes the app and
 nothing else, and launchd goes on trying to start a binary that is not there at
-every login, the Claude Code hooks fire at a missing command once per event, the
+every login, every agent's hooks fire at a missing command once per event, the
 zsh line runs at every shell, and the journal, the settings and the ntfy topic
 stay in Application Support.
 
 The button asks for confirmation, then, in this order:
 
-1. removes the Claude Code hooks, the zsh line and the settings backup the hooks
-   left, while the binary they name is still inside the bundle;
+1. removes every agent's hooks (Claude Code's and Codex's entries, and
+   Copilot's hook file and OpenCode's plugin whichever copy of the app wrote
+   them), the zsh line and the backups the hooks left, while the binary they
+   name is still inside the bundle;
 2. deletes `~/Library/LaunchAgents/io.mysidepulse.agent.plist`, so nothing loads
    at the next login even if step 6 never runs, and unregisters any
    `SMAppService` login item an older install left;
@@ -1069,12 +1156,12 @@ rule rather than a gap (§15).
 
 | Command | Does | Exit |
 |---|---|---|
-| `hook [--agent claude\|codex]` | the hook entry Claude Code and Codex run; reads the payload on stdin. The flag says who fired it; without it, the nearest agent process in the ancestry, else Claude | always 0 |
+| `hook [--agent claude\|codex\|copilot\|opencode] [--event NAME]` | the hook entry Claude Code, Codex and GitHub Copilot run, and OpenCode's plugin runs; reads the payload on stdin. The flag says who fired it and always wins; without it, the nearest agent process in the ancestry, else Claude. `--event` names a Copilot event, which its payload does not; an unknown value or flag is ignored | always 0 |
 | `led auto\|off\|toggle\|#RRGGBB\|<effect>` | sets the mode; `toggle` flips off ↔ auto | 0; 1 app down; 2 bad argument |
 | `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
 | `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
 | `doctor` | ten health checks | number of failures |
-| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists (`uninstall-hooks` always); foreign hooks and shapes it does not recognise are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, or on error |
+| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists; writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours, or on error |
 | `run …`, `job begin\|end …` | terminal jobs | the command's status; 2 bad usage |
 | `notify [on\|off\|topic new\|topic T\|server URL\|test]` | notification settings; bare `notify` prints them, **including the full topic** | 0; 1; 2 |
 | `autostart [on\|off]` | the launch agent | 0; 1; 2 |

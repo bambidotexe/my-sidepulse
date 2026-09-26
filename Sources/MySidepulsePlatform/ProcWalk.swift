@@ -240,24 +240,49 @@ public enum ProcWalk {
         return path.split(separator: "/").contains("codex")
     }
 
+    /// True for GitHub Copilot CLI's executable, `copilot` wherever it lives:
+    /// `~/.local/bin/copilot`, or the copy GitHub Copilot.app runs its
+    /// sessions in, `~/Library/Caches/github-copilot-sdk/cli/<version>/copilot`.
+    /// By the last component only: Copilot's own package folder,
+    /// `~/Library/Caches/copilot/`, holds other programs.
+    static func isCopilotPath(_ path: String) -> Bool {
+        executableName(path) == "copilot"
+    }
+
+    /// OpenCode's server runs one of three executables: `opencode`
+    /// (`~/.opencode/bin/`, Homebrew), `opencode-cli` (inside OpenCode.app,
+    /// and the copy it stages under Application Support) or `.opencode` (the
+    /// npm package's). The desktop app's window process and the `opencode2`
+    /// launcher, which execs `opencode`, are not it.
+    static let opencodeExecutables: Set<String> = ["opencode", "opencode-cli", ".opencode"]
+
+    static func isOpencodePath(_ path: String) -> Bool {
+        opencodeExecutables.contains(executableName(path))
+    }
+
+    static func executableName(_ path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? ""
+    }
+
     /// Which agent a process is, if it is one. The name is tried first, then
     /// the resolved path, then the exec path: a Claude launched by its
     /// versioned installer is named by its version, and a symlinked launcher
-    /// resolves elsewhere. Copilot and OpenCode are known by their names:
-    /// `copilot`, and `opencode`, `opencode-cli` or `.opencode`.
+    /// resolves elsewhere.
     static func agent(of info: ProcInfo) -> AgentKind? {
         if info.name == "claude" { return .claude }
         if info.name == "codex" { return .codex }
         if info.name == "copilot" { return .copilot }
-        if ["opencode", "opencode-cli", ".opencode"].contains(info.name) { return .opencode }
-        if let path = info.path {
-            if isClaudePath(path) { return .claude }
-            if isCodexPath(path) { return .codex }
-        }
-        if let argv0 = execPath(for: info.pid) {
-            if isClaudePath(argv0) { return .claude }
-            if isCodexPath(argv0) { return .codex }
-        }
+        if opencodeExecutables.contains(info.name) { return .opencode }
+        if let path = info.path, let kind = agent(ofPath: path) { return kind }
+        if let argv0 = execPath(for: info.pid) { return agent(ofPath: argv0) }
+        return nil
+    }
+
+    static func agent(ofPath path: String) -> AgentKind? {
+        if isClaudePath(path) { return .claude }
+        if isCodexPath(path) { return .codex }
+        if isCopilotPath(path) { return .copilot }
+        if isOpencodePath(path) { return .opencode }
         return nil
     }
 
@@ -318,9 +343,18 @@ public enum ProcWalk {
     /// inside a .app bundle (outermost bundle wins for nested helpers).
     /// Nearest, because one agent can run the other: a Codex started by
     /// Claude's shell tool fires Codex's hooks, and it is Codex's process that
-    /// hosts them.
-    public static func classify(_ chain: [ProcInfo], agent wanted: AgentKind? = nil) -> Origin {
+    /// hosts them. `claimed` is a pid the payload names as the agent's own
+    /// (OpenCode's server): taken when it is in the chain and is that agent,
+    /// else the nearest one is. An OpenCode server hosts every session of
+    /// every client and sits in no tab, so its sessions name none.
+    public static func classify(_ chain: [ProcInfo], agent wanted: AgentKind? = nil,
+                                claimed: Int32? = nil) -> Origin {
         var origin = Origin()
+        if let claimed, let wanted, let info = chain.first(where: { $0.pid == claimed }),
+           agent(of: info) == wanted {
+            origin.agentPid = claimed
+            origin.agent = wanted
+        }
         for info in chain {
             if origin.agentPid == nil, let kind = agent(of: info), wanted == nil || wanted == kind {
                 origin.agentPid = info.pid
@@ -334,7 +368,8 @@ public enum ProcWalk {
         }
         // Derived here rather than at the call site so no caller can record a
         // pty that is not a tab.
-        origin.tabTTY = tabTTY(in: chain, agentPid: origin.agentPid, hostAppPid: origin.hostAppPid)
+        origin.tabTTY = origin.agent == .opencode
+            ? nil : tabTTY(in: chain, agentPid: origin.agentPid, hostAppPid: origin.hostAppPid)
         return origin
     }
 

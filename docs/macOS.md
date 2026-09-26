@@ -89,11 +89,13 @@ All through `sysctl` and `libproc`, with no subprocess and no permission:
 `KERN_PROC_PID` for parent, name and controlling tty; `proc_pidpath` and
 `KERN_PROCARGS2` for the executable path and environment; `KERN_BOOTTIME` for
 the boot time; kqueue `EVFILT_PROC` for exits. This is how the hook finds the
-agent's process (the nearest Claude Code or Codex ancestor: Claude by a
-`claude` name or path component, Codex by a `codex` one, which covers the
-standalone release under `~/.codex/packages`, the `~/.local/bin` launcher and
-the copy inside `ChatGPT.app`), its host app and its terminal tab, and how the
-app tells Codex's daemon by its arguments.
+agent's process (the nearest agent ancestor: Claude by a `claude` name or
+path component, Codex by a `codex` one, which covers the standalone release
+under `~/.codex/packages`, the `~/.local/bin` launcher and the copy inside
+`ChatGPT.app`, Copilot by an executable named `copilot`, OpenCode by one
+named `opencode`, `opencode-cli` or `.opencode`; the name, then the resolved
+path, then the exec path), its host app and its terminal tab, and how the app
+tells Codex's daemon by its arguments.
 
 **A shell at its prompt owns its terminal's foreground process group.**
 `kinfo_proc.kp_eproc` carries the process group (`e_pgid`) and its terminal's
@@ -196,6 +198,105 @@ thread in the app's own `codex app-server` (no `--managed-daemon` argument,
 which `ProcWalk.isManagedCodexDaemon` reads), so what the daemon says of
 either proves nothing. Captured by a read-only probe against Codex 0.157;
 `CodexDaemonClient`, `CodexThreadRecord` and `WebSocketFrame` hold it.
+
+## GitHub Copilot CLI: its hooks and its process
+
+Observed with Copilot CLI 1.0.88 on this Mac (`copilot -p`, interactive runs,
+an offline run against a local model).
+
+**User hooks** load from every `*.json` file in `~/.copilot/hooks/` (or
+`$COPILOT_HOME/hooks/`), read at each `copilot` start, with no trust step and
+no flag; hooks from every source add up. The folder does not exist until
+something creates it. A file is `{"version": 1, "hooks": {"<event>": [entry…]}}`;
+an entry in the `exec` form, `{"type": "command", "exec": "<abs path>",
+"args": [...], "timeoutSec": N}`, runs the program with no shell, as a direct
+child of the `copilot` process. An unknown event key is ignored and the rest
+of the file still loads. `disableAllHooks: true` in `~/.copilot/settings.json`,
+or in `~/.copilot/config.json` (JSON whose first lines are `//` comments, and
+which Copilot rewrites itself), turns every user hook off.
+
+**Events and payloads.** A hook keyed in camelCase gets a camelCase payload:
+`sessionId` (a UUID, the name of the session's folder
+`~/.copilot/session-state/<id>/`), `timestamp` in ms, `cwd`, and no event
+name; `toolName` on tool events; `notification` carries snake-case
+`notification_type` (`permission_prompt`, `elicitation_dialog` for an
+`ask_user` question, `shell_completed`) and a `message` and `title`;
+`agentStop` carries `transcriptPath` (the session's `events.jsonl`) and
+`stopReason`; `sessionStart` carries `source` (`new`, `resume`, `startup`),
+`sessionEnd` a `reason` (`complete` after every `-p` turn, `user_exit` at an
+interactive exit). `sessionStart` is lazy: it fires with the first prompt,
+after `userPromptSubmitted`, and an interactive exit fires `sessionEnd` for a
+session that never started. A subagent's own `userPromptSubmitted` and
+`agentStop` carry the subagent's id, which has no folder under
+`session-state`, and the parent's `transcriptPath`. Answering a permission or
+a question fires no hook; Ctrl+C or Esc Esc fires none either, and a turn
+whose model call fails fires only `errorOccurred`, with no `agentStop`.
+
+**Exit codes.** `preToolUse` is fail-closed: a non-zero exit, a crash or a
+missing binary denies the tool, and exit 2 denies for `preToolUse` and
+`permissionRequest` alike; every other event is fail-open. Hooks run in
+sequence and the agent waits for them (5 s at most for ours). Stdout that is
+JSON is read as a decision; ours prints nothing.
+
+**The process.** One `copilot` process per invocation, the hook's direct
+parent: `~/.local/bin/copilot`, or for GitHub Copilot.app
+(`/Applications/GitHub Copilot.app`, executable `github`) a pooled copy at
+`~/Library/Caches/github-copilot-sdk/cli/<version>/copilot`. `p_comm` and the
+executable's last component are `copilot` in both. One process can hold
+several sessions; there is no daemon, and nothing outlives the process that
+hosts a session. Copilot's own package, unpacked under
+`~/Library/Caches/copilot/pkg/`, holds other programs, so only the last
+component names Copilot. While a session is open,
+`session-state/<id>/inuse.<pid>.lock` names its process; a killed process
+leaves it behind.
+
+**The session's log.** `~/.copilot/session-state/<id>/events.jsonl`, one JSON
+object per line, `{type, data, id, timestamp, parentId}`: `user.message`,
+`assistant.turn_start`, `tool.execution_start`, `abort` (a user's interrupt),
+`session.error` (a failed turn), `session.shutdown`, and a `hook.start` for
+every hook that ran. `session.idle` is never written.
+
+## OpenCode: its plugin and its server
+
+Observed with OpenCode 2.0.17 on this Mac.
+
+**One server.** The TUI, `opencode run` and OpenCode.app are all clients of
+one background server, `opencode serve --service`, parented by launchd, whose
+working folder is the home folder; it hosts every session of every client and
+every folder. `--standalone` runs a private `opencode-cli serve --stdio`
+under its client instead, which dies with it. The server's executable is
+`opencode` (`~/.opencode/bin/opencode`), `opencode-cli` (inside
+`/Applications/OpenCode.app/Contents/Resources/`, and the copy the app stages
+under `~/Library/Application Support/ai.opencode.desktop/cli/<version>/`) or
+`.opencode` (the npm package's). A turn survives its client: only the
+server's exit ends its sessions.
+
+**Plugins.** OpenCode has no command hooks. Every `.js` or `.ts` file in
+`~/.config/opencode/plugins/` (or `plugin/`) is loaded by the server, with no
+registration and no trust step; a file written, changed or deleted is
+loaded, reloaded or dropped within a second. OpenCode 2's shape is `export
+default { id, setup(ctx) }`; a v1 plugin (the one OpenCode's public
+documentation still describes) fails to load, and a second plugin with an id
+already loaded is refused. The server starts one instance per open folder,
+and every instance receives every folder's events, so a plugin has to
+de-duplicate them; `globalThis` is shared by all of them. A plugin's failure
+is a line in `~/.local/share/opencode/log/opencode.log`, and nothing else
+breaks.
+
+**Events.** `ctx.event.subscribe()` yields `{id, created, type, data}`. A
+busy period opens with `session.execution.started` and ends with exactly one
+of `session.execution.succeeded`, `.failed` or `.interrupted` (`reason`
+`user`, `shutdown`, `inactivity`); `session.idle` and `session.status` are
+never published. A prompt is `session.inbox.enqueued` with an item of type
+`user`; a tool is `session.tool.called` then `.success` or `.failed`, its name
+only on the `session.tool.input.started` before them; a permission is
+`permission.asked` then `permission.replied` (`once`, `always`, `reject`),
+about 3 ms apart when the permission is granted by rule or by `--auto`; the
+question tool is `form.created` with `metadata.kind == "question"`, then
+`form.replied` or `form.cancelled`; a subagent is a session created with a
+`parentID`. A process the plugin spawns has the server as its parent. A
+standalone server is torn down before its last events when its client quits
+mid-turn.
 
 ## Permissions
 

@@ -48,4 +48,37 @@ public enum Paths {
     public static var codexHooksBackup: URL {
         codexHome.appendingPathComponent("hooks.json.backup-mysidepulse")
     }
+    /// GitHub Copilot CLI's home, `~/.copilot`: its presence is how the app
+    /// tells that Copilot is on this Mac. `$COPILOT_HOME` moves it for a
+    /// Copilot started with it set, which the app, started by launchd, cannot
+    /// see; only the hook, run by Copilot, reads it (`CopilotSessionState`).
+    public static var copilotHome: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".copilot")
+    }
+    /// The user hook file MySidepulse owns whole. Copilot reads every file in
+    /// `hooks/` at each start, with no trust step.
+    public static var copilotHooks: URL {
+        copilotHome.appendingPathComponent("hooks/mysidepulse.json").resolvingSymlinksInPath()
+    }
+    /// One folder per session, named by its id, holding its `events.jsonl`.
+    public static var copilotSessionState: URL {
+        copilotHome.appendingPathComponent("session-state")
+    }
+    /// OpenCode's global configuration, `~/.config/opencode`, one of the
+    /// three places whose presence says OpenCode is on this Mac.
+    public static var opencodeConfig: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/opencode")
+    }
+    /// The plugin MySidepulse owns whole. A running OpenCode server loads it,
+    /// reloads it and drops it within a second of its being written, changed
+    /// or deleted.
+    public static var opencodePlugin: URL {
+        opencodeConfig.appendingPathComponent("plugins/mysidepulse.js").resolvingSymlinksInPath()
+    }
+    /// The CLI's own install, `~/.opencode`, and the desktop app: the other
+    /// two places whose presence says OpenCode is on this Mac.
+    public static var opencodeCLIHome: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".opencode")
+    }
+    public static let opencodeApp = URL(fileURLWithPath: "/Applications/OpenCode.app")
 }

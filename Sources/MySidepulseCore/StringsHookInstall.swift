@@ -34,12 +34,54 @@ public struct HookInstallStrings {
         }
     }
 
-    /// `install-hooks` from a terminal sets up every agent on the Mac; a
-    /// Codex that is not there is said, not failed.
-    public var codexNotInstalledSkipped: String {
+    /// OpenCode's plugin is one file, not a count of hooks.
+    public func installedPlugin(agent: AgentKind, command: String) -> String {
+        let name = agent.productName
         switch language {
-        case .en: "Codex is not installed (no ~/.codex), so its hooks were not set up."
-        case .fr: "Codex n'est pas installé (pas de ~/.codex), ses hooks n'ont donc pas été configurés."
+        case .en: return "Installed the \(name) plugin -> \(command)"
+        case .fr: return "Plugin \(name) installé -> \(command)"
+        }
+    }
+
+    /// `install-hooks` from a terminal sets up every agent on the Mac; one
+    /// that is not there is said, not failed.
+    public var codexNotInstalledSkipped: String { notInstalledSkipped(.codex) }
+
+    public func notInstalledSkipped(_ agent: AgentKind) -> String {
+        switch (agent, language) {
+        case (.claude, .en): "Claude Code is not installed, so its hooks were not set up."
+        case (.claude, .fr): "Claude Code n'est pas installé, ses hooks n'ont donc pas été configurés."
+        case (.codex, .en): "Codex is not installed (no ~/.codex), so its hooks were not set up."
+        case (.codex, .fr): "Codex n'est pas installé (pas de ~/.codex), ses hooks n'ont donc pas été configurés."
+        case (.copilot, .en): "GitHub Copilot is not installed (no ~/.copilot), so its hooks were not set up."
+        case (.copilot, .fr): "GitHub Copilot n'est pas installé (pas de ~/.copilot), ses hooks n'ont donc pas été configurés."
+        case (.opencode, .en): "OpenCode is not installed (no ~/.config/opencode, ~/.opencode or OpenCode.app), "
+            + "so its plugin was not set up."
+        case (.opencode, .fr): "OpenCode n'est pas installé (pas de ~/.config/opencode, ~/.opencode ni OpenCode.app), "
+            + "son plugin n'a donc pas été configuré."
+        }
+    }
+
+    /// A file at the path MySidepulse writes whole that something else wrote:
+    /// never replaced, never deleted.
+    public func notOursLeftAlone(file: String) -> String {
+        switch language {
+        case .en: "\(file) is not MySidepulse's; left it untouched."
+        case .fr: "\(file) n'est pas celui de MySidepulse ; laissé inchangé."
+        }
+    }
+
+    public func removedFile(_ file: String) -> String {
+        switch language {
+        case .en: "Removed \(file)."
+        case .fr: "\(file) retiré."
+        }
+    }
+
+    public func noFileNothingToRemove(_ file: String) -> String {
+        switch language {
+        case .en: "No \(file), nothing to remove."
+        case .fr: "Pas de \(file), rien à retirer."
         }
     }
 

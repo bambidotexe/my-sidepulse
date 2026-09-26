@@ -13,6 +13,8 @@ Contents: [The card slot and macOS](#the-card-slot-and-macos) ·
 [The LED protocol](#the-led-protocol) ·
 [Detecting Claude Code](#detecting-claude-code) ·
 [Detecting Codex](#detecting-codex) ·
+[Detecting Copilot](#detecting-copilot) ·
+[Detecting OpenCode](#detecting-opencode) ·
 [Acknowledgement](#acknowledgement) · [ntfy](#ntfy) ·
 [Launch, install, signing](#launch-install-signing) ·
 [Hooks, CLI, shell](#hooks-cli-shell) · [Open issues](#open-issues)
@@ -360,6 +362,54 @@ rejected by eye within minutes of a build whose tests were green.
 
 ---
 
+## Detecting Copilot
+
+### A `preToolUse` hook that fails denies the tool
+- **Symptom.** Every Copilot tool call refused, with nothing in MySidepulse's journal to say why.
+- **Why.** Copilot's `preToolUse` is fail-closed: a non-zero exit, a crash or a missing binary denies the tool, and exit 2 denies for `permissionRequest` too. A hook file of ours that outlived the app (dragged to the Trash) would run a binary that is not there before every tool.
+- **Instead.** Neither is subscribed: the seven events MySidepulse takes are all fail-open, and `postToolUse` carries the working signal. The hook exits 0 on every path, a flag it does not know or a payload it cannot read included, and prints nothing (JSON on stdout is read as a decision). The uninstall deletes the file.
+- **Rule.** Never subscribe `preToolUse` or `permissionRequest`, and never let `mysidepulse hook` exit non-zero.
+
+### `sessionStart` comes after the first prompt
+- **Symptom.** A Copilot turn dark from its first second: the prompt set it working, and the start set it idle a few milliseconds later.
+- **Why.** Copilot fires `sessionStart` lazily, with the first prompt and after `userPromptSubmitted`. An interactive Copilot quit before any prompt fires a `sessionEnd` for a session that never started.
+- **Instead.** A Copilot `SessionStart` changes no state (`SessionStore.apply`). A `SessionEnd` for a session never seen changes nothing either.
+
+### A subagent's prompt and stop carry the subagent's id
+- **Symptom.** A Copilot turn green while it still runs: its subagent's `agentStop` read as the turn's own finish, under a session no one started.
+- **Why.** A `task` subagent's own `userPromptSubmitted` and `agentStop` carry the subagent's id, not the parent's, and the parent's `transcriptPath`; the id has no folder under `~/.copilot/session-state/`.
+- **Instead.** The hook writes no line for a Copilot session without its folder there, `$COPILOT_HOME/session-state` when the hook's environment sets it, as long as that root exists (`CopilotSessionState.keeps`). The subagent is not followed at all: `subagentStart` names no subagent id, so it is not subscribed.
+- **Rule.** Never key a Copilot session on an id the session state does not know.
+
+### Answers, interrupts and failed turns fire nothing
+- Approving a permission or answering `ask_user` fires no hook: the next `postToolUse` is the answer. Ctrl+C and Esc Esc fire nothing, and a failed model call fires only `errorOccurred`, whose `recoverable` flag is true on retries that then succeed too. The session's `events.jsonl` records each (`abort`, `session.error`), and nothing reads it yet: see *Open issues*.
+
+## Detecting OpenCode
+
+### OpenCode 2 is not the OpenCode its documentation describes
+- **Symptom.** A plugin written from opencode.ai/docs/plugins that never runs, with one `failed to load plugin` line in `~/.local/share/opencode/log/opencode.log`.
+- **Why.** The public documentation still describes the v1 API (`export const X = async ({ client, $ }) => ({ event })`, `session.idle`, `experimental.hook`). OpenCode 2 loads `export default { id, setup(ctx) }` only, publishes no `session.idle` or `session.status`, and has no `experimental.hook`.
+- **Instead.** The plugin is the v2 shape, reads `ctx.event.subscribe()`, and ends turns on `session.execution.succeeded`, `.failed` and `.interrupted`. It was run against a real 2.0.17 server before it was adopted.
+- **Rule.** After an OpenCode update, the canary is OpenCode sessions absent from the journal while OpenCode runs, and a `failed to load plugin` line in its log.
+
+### One plugin instance per open folder, each seeing every folder's events
+- **Symptom.** Every OpenCode event journaled two, three or more times.
+- **Why.** The server loads a global plugin once per open folder, and each instance's event stream carries the events of every folder the server has open.
+- **Instead.** The instances share `globalThis`, and the first to see an event id forwards it; the others skip it. The plugin runs its hooks one at a time, in event order.
+
+### The server hosts every session, so its pid proves nothing about one
+- **Symptom.** An OpenCode session that stays on the strip after its TUI or `opencode run` has quit.
+- **Why.** The TUI, `opencode run` and OpenCode.app are clients of one server, `opencode serve --service`, parented by launchd; a turn runs on in it when its client quits, and the hook's parent is the server, not the client. The server has no tab either.
+- **Instead.** The session records the server's pid (the one the plugin names, when it is an OpenCode ancestor of the hook) and no tab; its exit forgets every session it hosted. A turn always ends in one of the three terminal events, so no transcript is read. A standalone server under its client dies with it, before its last events reach the plugin: the process watch ends those sessions.
+- **Rule.** Never end an OpenCode session because a client quit.
+
+### `permission.asked` fires for permissions granted at once
+- **Symptom.** An amber blink, or a push, for a permission nobody was asked.
+- **Why.** A permission granted by a rule or by `--auto` is still asked and replied to, about 3 ms apart.
+- **Instead.** The settle (`K.alertSettleSeconds`) keeps a wait that short off the strip, and the reply disarms its push (`OpencodeTests`).
+
+---
+
 ## Acknowledgement
 
 ### A tty does not prove a tab
@@ -501,7 +551,7 @@ This is every app's trap: `docs/shared/pitfalls.md`, **B3**.
 ## Hooks, CLI, shell
 
 ### The hook runs inside every Claude Code turn
-- **Rule.** It must never block and never exit non-zero. It drains stdin to EOF even past its 8 MB cap (or Claude Code's write blocks), spawns nothing, and swallows every error. Journal lines are capped at 4096 bytes so concurrent `O_APPEND` writes cannot interleave.
+- **Rule.** It must never block and never exit non-zero, in any agent's turn (Copilot denies a tool whose `preToolUse` hook fails). It drains stdin to EOF even past its 8 MB cap (or Claude Code's write blocks), spawns nothing, and swallows every error. Journal lines are capped at 4096 bytes so concurrent `O_APPEND` writes cannot interleave.
 
 ### `argv[0]` has no directory when the CLI is found on `PATH`
 - **Symptom.** `install-hooks` writes a hook command that resolves nowhere.
@@ -553,3 +603,7 @@ Known, bounded, and left alone.
 - **Whether Codex fires `PreToolUse` for `request_user_input` is unobserved**, so a Codex question may show nothing until the turn ends. A permission request has its own event and shows amber.
 - **The shared roll's programs and tails have not been seen on the strip**: the two-pass loop, the one-pass roll of three or four agents, the by-LED split, the pass-end handover and the recolour tail are pinned by text and by the sweeps, and judged by nobody's eye yet. Neither have Copilot's `#0e5cff` and OpenCode's `#ff0043`: whether they read apart from Codex's `#0a00ff` and Claude's `#ff374a` on the strip is unseen.
 - **Codex sessions hosted by the ChatGPT app** are acknowledged at app level: the app is their host and they hold no tab. The app-server daemon's sessions have no host at all and acknowledge on any input.
+- **A Copilot turn ended by Ctrl+C, Esc Esc or a failed model call rolls** until the Copilot process exits or the 2 h backstop: no hook reports it, and nothing reads the session's `events.jsonl` yet.
+- **A `copilot -p` finish is gone at once**: Copilot fires `sessionEnd` (`complete`) right after every `-p` turn's `agentStop`, and a `SessionEnd` forgets the session, as it does for every agent.
+- **A bare hook reads its agent from its ancestry**, so a Claude Code the walk cannot recognise (one run through an interpreter) under a Copilot or an OpenCode is journaled as that agent's. Every hook MySidepulse installs but Claude Code's carries `--agent`, which always wins.
+- **A standalone OpenCode server inside OpenCode.app is its session's host**, as the first bundle in the chain always is: while OpenCode.app itself runs, such a session's alerts are acknowledged by bringing OpenCode.app forward, not the terminal. The shared server is parented by launchd, has no host, and acknowledges on any input.

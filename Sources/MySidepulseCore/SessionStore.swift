@@ -225,8 +225,10 @@ public struct SessionStore {
             // happens inside a turn, with helpers possibly out. It is also
             // not a state of its own — `PreCompact` already went `working`,
             // and this mid-flight marker changes nothing, a held Stop and
-            // the compaction's snapshot included.
-            if e.source != "compact" {
+            // the compaction's snapshot included. Nor is Copilot's: it fires
+            // its start lazily, with the first prompt and after it, so the
+            // session is already working when it arrives.
+            if e.source != "compact", s.agent != .copilot {
                 s.liveAgents.removeAll()
                 s.backgroundIds.removeAll()
                 s.compactionSnapshot = nil
@@ -309,8 +311,13 @@ public struct SessionStore {
                 // the specific reason — downgrading question/plan to
                 // permission changed the push copy and re-armed a second
                 // push for the same standing dialog.
+                // Copilot's `elicitation_dialog` is its `ask_user` question,
+                // and OpenCode's question tool arrives as one (`Trim`);
+                // Claude Code's is an MCP form, which it waits on like a
+                // permission.
                 if s.state == .waiting(.question) || s.state == .waiting(.plan) { break }
-                clearPending(&s); set(&s, .waiting(.permission), now)
+                let asks = e.notificationType == "elicitation_dialog" && (s.agent == .copilot || s.agent == .opencode)
+                clearPending(&s); set(&s, .waiting(asks ? .question : .permission), now)
             case "idle_prompt", "agent_needs_input":
                 // A timer, not a request: Claude Code says the turn has gone
                 // quiet and it is sitting at the input prompt. That is never

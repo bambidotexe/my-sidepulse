@@ -3,9 +3,11 @@ import MachO
 import MySidepulseCore
 
 /// Setting up and removing the hooks that feed the app: its entries in Claude
-/// Code's settings.json and in Codex's hooks.json, and its block in ~/.zshrc.
-/// Shared by `mysidepulse install-hooks` / `uninstall-hooks` and the settings
-/// window, so both do the same thing and both report what actually landed.
+/// Code's settings.json and in Codex's hooks.json, GitHub Copilot's hook file
+/// and OpenCode's plugin, which are MySidepulse's whole, and its block in
+/// ~/.zshrc. Shared by `mysidepulse install-hooks` / `uninstall-hooks` and the
+/// settings window, so both do the same thing and both report what actually
+/// landed.
 public enum HookInstaller {
     public struct Outcome: Equatable {
         public let ok: Bool
@@ -33,9 +35,9 @@ public enum HookInstaller {
 
     // MARK: an agent's hook file
 
-    /// Where an agent keeps its hooks, and the copy taken before it is touched.
-    /// Nil for Copilot and OpenCode, which have no hook file here: nothing
-    /// reads or writes a file of theirs.
+    /// Where an agent that shares its hook file with the user keeps its hooks,
+    /// and the copy taken before it is touched. Nil for Copilot and OpenCode,
+    /// whose file MySidepulse owns whole (`ownedFile`).
     static func files(for agent: AgentKind) -> (file: URL, backup: URL, name: String)? {
         switch agent {
         case .claude: return (Paths.claudeSettings, Paths.claudeSettingsBackup, "~/.claude/settings.json")
@@ -44,17 +46,68 @@ public enum HookInstaller {
         }
     }
 
+    /// The file MySidepulse writes whole for an agent, and how it is named in
+    /// a sentence: Copilot's hook file and OpenCode's plugin. Nil for Claude
+    /// Code and Codex, whose file is the user's (`files`).
+    public static func ownedFile(for agent: AgentKind) -> (file: URL, name: String)? {
+        switch agent {
+        case .copilot: return (Paths.copilotHooks, "~/.copilot/hooks/mysidepulse.json")
+        case .opencode: return (Paths.opencodePlugin, "~/.config/opencode/plugins/mysidepulse.js")
+        case .claude, .codex: return nil
+        }
+    }
+
     /// Whether Codex is on this Mac: its home exists. Its hooks file is
     /// created when the hooks are set up, so the file itself proves nothing.
     public static func codexInstalled(home: URL = Paths.codexHome) -> Bool {
+        isDirectory(home)
+    }
+
+    /// Whether GitHub Copilot CLI is on this Mac: its home, `~/.copilot`,
+    /// exists. The hooks folder in it is created when the hooks are set up.
+    public static func copilotInstalled(home: URL = Paths.copilotHome) -> Bool {
+        isDirectory(home)
+    }
+
+    /// Whether OpenCode is on this Mac: its configuration, its CLI's own
+    /// install or its desktop app exists.
+    public static func opencodeInstalled(config: URL = Paths.opencodeConfig, cliHome: URL = Paths.opencodeCLIHome,
+                                         app: URL = Paths.opencodeApp) -> Bool {
+        [config, cliHome, app].contains(where: isDirectory)
+    }
+
+    /// Whether an agent is on this Mac, for `install-hooks`. Claude Code's
+    /// hooks are always set up: they are the app's reason to be.
+    public static func isInstalled(_ agent: AgentKind) -> Bool {
+        switch agent {
+        case .claude: return true
+        case .codex: return codexInstalled()
+        case .copilot: return copilotInstalled()
+        case .opencode: return opencodeInstalled()
+        }
+    }
+
+    /// Whether Copilot runs no user hook at all: `disableAllHooks` in its
+    /// `settings.json` or its `config.json` (`HookConfig.copilotHooksDisabled`).
+    public static func copilotHooksDisabled(home: URL = Paths.copilotHome) -> Bool {
+        func read(_ name: String) -> String? {
+            try? String(contentsOf: home.appendingPathComponent(name), encoding: .utf8)
+        }
+        return HookConfig.copilotHooksDisabled(settingsText: read("settings.json"), configText: read("config.json"))
+    }
+
+    static func isDirectory(_ url: URL) -> Bool {
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: home.path, isDirectory: &isDirectory)
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
             && isDirectory.boolValue
     }
 
     public static func installHooks(for agent: AgentKind, cliPath: String = cliPath(),
                                     file: URL? = nil, backup: URL? = nil) -> Outcome {
         let t = Loc.hookInstall
+        if agent == .copilot || agent == .opencode {
+            return installOwnedFile(for: agent, cliPath: cliPath, file: file)
+        }
         let defaults = files(for: agent)
         guard let file = file ?? defaults?.file, let backup = backup ?? defaults?.backup else {
             return Outcome(ok: false, lines: [t.notModified])
@@ -95,6 +148,9 @@ public enum HookInstaller {
 
     public static func removeHooks(for agent: AgentKind, file: URL? = nil, backup: URL? = nil) -> Outcome {
         let t = Loc.hookInstall
+        if agent == .copilot || agent == .opencode {
+            return removeOwnedFile(for: agent, file: file)
+        }
         let defaults = files(for: agent)
         guard let file = file ?? defaults?.file, let backup = backup ?? defaults?.backup else {
             return Outcome(ok: true, lines: [t.noSettingsFileNothingToRemove])
@@ -111,23 +167,119 @@ public enum HookInstaller {
         }
     }
 
-    /// How many of the agent's events run this bundle's CLI. An absent file,
-    /// or an agent with none, counts as none; nil when the file exists and
-    /// cannot be read.
+    /// How many of the agent's events run this bundle's CLI, or for OpenCode
+    /// whether its plugin is the one this bundle writes (1) or not (0). An
+    /// absent file counts as none; nil when the file exists and cannot be
+    /// read.
     public static func hooksInstalled(for agent: AgentKind, cliPath: String = cliPath(),
                                       file: URL? = nil) -> Int? {
-        guard let file = file ?? files(for: agent)?.file else { return 0 }
-        guard let root = try? SettingsFile.load(at: file) ?? [:] else { return nil }
-        let command = HookConfig.command(cliPath: cliPath, agent: agent)
-        return HookConfig.events(for: agent).filter {
-            HookConfig.installedCommand(in: root, event: $0) == command
-        }.count
+        switch agent {
+        case .copilot:
+            let file = file ?? Paths.copilotHooks
+            guard let root = try? SettingsFile.load(at: file) ?? [:] else { return nil }
+            return HookConfig.copilotEventsSetUp(in: root, cliPath: cliPath)
+        case .opencode:
+            let file = file ?? Paths.opencodePlugin
+            guard FileManager.default.fileExists(atPath: file.path) else { return 0 }
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+            return HookConfig.isCurrentOpencodePlugin(text, cliPath: cliPath) ? 1 : 0
+        case .claude, .codex:
+            guard let file = file ?? files(for: agent)?.file else { return 0 }
+            guard let root = try? SettingsFile.load(at: file) ?? [:] else { return nil }
+            let command = HookConfig.command(cliPath: cliPath, agent: agent)
+            return HookConfig.events(for: agent).filter {
+                HookConfig.installedCommand(in: root, event: $0) == command
+            }.count
+        }
     }
 
-    /// Whether every one of the agent's events runs this bundle's CLI; nil
-    /// when the file cannot be read.
-    public static func hooksSetUp(for agent: AgentKind, cliPath: String = cliPath()) -> Bool? {
-        hooksInstalled(for: agent, cliPath: cliPath).map { $0 == HookConfig.events(for: agent).count }
+    /// Whether the agent's hooks are set up for this bundle's CLI: every one
+    /// of its events, or OpenCode's plugin as this bundle writes it; nil when
+    /// the file cannot be read.
+    public static func hooksSetUp(for agent: AgentKind, cliPath: String = cliPath(), file: URL? = nil) -> Bool? {
+        hooksInstalled(for: agent, cliPath: cliPath, file: file).map { $0 == HookConfig.setUpCount(for: agent) }
+    }
+
+    // MARK: a file MySidepulse owns whole: Copilot's hooks, OpenCode's plugin
+
+    /// What is at an owned file's path: nothing, a file of ours, or one that
+    /// is not ours, which nothing here replaces or deletes. A file that cannot
+    /// be read or parsed is not ours either.
+    enum Ownership: Equatable { case absent, ours, notOurs }
+
+    static func ownership(of agent: AgentKind, at file: URL) -> Ownership {
+        guard FileManager.default.fileExists(atPath: file.path) else { return .absent }
+        switch agent {
+        case .copilot:
+            guard let root = try? SettingsFile.load(at: file) else { return .notOurs }
+            return HookConfig.copilotFileIsOurs(root) ? .ours : .notOurs
+        case .opencode:
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { return .notOurs }
+            return HookConfig.isOurOpencodePlugin(text) ? .ours : .notOurs
+        case .claude, .codex:
+            return .notOurs
+        }
+    }
+
+    /// Writes Copilot's hook file or OpenCode's plugin whole, with its folder.
+    /// Refused, with nothing touched, when the CLI is not a `mysidepulse`
+    /// inside an app bundle, which the entries' marker needs, or when the
+    /// file at the path is someone else's.
+    static func installOwnedFile(for agent: AgentKind, cliPath: String, file: URL?) -> Outcome {
+        let t = Loc.hookInstall
+        guard let owned = ownedFile(for: agent) else { return Outcome(ok: false, lines: [t.notModified]) }
+        let file = file ?? owned.file
+        let command = HookConfig.command(cliPath: cliPath, agent: agent)
+        guard command.contains(HookConfig.ourMarker),
+              FileManager.default.isExecutableFile(atPath: cliPath) else {
+            return Outcome(ok: false, lines: [t.noCLIInBundle(path: cliPath), t.notModified])
+        }
+        guard ownership(of: agent, at: file) != .notOurs else {
+            return Outcome(ok: false, lines: [t.notOursLeftAlone(file: owned.name)])
+        }
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            if agent == .copilot {
+                try SettingsFile.write(HookConfig.copilotFile(cliPath: cliPath), to: file)
+            } else if hooksInstalled(for: agent, cliPath: cliPath, file: file) != 1 {
+                // Written only when it changes: a running OpenCode server
+                // reloads the plugin at every write.
+                try Data(HookConfig.opencodePlugin(cliPath: cliPath).utf8).write(to: file, options: .atomic)
+            }
+        } catch {
+            return Outcome(ok: false, lines: [t.installFailed("\(error)"), t.notModified])
+        }
+        // Read back rather than assumed, as the shared files are.
+        guard hooksSetUp(for: agent, cliPath: cliPath, file: file) == true else {
+            return Outcome(ok: false, lines: [t.installFailed(owned.name)])
+        }
+        let total = HookConfig.events(for: agent).count
+        return Outcome(ok: true, lines: [agent == .opencode
+            ? t.installedPlugin(agent: agent, command: command)
+            : t.installed(total: total, agent: agent, command: command)])
+    }
+
+    /// Deletes Copilot's hook file or OpenCode's plugin when it is ours,
+    /// whichever copy of the app wrote it, and leaves its folder. Someone
+    /// else's file is left and said; an absent one is nothing to remove.
+    static func removeOwnedFile(for agent: AgentKind, file: URL?) -> Outcome {
+        let t = Loc.hookInstall
+        guard let owned = ownedFile(for: agent) else { return Outcome(ok: true, lines: [t.noSettingsFileNothingToRemove]) }
+        let file = file ?? owned.file
+        switch ownership(of: agent, at: file) {
+        case .absent:
+            return Outcome(ok: true, lines: [t.noFileNothingToRemove(owned.name)])
+        case .notOurs:
+            return Outcome(ok: true, lines: [t.notOursLeftAlone(file: owned.name)])
+        case .ours:
+            do {
+                try FileManager.default.removeItem(at: file)
+                return Outcome(ok: true, lines: [t.removedFile(owned.name)])
+            } catch {
+                return Outcome(ok: false, lines: [t.uninstallFailed(error.localizedDescription)])
+            }
+        }
     }
 
     // MARK: Claude Code — ~/.claude/settings.json
@@ -168,24 +320,30 @@ public enum HookInstaller {
 
     // MARK: every agent at once, for the CLI and the installer
 
-    /// `install-hooks`: Claude Code's hooks, and Codex's when Codex is on this
-    /// Mac. A Codex that is not there is said and skipped, never a failure.
+    /// `install-hooks`: Claude Code's hooks, and every other agent's, in
+    /// their order, when it is on this Mac. One that is not there is said and
+    /// skipped, never a failure.
     public static func installAllHooks(cliPath: String = cliPath(),
-                                       codexInstalled: Bool = codexInstalled()) -> Outcome {
-        let claude = installClaudeHooks(cliPath: cliPath)
-        guard codexInstalled else {
-            return Outcome(ok: claude.ok, lines: claude.lines + [Loc.hookInstall.codexNotInstalledSkipped])
+                                       installed: (AgentKind) -> Bool = isInstalled) -> Outcome {
+        var ok = true
+        var lines: [String] = []
+        for agent in AgentKind.allCases {
+            guard agent == .claude || installed(agent) else {
+                lines.append(Loc.hookInstall.notInstalledSkipped(agent))
+                continue
+            }
+            let outcome = installHooks(for: agent, cliPath: cliPath)
+            ok = ok && outcome.ok
+            lines += outcome.lines
         }
-        let codex = installCodexHooks(cliPath: cliPath)
-        return Outcome(ok: claude.ok && codex.ok, lines: claude.lines + codex.lines)
+        return Outcome(ok: ok, lines: lines)
     }
 
-    /// `uninstall-hooks`: both files, whether Codex is installed or not, so
-    /// nothing of ours is left behind in a hooks file Codex may read later.
+    /// `uninstall-hooks`: every agent's, whether it is installed or not, so
+    /// nothing of ours is left behind in a file an agent may read later.
     public static func removeAllHooks() -> Outcome {
-        let claude = removeClaudeHooks()
-        let codex = removeCodexHooks()
-        return Outcome(ok: claude.ok && codex.ok, lines: claude.lines + codex.lines)
+        let outcomes = AgentKind.allCases.map { removeHooks(for: $0) }
+        return Outcome(ok: outcomes.allSatisfy(\.ok), lines: outcomes.flatMap(\.lines))
     }
 
     // MARK: the terminal — ~/.zshrc
