@@ -30,7 +30,7 @@ install:
 # (required, outside the repository). Only run when the owner has asked for a release. /Applications is left
 # alone unless INSTALL=1 is given, which only the owner asks for. scripts/publish.sh has the sequence.
 release:
-	sh scripts/publish.sh $(LEVEL) --notes=$(NOTES) $(if $(INSTALL),--install)
+	sh scripts/publish.sh $(LEVEL) --notes="$(NOTES)" $(if $(INSTALL),--install)
 
 uninstall:
 	-"$(CLI)" uninstall-hooks

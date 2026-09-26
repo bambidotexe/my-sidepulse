@@ -22,8 +22,8 @@ terminal jobs (`mysidepulse run`, zsh hooks), the battery for a few seconds when
 the power cord moves, a red breath at ≤ 15 % on battery, and a few decorative
 effects.
 
-How it knows: Claude Code runs `mysidepulse hook` on 15 hook events and Codex
-runs `mysidepulse hook --agent codex` on 12; GitHub Copilot CLI's own hook file
+How it knows: Claude Code runs `mysidepulse hook --agent claude` on 15 hook events and Codex
+runs `mysidepulse hook --agent codex` on 12 (every hook names its agent; a bare `hook` writes nothing); GitHub Copilot CLI's own hook file
 runs `mysidepulse hook --agent copilot --event <name>` on 7 events, and
 OpenCode's own plugin runs `mysidepulse hook --agent opencode` on every event
 it forwards. Each hook appends one trimmed line to a journal, saying which
@@ -239,8 +239,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (619, one opt-in skip) runs in about thirty seconds;
-  `MySidepulsePlatformTests` (208) takes about 30 s, because it spawns real
+  `MySidepulseCoreTests` (630, one opt-in skip) runs in about thirty seconds;
+  `MySidepulsePlatformTests` (209) takes about 30 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -432,8 +432,8 @@ The app target has no automated tests. Its verification is the strip,
   strip. Two other texts leave the program with no compiler to check them —
   the push copy (`AlertCopy`) and the zsh snippet with its `~/.zshrc` block
   (`ShellInit`, tested by running both in a real zsh). Same discipline.
-- The hook path (`mysidepulse hook`) must never block and never exit non-zero:
-  it runs inside every Claude Code turn.
+- The hook path (`mysidepulse hook --agent <agent>`) must never block and never exit non-zero:
+  it runs inside every agent's turn. A `hook` naming no agent writes nothing and still exits 0.
 - **An update never installs by itself, and a failed one never leaves the strip
   dark for good.** The automatic check only announces; the fetch and the
   install each need a click. Everything that can refuse an update runs while
@@ -578,3 +578,10 @@ Known limitations, in plain words — the authority is *Open issues* in
   notification, the update window and MySidepulse installing over itself are
   the checklist's §3.
 - Three facts the code cannot settle are listed in `docs/functional.md` §14.
+- **The hook names its agent**: the Claude Code entry is `… mysidepulse hook --agent claude`, and `mysidepulse hook`
+  alone writes nothing. Every settings.json entry written by 1.1.1 or earlier is of the bare form, so after the
+  next `make install` (which runs `install-hooks`) they are rewritten in place; a Mac where nobody runs it
+  reads Claude Code as there and wrong (`doctor`, Health) until Set Up Hooks runs. Not yet walked on this
+  Mac, like the rest of the tree since 1.1.1: the hold a helper's permission prompt pauses, the quarantine
+  of a helper's stragglers, the ended session remembered for 120 s, the late finish that never pushes
+  whoever is at the Mac, and the Codex re-install that keeps its place.
