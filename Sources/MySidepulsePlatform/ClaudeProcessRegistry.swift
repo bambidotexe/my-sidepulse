@@ -40,16 +40,16 @@ public enum ClaudeProcessRegistry {
     /// the last `projects` folder that sits at least two levels above the
     /// file (`<config>/projects/<slug>/<session>.jsonl`). The last one, so a
     /// config directory inside a folder called `projects` is still found.
-    /// Nil for a path with no such folder, and for a path that is not
-    /// absolute, which would name a folder under the app's own working
-    /// directory and hide the fallbacks.
+    /// Nil for a path with no such folder or with no folder above it (the
+    /// root is no config directory), for a path with a `.` or `..`
+    /// component, which would name another folder than it reads as, and for
+    /// a path that is not absolute, which would name a folder under the
+    /// app's own working directory and hide the fallbacks.
     public static func configDir(fromTranscriptPath path: String) -> URL? {
-        guard path.hasPrefix("/") else { return nil }
-        let components = (path as NSString).pathComponents
-        guard components.count >= 4,
-              let index = components[..<(components.count - 2)].lastIndex(of: "projects"),
-              index > 0 else { return nil }
-        return URL(fileURLWithPath: NSString.path(withComponents: Array(components[..<index])))
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard path.hasPrefix("/"), !parts.contains(where: { $0 == "." || $0 == ".." }),
+              let index = parts.dropLast(2).lastIndex(of: "projects"), index > 0 else { return nil }
+        return URL(fileURLWithPath: "/" + parts[..<index].joined(separator: "/"), isDirectory: true)
     }
 
     static func record(fromFileAt file: URL, expectedPid: Int32) -> Record? {

@@ -296,7 +296,7 @@ rejected by eye within minutes of a build whose tests were green.
 ### The registry is not always under `~/.claude`
 - **Symptom.** Under an account switcher such as cswap, every Claude Code turn ended with Esc or Ctrl-C rolls for 2 h, and the log says `quiet turn undecidable: … no registry record for claude pid`.
 - **Why.** `CLAUDE_CONFIG_DIR` moves the registry, and the only way to it through the process is its environment, which macOS may withhold from another process.
-- **Instead.** The directory is read from the transcript path the hooks name (`<config>/projects/<slug>/<session>.jsonl`, kept on the session), for the rescues and the launch prune alike; the process's environment, then `~/.claude`, only for a session no line has named a transcript for.
+- **Instead.** The directory is read from the transcript path the hooks name (`<config>/projects/<slug>/<session>.jsonl`, kept on the session), for the rescues and the launch prune alike; a path that is not absolute, carries a `.` or `..` component, or has no folder above its `projects` folder names none. The process's environment, then `~/.claude`, only for a session no line has named a transcript for, or whose path names no directory.
 - **Rule.** A transcript outside `<config>/projects/` would fall back the same way; none is known.
 
 ### A verdict that lives in memory dies with a relaunch

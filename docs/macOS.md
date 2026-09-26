@@ -131,9 +131,11 @@ directory, which `CLAUDE_CONFIG_DIR` relocates (an account switcher such as
 cswap sets it per account). The app finds it from the transcript path the
 hooks name, `<config>/projects/<slug>/<session>.jsonl`: the parent of the
 last `projects` folder at least two levels above the file
-(`ClaudeProcessRegistry.configDir(fromTranscriptPath:)`). Only for a session
-no line has named a transcript for is the process's own `CLAUDE_CONFIG_DIR`
-read from `KERN_PROCARGS2`, then `~/.claude` taken. Another same-user
+(`ClaudeProcessRegistry.configDir(fromTranscriptPath:)`). A path that is not
+absolute, carries a `.` or `..` component, or has no folder above that
+`projects` names no config directory. Only for a session no line has named a
+transcript for, or whose path names none, is the process's own
+`CLAUDE_CONFIG_DIR` read from `KERN_PROCARGS2`, then `~/.claude` taken. Another same-user
 process's environment is not relied on: `ps -E` prints a running Claude's
 here, but a reader has been seen to get none.
 

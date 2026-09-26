@@ -68,6 +68,17 @@ final class ClaudeProcessRegistryTests: XCTestCase {
         XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "~/.claude/projects/s/a.jsonl"),
                      "only an absolute path names a directory; the fallbacks answer otherwise")
         XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "cfg/projects/s/a.jsonl"))
+        XCTAssertEqual(ClaudeProcessRegistry.configDir(
+            fromTranscriptPath: "/Users/x/.claude/projects/-Users-x-p/abc/subagents/agent-1.jsonl")?.path,
+                       "/Users/x/.claude", "a helper's transcript sits deeper in the same folder")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/Users/x/../y/.claude/projects/s/a.jsonl"),
+                     "no .. component")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/Users/x/./.claude/projects/s/a.jsonl"),
+                     "no . component")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/Users/x/.claude/projects/s/../a.jsonl"))
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: "/projects/s/a.jsonl"),
+                     "no folder above projects: the root is no config directory")
+        XCTAssertNil(ClaudeProcessRegistry.configDir(fromTranscriptPath: ""))
     }
 
     func testReadFollowsTheTranscriptsConfigDir() throws {
