@@ -188,7 +188,7 @@ are `docs/functional.md`.
 | an agent: which there are, its colour, how its sessions are told apart, what its events mean | `Core/Agent.swift` (`AgentKind`: Claude, Codex, Copilot, OpenCode; `Agents`), `Core/LedPalette.swift` (`rollColors`), `SessionStore.apply` (`Interrupt`, `request_user_input`), `Platform/ProcWalk.swift` (`agent(of:)`, `classify(_:agent:)`, `isCopilotPath`, `isOpencodePath`), `Platform/HookCommand.swift`, `CLI/CLIMain.swift` (`hook --agent`) — `CodexTests`, `CodexPlatformTests`, `CopilotTests`, `OpencodeTests` | §1, §3, §4, `pitfalls.md` *Detecting Codex*, *Detecting Copilot*, *Detecting OpenCode* |
 | holds, expiry, the settle, any session timer | `SessionStore.tick` and `nextDeadline` (every timer needs both), `Core/Constants.swift` — `TimerTests`, `SettleTests` | §4, §3 *Settle*, §13 |
 | the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`, `checkCodexTurns`, `checkCopilotTurns`, `daemonAnswered`, the launch check in `start` / `finishLaunch`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`, `CodexRollout.swift`, `CodexDaemonClient.swift` (`CodexDaemonClientTests`, a fake daemon), `ProcWalk.isCodexDaemon` / `isManagedCodexDaemon`, `Platform/CopilotTranscript.swift`, `Platform/FileTail.swift` (shared by `CodexRollout.read`); `Core/CodexRolloutTail.swift` (the rollout's verdict and decision, which paths are trusted — `CodexRolloutTailTests`), `Core/WebSocketFrame.swift` + `Core/CodexThreadRecord.swift` (the daemon's framing, messages and answers — `WebSocketFrameTests`, `CodexThreadRecordTests`), `Core/CopilotTranscriptTail.swift` (a Copilot turn's or open wait's verdict against `events.jsonl` — `CopilotTranscriptTailTests`); `SessionStore.abandonCandidates` / `codexCandidates` / `copilotCandidates` / `copilotWaitCandidates` / `finishTurn` / `abandonTurn` / `abandonWait` / `failTurn` / `rescueStamp` / `applyVerdict` / `noteBusy` / `dialogAnswered`; the journaled verdicts: `TurnVerdict` (`Core/Event.swift`, including `turn-failed`), `Engine.persist(_:sessionId:at:)` writing the `MySidepulseVerdict` line | §4 *When hooks say nothing*, *Expiry*, `pitfalls.md` |
-| which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `copilotEvents`, `command(cliPath:agent:event:)`, the OpenCode plugin source and its `opencodePluginId`), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`; `OpenCodePluginState`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`, `copilotHooks`, `opencodePlugin`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests`, `CodexPlatformTests`, `OpencodePluginRunTests` | §4 *Source*, §10, §11 |
+| which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `copilotEvents`, `command(cliPath:agent:event:)`, `entry(for:command:agent:)` and `timeout(for:agent:)`, the OpenCode plugin source and its `opencodePluginId`), `Core/CodexHookTrust.swift` + `Core/SHA256.swift` (Codex's trust: key, hash, the `config.toml` edit), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`; `CodexFiles`, `installCodexHooks`, `codexHooksTrusted`; `OpenCodePluginState`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`, `codexConfig`, `codexHooksTrustName`, `copilotHooks`, `opencodePlugin`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `CodexHookTrustTests`, `HookInstallerTests`, `CodexPlatformTests`, `OpencodePluginRunTests` | §4 *Source*, §10, §11, `pitfalls.md` *Detecting Codex*, `macOS.md` *Codex: its hooks and their trust* |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
 | the precedence ladder, the split display, which agents a state names | `Core/Arbiter.swift` — `ArbiterTests`, `CodexTests` | §3 |
 | carrying an animation across a rewrite: the tail, its cut rules, the roll under a zone, when the loop is handed over | `Core/LedContinuation.swift` (the reader, the cut rules, `tail`, `transition`), `LedProgram.rollHandover` (which changes carry the roll), `Engine.paint` / `carryOn` / `handOver` — `ContinuationTests`, `TransitionTests` (exact text, and a sweep over every phase) | §3 *Carrying an animation on*, `device.md` *Carrying an animation on*, `pitfalls.md` |
@@ -236,8 +236,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (579, one opt-in skip) runs in about thirty seconds;
-  `MySidepulsePlatformTests` (197) takes about 30 s, because it spawns real
+  `MySidepulseCoreTests` (597, one opt-in skip) runs in about thirty seconds;
+  `MySidepulsePlatformTests` (203) takes about 30 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -296,13 +296,14 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
   evidence every derived constant is calibrated from. It holds working
   directories and message tails: read it locally, never paste it. **Never read
   or print `config.json`** in that directory: it holds the ntfy topic.
-- Codex runs a hook only once it has been trusted in Codex. After an
-  `install-hooks` (every `make install` runs one) the entries in
-  `~/.codex/hooks.json` are new to Codex again, and nothing reaches the
-  journal from Codex until the owner has trusted them there. Copilot and
-  OpenCode need no such trust step: `install-hooks` (and `make install`) sets
-  up Copilot's hook file and OpenCode's plugin the moment it runs, on any Mac
-  where that agent is present, and each takes effect at once.
+- Codex runs a hook only once it is trusted in its `~/.codex/config.toml`.
+  `install-hooks` (every `make install` runs one) writes that trust itself,
+  after the entries in `~/.codex/hooks.json`, with the key and the hash Codex
+  computes (`CodexHookTrust`); a Codex hook counts as set up only while it is
+  in `hooks.json` **and** trusted. Copilot and OpenCode have no trust step:
+  `install-hooks` (and `make install`) sets up Copilot's hook file and
+  OpenCode's plugin the moment it runs, on any Mac where that agent is
+  present, and each takes effect at once.
 
 ## Architecture
 
@@ -336,7 +337,8 @@ Full version in `docs/architecture.md`.
   · `Alert` (`AlertCopy`, the push text) · `Presence` · `JobStore` ·
   `BatteryRules` · `EjectGuard` · `HookConfig` (edits to Claude Code's and
   Codex's `settings.json`, Copilot's whole hook file, OpenCode's plugin
-  source) · `ShellInit` (the zsh snippet, and the text of its block in `~/.zshrc`) ·
+  source) · `CodexHookTrust` + `SHA256` (Codex's trust of a hook: its key, its
+  hash, and the text edit of `config.toml` that records it) · `ShellInit` (the zsh snippet, and the text of its block in `~/.zshrc`) ·
   `ShellJobLiveness` (whether a running job's shell still runs a command) ·
   `UpdateCheck` (release versions, and what GitHub's reply means) +
   `UpdateSchedule` + `UpdatePanel` + `UpdateSession` + `StagedUpdateCheck` +
@@ -486,7 +488,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (579 + 197, one opt-in skip) at
+`swift build` is clean and `swift test` is green (597 + 203, one opt-in skip) at
 this commit. The live journal replays.
 
 Checked on the strip by the owner: the brightness key over the roll carries the
@@ -518,6 +520,10 @@ Known limitations, in plain words — the authority is *Open issues* in
   rollout marker: a TUI session goes dark when the daemon says its thread is
   idle, and any other rolls until 2 h after the rollout's last line. Whether Codex
   fires `PreToolUse` for `request_user_input` is unobserved.
+- Codex's hooks are trusted by the set-up, with the key and the hash pinned
+  to what Codex 0.157.0 reported over `hooks/list`. This app's own trust has
+  run only in temporary Codex homes under the tests, never against the real
+  `~/.codex` or a live Codex: the checklist's Codex rows are its verification.
 - A quiet Copilot turn is read from its `events.jsonl` within about 35 s, on
   the same rule as Codex's rollout; a Copilot open wait cancelled with Ctrl+C
   goes dark the same way, and one answered (approving a permission fires no

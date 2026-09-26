@@ -333,11 +333,27 @@ rejected by eye within minutes of a build whose tests were green.
 - **Instead.** Codex's hooks are installed as `mysidepulse hook --agent codex`, so the journal line says who fired it whatever process did; `HookConfig.install` replaces every entry carrying the marker, migrated ones included. A hook with no flag falls back to the nearest agent process in its ancestry, then to Claude.
 - **Rule.** A hook must say who it is for. Never read the agent from the payload's shape: both agents send the same fields.
 
-### Codex runs a hook only once it is trusted in Codex
-- **Symptom.** Hooks set up, `doctor` green, and no Codex line in the journal.
-- **Why.** Codex keeps a trust status per hook (`Untrusted`, `Trusted`, `Modified`, by a hash of the entry) and runs the untrusted ones only behind its own `--dangerously-bypass-hook-trust`. A set-up, and every re-install that rewrites the entry, is a change Codex has to be told to trust.
-- **Instead.** Nothing the app can do: the System page's note says it. The canary is Codex sessions absent from the journal while Codex runs.
-- **Rule.** After `install-hooks`, trust the hooks in Codex before reading anything into their silence.
+### A hook in `~/.codex/hooks.json` alone never runs
+- **Symptom.** The 12 entries in `hooks.json`, Codex's `/hooks` screen listing them as untrusted (or modified, after a re-install that changed an entry), and no Codex line in the journal while Codex runs.
+- **Why.** Codex keeps a trust status per hook (`Untrusted`, `Trusted`, `Modified`, by a hash of the entry) and runs the untrusted ones only behind its own `--dangerously-bypass-hook-trust`. The trust is a `[hooks.state."<key>"]` table in `~/.codex/config.toml` whose `trusted_hash` equals the hash Codex computes for the entry; its `/hooks` screen writes it, and switches a hook off with `enabled = false` in the same table.
+- **Instead.** Setting up Codex's hooks writes that table for each of the 12, with the key and the hash Codex computes (`CodexHookTrust`, [macOS.md](macOS.md) *Codex: its hooks and their trust*). `CodexHookTrustTests` pins the hash to the ones Codex 0.157.0 reported over `hooks/list` for hooks of this shape. The System page, the Health page's `Codex hooks` line and the doctor's `codex hooks` check count a hook as set up only while it is installed **and** trusted and not switched off; one installed and untrusted reads orange, with a fix saying Codex never runs it and to press Set Up Hooks.
+- **If Codex changes its hash.** The rows read Enabled (the app wrote what it computed), Codex's `/hooks` screen says modified, and no Codex line reaches the journal: Health's *Last hook event* goes stale while Codex runs. Re-derive the hash from `codex-rs/hooks/src/engine/discovery.rs` and `codex-rs/config/src/fingerprint.rs`, or ask a running `codex app-server` over `hooks/list`, and fix the test.
+- **Rule.** Never write a Codex hook without its trust, and never call one set up on `hooks.json` alone.
+
+### The trust key moves with the entry's index
+- **Why.** A key ends in the group's index in the event's array. An entry of ours placed before a stranger's would shift the stranger's key and untrust their hook.
+- **Instead.** Ours is appended after every existing group. A table of ours left under an old key (the file rearranged by hand) is recognised by its hash, and removal names our tables after the commands the file actually holds, whichever copy of the app wrote them.
+- **Rule.** Never put a Codex entry of ours ahead of a group already there.
+
+### `config.toml` is edited as text, not parsed
+- **Why.** A TOML rewrite would lose the user's comments and layout, and Core takes no TOML library.
+- **Instead.** Only `[hooks.state."<key>"]` tables are read, added and removed, the one shape Codex writes itself; everything else in the file is kept byte for byte, and the file is written only when the trust changes it. A `state` written any other way (an inline table) stops the set-up before either file is written, saying to trust the hooks from Codex's `/hooks` screen: a second definition of the same key would make the file invalid for Codex. A file that is not UTF-8 is never written; removing the hooks then still takes them out of `hooks.json`, and says the trust was left.
+- **Rule.** Never re-serialise `config.toml`, and never read an unreadable one as empty: the write would replace the user's whole file with our tables.
+
+### `SessionEnd` and `Interrupt` time out at 3 s
+- **Why.** Codex allows those two hooks 3 s at most: a larger value draws a warning at every Codex start and is hashed as 3, so a trust written for it would not match.
+- **Instead.** Those entries are written with `timeout: 3`, the others with 5, and a Codex entry carries no `matcher` (Codex reads a missing one as match-all, and hashes the entry as written).
+- **Rule.** Change a Codex entry's shape only together with the hash its trust is computed from.
 
 ### Codex reports a tool's end after the turn was aborted
 - **Symptom.** A Codex session rolling for minutes after the user stopped it with Ctrl+C, until they quit Codex; with nothing to end it, it would have rolled for the 2 h backstop. Session `01a0d9e4`, 2026-09-25: `Interrupt` 18:52:34.701, `PostToolUse` Bash 18:52:47.372, then nothing but `SessionEnd` at 18:55:28.

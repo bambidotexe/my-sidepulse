@@ -199,6 +199,44 @@ which `ProcWalk.isManagedCodexDaemon` reads), so what the daemon says of
 either proves nothing. Captured by a read-only probe against Codex 0.157;
 `CodexDaemonClient`, `CodexThreadRecord` and `WebSocketFrame` hold it.
 
+## Codex: its hooks and their trust
+
+Codex reads the user's hooks from `~/.codex/hooks.json`, the same `hooks`
+object as Claude Code's `settings.json`, under a root that may also hold a
+`description`. A missing `matcher` matches everything (`"*"` does too; any
+other matcher is a regular expression). Hooks can also live in `config.toml`
+under `[hooks]`; loading both draws a warning, so only the JSON file is
+written.
+
+**Codex runs a user hook only while it is trusted**: `~/.codex/config.toml`
+holds `[hooks.state."<key>"]` with a `trusted_hash` equal to the hash Codex
+computes for the hook, and `enabled` not `false` (its `/hooks` screen writes
+the table, and switches a hook off with `enabled = false` in it). The key is
+`<hooks.json path>:<event label>:<group index>:<handler index>`, the label
+the event's snake_case name (`PreToolUse` → `pre_tool_use`), the path Codex's
+home with symlinks resolved, then `hooks.json` (`Paths.codexHooksTrustName`).
+The hash is `sha256:` and the SHA-256 of the canonical JSON (keys sorted, no
+spaces) of `{"event_name": <label>, "hooks": [<the entry, normalised>]}`; a
+normalised command entry is `{"async": false, "command", "timeout", "type":
+"command"}`, plus the matcher when there is one, and Codex clamps the timeout
+of `SessionEnd` and `Interrupt` to 1–3 s before hashing. A hook whose hash no
+longer matches reads as modified in the `/hooks` screen and stops running.
+Read from Codex's source (`codex-rs/hooks/src/lib.rs`, `engine/discovery.rs`,
+`config/src/fingerprint.rs`) and checked against Codex CLI 0.157.0: its
+`hooks/list` answer reported the hashes `CodexHookTrustTests` pins, and a hook
+trusted by a table of this shape fired on a real turn. `CodexHookTrust`
+reproduces key and hash, with Core's own `SHA256`.
+
+Codex writes each state as a `[hooks.state."<key>"]` table; a state written
+as an inline table (`state = { … }` under `[hooks]`, or `"<key>" = { … }`
+under `[hooks.state]`) is valid TOML too, and a second definition of the same
+key beside it would make the file invalid, which is why the set-up refuses
+such a file rather than add to it.
+
+`CODEX_HOME` moves the whole folder for a Codex started with it set. Like
+`CLAUDE_CONFIG_DIR`, it is invisible to the app, which launchd starts, so the
+installer, its trust and the app's pages all use `~/.codex`.
+
 ## GitHub Copilot CLI: its hooks and its process
 
 Observed with Copilot CLI 1.0.88 on this Mac (`copilot -p`, interactive runs,
@@ -367,7 +405,9 @@ Unix-domain socket with mode `0600`.
 Files touched outside the app's own directory: `~/.claude/settings.json`
 (read and written by `install-hooks` / `uninstall-hooks` and by Settings ›
 General › Hooks, after a backup), `~/.zshrc` (the app's own block, written and
-removed from the same Hooks rows),
+removed from the same Hooks rows), `~/.codex/hooks.json` and
+`~/.codex/config.toml` (MySidepulse's entries in the first and their trust
+tables in the second, each file backed up before it is written),
 `<config>/sessions/*.json` and the session transcript (read only), and a Codex
 session's rollout under `~/.codex/sessions/` (its last 64 KB, read only).
 Sockets connected to outside the app's own: Codex's managed daemon's control

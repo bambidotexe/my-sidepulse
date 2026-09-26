@@ -287,8 +287,12 @@ Outside the app's own directory, `HookInstaller` — behind both
 edits `~/.claude/settings.json` (after copying it to
 `settings.json.backup-mysidepulse`), `~/.codex/hooks.json` (after copying it
 to `hooks.json.backup-mysidepulse`; Codex is on the Mac when `~/.codex` is a
-directory) and the app's block in `~/.zshrc`, and writes or deletes two files
-that are MySidepulse's whole, so they take no backup:
+directory), the trust Codex wants for those hooks in `~/.codex/config.toml`
+(after copying it to `config.toml.backup-mysidepulse`; `CodexHookTrust` in
+Core computes Codex's key and hash, with its own `SHA256`, and edits the file
+as text; `HookInstaller.CodexFiles` names the two files, so a test hands it a
+temporary Codex home) and the app's block in `~/.zshrc`, and writes or deletes
+two files that are MySidepulse's whole, so they take no backup:
 `~/.copilot/hooks/mysidepulse.json` (Copilot is on the Mac when `~/.copilot` is
 a directory) and `~/.config/opencode/plugins/mysidepulse.js` (OpenCode is on
 the Mac when `~/.config/opencode`, `~/.opencode` or `/Applications/OpenCode.app`

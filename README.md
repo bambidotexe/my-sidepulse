@@ -231,9 +231,9 @@ That builds the same signed, notarized bundle, puts it in `/Applications`, launc
 plugin of whichever of Claude Code, Codex, GitHub Copilot CLI and OpenCode is on the Mac, and prints
 `mysidepulse doctor`. Claude Code's and Codex's hooks go into their own `settings.json` / `hooks.json`, backed
 up first; entries that are not MySidepulse's are left alone. What "picking up the new hooks" means differs by
-agent: Claude Code's open sessions pick them up within seconds; Codex's wait until the hooks have been trusted
-in Codex; Copilot reads its hook file when a session starts; a running OpenCode server loads the plugin within
-a second.
+agent: Claude Code's open sessions pick them up within seconds; Codex runs a hook only once it is trusted, so
+the same step writes that trust into Codex's `config.toml`, backed up first; Copilot reads its hook file when a
+session starts; a running OpenCode server loads the plugin within a second.
 `make uninstall` reverses either one; your settings and the journal stay. Settings › General › Uninstall does
 the same from inside the app.
 
