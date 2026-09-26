@@ -149,6 +149,15 @@ final class ShellInitTests: XCTestCase {
         }
     }
 
+    /// Neither app's own command is work: `koffeelid status` in a terminal is
+    /// the sibling app's CLI, `mysidepulse status` this one's. Stand-ins.
+    func testTheTwoAppsCommandsAreNeverCommands() throws {
+        try write("bin/koffeelid", "#!/bin/sh\nexit 0\n")
+        XCTAssertEqual(try zsh("koffeelid status"), [])
+        XCTAssertEqual(try zsh("cd '\(dir.path)' && koffeelid arm"), [])
+        XCTAssertEqual(try zsh("mysidepulse status"), ["status"], "the call itself, and no job around it")
+    }
+
     func testTheSkipListIsUsersToExtend() throws {
         let calls = try zsh("true", preamble: "MYSIDEPULSE_SKIP=(true)")
         XCTAssertEqual(calls, [], "a user-set skip list replaces the default")
