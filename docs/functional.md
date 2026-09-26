@@ -315,7 +315,7 @@ the settle keeps that wait off the strip and its push is disarmed with it.
 
 | Event | Result |
 |---|---|
-| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept, a held `Stop` stays held and the state `PreCompact` remembered is kept — the mid-flight marker of a compaction already under way. Copilot's changes nothing either: Copilot fires it with the first prompt, after it. |
+| `SessionStart` | `idle`; forgets the session's subagents and background shells. With `source: compact`: no change, and they are kept, a held `Stop` stays held and the state `PreCompact` remembered is kept — the mid-flight marker of a compaction already under way. Copilot's changes nothing, not even when the main agent was last at work: Copilot fires it with the first prompt, after it, so it only records the session's pid and `events.jsonl` path and proves the hook alive. |
 | `UserPromptSubmit` | `working` |
 | `PreToolUse` | `AskUserQuestion` or Codex's `request_user_input` → `waiting(question)`; `ExitPlanMode` → `waiting(plan)`; any other tool → `working` |
 | `PostToolUse`, `PostToolUseFailure`, `PermissionDenied` | `working` |

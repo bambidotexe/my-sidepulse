@@ -269,6 +269,24 @@ final class CopilotTests: XCTestCase {
         XCTAssertEqual(store.sessions["s1"]?.state, .idle)
     }
 
+    /// Copilot's start records its pid and its path and nothing else: it is
+    /// no main-agent event, so every "after the last main-agent event" gate
+    /// still counts from the prompt or the tool before it.
+    func testCopilotsStartIsNoMainAgentEvent() throws {
+        var store = SessionStore()
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        store.apply(line("postToolUse", ["sessionId": "c1", "toolName": "bash"], 1))
+        var start = line("sessionStart", ["sessionId": "c1", "source": "new", "transcriptPath": transcript], 1.5)
+        start.agentPid = 4242
+        store.apply(start)
+        let s = try XCTUnwrap(store.sessions["c1"])
+        XCTAssertEqual(s.state, .working)
+        XCTAssertEqual(s.lastMainEventAt, at(1), "the start is not the main agent at work")
+        XCTAssertEqual(s.lastEventAt, at(1.5), "it proves the hook alive")
+        XCTAssertEqual(s.agentPid, 4242)
+        XCTAssertEqual(s.transcriptPath, transcript)
+    }
+
     // MARK: the events.jsonl check
 
     func at(_ t: TimeInterval) -> Date { t0.addingTimeInterval(t) }

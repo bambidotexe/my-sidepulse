@@ -177,6 +177,13 @@ public struct SessionStore {
         if let tty = e.tty { s.tty = tty }
         if let path = e.transcriptPath { s.transcriptPath = path }
         if let cwd = e.cwd { s.cwd = cwd }
+        // Copilot fires its start lazily, with the first prompt and after
+        // it: the start records what it carries and changes nothing, not
+        // even when the main agent was last at work.
+        if e.event == .sessionStart, s.agent == .copilot {
+            sessions[sid] = s
+            return
+        }
         if Self.changesNothing(e, in: s, now: now) {
             sessions[sid] = s
             return
@@ -231,10 +238,9 @@ public struct SessionStore {
             // happens inside a turn, with helpers possibly out. It is also
             // not a state of its own — `PreCompact` already went `working`,
             // and this mid-flight marker changes nothing, a held Stop and
-            // the compaction's snapshot included. Nor is Copilot's: it fires
-            // its start lazily, with the first prompt and after it, so the
-            // session is already working when it arrives.
-            if e.source != "compact", s.agent != .copilot {
+            // the compaction's snapshot included. Copilot's never reaches
+            // here (above).
+            if e.source != "compact" {
                 s.liveAgents.removeAll()
                 s.backgroundIds.removeAll()
                 s.compactionSnapshot = nil

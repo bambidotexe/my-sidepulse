@@ -389,7 +389,7 @@ rejected by eye within minutes of a build whose tests were green.
 ### `sessionStart` comes after the first prompt
 - **Symptom.** A Copilot turn dark from its first second: the prompt set it working, and the start set it idle a few milliseconds later.
 - **Why.** Copilot fires `sessionStart` lazily, with the first prompt and after `userPromptSubmitted`. An interactive Copilot quit before any prompt fires a `sessionEnd` for a session that never started.
-- **Instead.** A Copilot `SessionStart` changes no state (`SessionStore.apply`). A `SessionEnd` for a session never seen changes nothing either.
+- **Instead.** A Copilot `SessionStart` records the session's pid and path and changes nothing else (`SessionStore.apply`): no state, and not the last main-agent event, which every "stamped after the last main-agent event" check and the `idle_prompt` quiet gate count from. A `SessionEnd` for a session never seen changes nothing either.
 
 ### A subagent's prompt and stop carry the subagent's id
 - **Symptom.** A Copilot turn green while it still runs: its subagent's `agentStop` read as the turn's own finish, under a session no one started.
