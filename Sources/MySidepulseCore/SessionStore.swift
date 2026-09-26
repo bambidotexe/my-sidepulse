@@ -632,9 +632,9 @@ public struct SessionStore {
                                  : now.addingTimeInterval(K.abandonRecheckSeconds))
             }
             if s.state.isOpenWaiting, s.agent == .copilot {
-                // The cancelled-wait watch: Ctrl+C at a Copilot prompt fires
-                // no hook. Counted from when the wait began; see
-                // `copilotWaitCandidates`.
+                // The Copilot wait watch: a Copilot prompt answered, or
+                // cancelled with Ctrl+C, fires no hook. Counted from when the
+                // wait began; see `copilotWaitCandidates`.
                 let eligibleAt = s.stateSince.addingTimeInterval(K.abandonQuietSeconds)
                 deadlines.append(eligibleAt > now
                                  ? eligibleAt
@@ -743,9 +743,10 @@ public struct SessionStore {
 
     /// Copilot sessions waiting on a permission or a question for
     /// `quietSeconds` since the wait began, checked against the same file
-    /// for an `abort`: Ctrl+C or Esc Esc at the prompt fires no hook. A
-    /// failed turn's `waiting(error)` is not an open wait. The launch check
-    /// passes no quiet gate (0).
+    /// for an `abort` or an answer: neither Ctrl+C nor Esc Esc at the
+    /// prompt, nor the prompt's answer, fires a hook. A failed turn's
+    /// `waiting(error)` is not an open wait. The launch check passes no quiet
+    /// gate (0).
     public func copilotWaitCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
     -> [(sessionId: String, transcriptPath: String?, waitSince: Date)] {
         sessions.values.sorted { $0.id < $1.id }.compactMap { s in
@@ -901,8 +902,10 @@ public struct SessionStore {
     }
 
     /// The dialog was answered and the turn is running again — Claude's own
-    /// registry says busy with a stamp newer than the dialog itself. Back
-    /// to working; `set` disarms the pending push with the state change.
+    /// registry says busy with a stamp newer than the dialog itself, or a
+    /// Copilot session's `events.jsonl` shows its prompt's
+    /// `permission.completed` after the wait began. Back to working; `set` disarms the pending push with the state
+    /// change.
     /// Returns `now` when it took effect, or nil when it changed nothing.
     @discardableResult
     public mutating func dialogAnswered(sessionId: String, now: Date) -> Date? {

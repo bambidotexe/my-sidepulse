@@ -383,8 +383,9 @@ Esc and Ctrl-C end a Claude Code turn without any hook, and hook delivery can
 stop mid-session. For Claude Code sessions, the rescues below read Claude
 Code's own registry and transcript.
 
-Copilot fires nothing either for Ctrl+C or Esc Esc, nor any end for a turn
-that fails; its `events.jsonl` says both (below). OpenCode
+Copilot fires nothing either for Ctrl+C or Esc Esc, nor for an answered
+prompt, nor any end for a turn that fails; its `events.jsonl` says each
+(below). OpenCode
 ends every busy period with exactly one of `succeeded`, `failed` or
 `interrupted`, so it needs no such rescue: a terminal event that never came
 is covered by its server's exit, which forgets every session the server
@@ -437,11 +438,23 @@ names.
 A Copilot session waiting on a permission or a question (`waiting(permission)`
 or `waiting(question)`, never a failed turn's `waiting(error)`) is checked
 against the same file on the same schedule, its quiet gate counted from when
-the wait began, and once at launch with no gate: Ctrl+C or Esc Esc at the
-prompt fires no hook, and an `abort` stamped after the wait began ends the
-turn as a working turn's abort does (`idle`, dark), with no push. Anything
-else in the file changes nothing for a waiting session: an answer fires the
-next hook, which clears the wait.
+the wait began, and once at launch with no gate, and the file's latest turn
+marker decides. Ctrl+C or Esc Esc at the prompt fires no hook, and an `abort`
+stamped after the wait began ends the turn as a working turn's abort does
+(`idle`, dark), with no push. Answering the prompt fires no hook either
+(approving or denying a permission writes `permission.completed`): with the
+turn still at work, a latest permission line that is `permission.completed`,
+stamped after the wait began, is the answer, and the session is back to
+`working`, its push disarmed, as the answered dialog of a Claude Code session
+is. A latest `permission.requested` is a prompt still open, a second one asked
+right after the first was answered included, and a tool called beside the
+prompt finishing while it is open is no answer; a finish, a failure or a close
+is no answer; a `permission.completed` or an `abort` stamped at or before the
+wait began, an unreadable file, or one with no marker, changes nothing. The
+permission line's own stamp is what counts, never the file's last line: the
+wait's own `notification` hook writes a line after the wait began, answered or
+not. A question's answer needs none of this: it ends its `ask_user` tool, and
+`postToolUse` fires.
 
 When Codex's daemon is running it is asked first (`thread/read` on its
 control socket): a thread it has not loaded, or has idle, has nothing
@@ -497,6 +510,7 @@ most.
 | Copilot: failed turn | same, but the marker is a `session.error` | `waiting(error)`, with its push | 20–35 s |
 | Copilot: session closed mid-turn | same, but the marker is a `session.shutdown` with no end of the turn before it | `idle` (dark), no push | 20–35 s |
 | Copilot: a permission or question cancelled (Ctrl+C, Esc Esc at the prompt) | `waiting(permission)` or `waiting(question)` for ≥ `K.abandonQuietSeconds` (20 s); the last marker of `events.jsonl` is an `abort` stamped after the wait began | `idle` (dark), no push | 20–35 s |
+| Copilot: a permission answered | same wait; the turn is at work and the latest permission line of `events.jsonl` is `permission.completed`, stamped after the wait began | `working`, the push disarmed | ≤ 15 s after the answer, not before 20 s into the wait |
 
 While the registry says `busy`, a quiet session is kept alive and stays
 `working`. The registry and open waits are re-read every

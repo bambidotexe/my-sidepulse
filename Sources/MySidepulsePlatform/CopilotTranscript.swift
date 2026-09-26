@@ -23,10 +23,14 @@ public enum CopilotTranscript {
         CopilotTranscriptTail.path(recorded: recorded, sessionId: sessionId, root: root.path)
     }
 
+    /// The tail of a session's file, nil when there is none to read.
+    public static func tail(sessionId: String, recorded: String?, root: URL) -> Data? {
+        path(recorded: recorded, sessionId: sessionId, root: root).flatMap(read(path:))
+    }
+
     /// The verdict of a session's file, `.unreadable` when there is none.
     public static func verdict(sessionId: String, recorded: String?, root: URL) -> CopilotTranscriptTail.Verdict {
-        path(recorded: recorded, sessionId: sessionId, root: root)
-            .flatMap(read(path:))
+        tail(sessionId: sessionId, recorded: recorded, root: root)
             .map { CopilotTranscriptTail.verdict(tail: $0, sessionId: sessionId) } ?? .unreadable
     }
 }

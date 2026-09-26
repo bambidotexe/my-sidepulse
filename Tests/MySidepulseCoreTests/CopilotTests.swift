@@ -507,4 +507,60 @@ final class CopilotTests: XCTestCase {
         claude.apply(verdict(8))
         XCTAssertEqual(claude.sessions["c1"]?.state, .waiting(.permission), "only Copilot abandons a wait")
     }
+
+    // MARK: a wait answered with no hook
+
+    func strip(_ store: SessionStore, at now: Date) -> DisplayState {
+        Arbiter.decide(mode: .auto, power: nil, glanceActive: false, sessions: Array(store.sessions.values),
+                       jobs: [], now: now)
+    }
+
+    /// Approving a Copilot prompt fires no hook; its `events.jsonl` says it
+    /// (`CopilotTranscriptTail.waitDecision`), and the answer takes the
+    /// session back to working: the amber gives way to Copilot's roll, the
+    /// push the wait armed is disarmed, and the working turn's check takes
+    /// the session over from the wait's.
+    func testAnAnsweredCopilotWaitGoesBackToWorking() {
+        var store = waiting("permission_prompt")
+        XCTAssertNotNil(store.sessions["c1"]?.notifyAt, "the wait armed a push")
+        XCTAssertTrue(store.tick(now: at(2 + K.alertSettleSeconds + 1)).isEmpty, "settled, the push not yet due")
+        XCTAssertEqual(strip(store, at: at(4)), .waiting(.copilot))
+        XCTAssertEqual(store.dialogAnswered(sessionId: "c1", now: at(10)), at(10))
+        XCTAssertEqual(store.sessions["c1"]?.state, .working)
+        XCTAssertNil(store.sessions["c1"]?.notifyAt, "answered: nothing left to announce")
+        XCTAssertEqual(strip(store, at: at(10)), .working(.copilot))
+        XCTAssertTrue(store.tick(now: at(2 + K.notifyDebounceSeconds + 30)).isEmpty, "no push")
+        XCTAssertTrue(store.copilotWaitCandidates(at: at(100)).isEmpty)
+        XCTAssertEqual(store.copilotCandidates(at: at(30)).map(\.sessionId), ["c1"],
+                       "quiet since its last hook: the working turn's check reads the file next")
+
+        var question = waiting("elicitation_dialog")
+        XCTAssertEqual(question.dialogAnswered(sessionId: "c1", now: at(30)), at(30))
+        XCTAssertEqual(question.sessions["c1"]?.state, .working)
+    }
+
+    /// Journaled as `dialog-answered`, as Claude's answered dialog is:
+    /// replaying the lines gives the session the live store holds, and
+    /// reading the line back changes nothing.
+    func testAnAnsweredCopilotWaitReplaysAsTheSameVerdict() {
+        let lines = [line("userPromptSubmitted", ["sessionId": "c1"], 0),
+                     line("notification", ["sessionId": "c1", "notification_type": "permission_prompt"], 2)]
+        func replay(_ extra: [JournalEvent]) -> SessionStore {
+            var s = SessionStore()
+            for l in lines + extra { s.apply(l) }
+            return s
+        }
+        var verdict = JournalEvent(loggedAt: at(30), event: .verdict)
+        verdict.sessionId = "c1"
+        verdict.verdict = TurnVerdict.dialogAnswered.rawValue
+        var live = replay([])
+        XCTAssertEqual(live.dialogAnswered(sessionId: "c1", now: at(30)), at(30))
+        let replayed = replay([verdict])
+        XCTAssertEqual(replayed.sessions["c1"], live.sessions["c1"])
+        XCTAssertEqual(replayed.sessions["c1"]?.state, .working)
+        XCTAssertEqual(strip(replayed, at: at(30)), .working(.copilot))
+        let before = live.sessions["c1"]
+        live.apply(verdict)
+        XCTAssertEqual(live.sessions["c1"], before, "the app's own line read back is a no-op")
+    }
 }

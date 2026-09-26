@@ -228,20 +228,158 @@ final class CopilotTranscriptTailTests: XCTestCase {
                        "work is work whenever the file was last written")
     }
 
-    /// A session waiting on a permission or a question: only an `abort`
-    /// stamped after the wait began ends it (Ctrl+C at the prompt). Work, a
-    /// finish, a failure or a close, and an abort from before the wait,
-    /// change nothing: answering is the next hook's to say.
-    func testOnlyAnAbortAfterTheWaitBeganEndsAWait() {
-        let waitSince = stamp("23:50:28.786")
-        XCTAssertEqual(CopilotTranscriptTail.waitDecision(verdict: .aborted(at: stamp("23:50:34.361")),
-                                                          waitSince: waitSince),
-                       .aborted(endedAt: stamp("23:50:34.361")))
-        for v in [CopilotTranscriptTail.Verdict.aborted(at: stamp("23:50:20.000")), .aborted(at: waitSince),
-                  .running(writtenAt: stamp("23:50:40.000")), .complete(at: stamp("23:50:40.000")),
-                  .failed(at: stamp("23:50:40.000")), .closed(at: stamp("23:50:40.000")), .unreadable] {
-            XCTAssertEqual(CopilotTranscriptTail.waitDecision(verdict: v, waitSince: waitSince), .nothing, "\(v)")
+    // MARK: the wait
+
+    func waitDecision(_ lines: [String], since waitSince: Date) -> CopilotTranscriptTail.WaitDecision {
+        CopilotTranscriptTail.waitDecision(tail: tail(lines), sessionId: sid, waitSince: waitSince)
+    }
+
+    /// A permission prompt as Copilot writes it: the tool starts, Copilot
+    /// asks, and MySidepulse's `notification` hook runs, which begins the
+    /// wait. The hook's `hook.end` is written after the wait began.
+    var prompt: [String] {
+        [line("07:45:14.833", "tool.execution_start"),
+         line("07:45:14.837", "permission.requested"),
+         hook("07:45:14.837", "notification", session: sid),
+         hookEnd("07:45:14.855", "notification")]
+    }
+    /// When the journal's `notification` line was logged.
+    var promptWaitSince: Date { stamp("07:45:14.850") }
+
+    /// An open prompt: its last marker is `permission.requested`, and the
+    /// lines after it (the hook's own `hook.end`) are no markers, however
+    /// late they are stamped.
+    func testAnOpenPromptIsNoAnswer() {
+        XCTAssertEqual(waitDecision(prompt, since: promptWaitSince), .nothing)
+        XCTAssertEqual(verdict(prompt), .running(writtenAt: stamp("07:45:14.855")),
+                       "the verdict of a working turn is unchanged: the last line of any type")
+    }
+
+    /// Approving the prompt fires no hook and writes `permission.completed`:
+    /// stamped after the wait began, it is the answer, at its own stamp,
+    /// whatever work follows it.
+    func testAPromptAnsweredWithNoHookIsAnswered() {
+        let answered = prompt + [line("07:45:35.124", "permission.completed")]
+        XCTAssertEqual(waitDecision(answered, since: promptWaitSince), .answered(at: stamp("07:45:35.124")))
+        XCTAssertEqual(waitDecision(answered + [hookEnd("07:45:40.000", "notification")], since: promptWaitSince),
+                       .answered(at: stamp("07:45:35.124")), "a later line of no marker moves nothing")
+        XCTAssertEqual(waitDecision(answered + [line("07:45:36.000", "assistant.turn_end"),
+                                                line("07:45:37.500", "tool.execution_complete")],
+                                    since: promptWaitSince),
+                       .answered(at: stamp("07:45:35.124")))
+    }
+
+    /// Two prompts in a row: the second is asked right after the first is
+    /// answered, before any hook. The latest marker is the second prompt:
+    /// it is open, and nothing is answered until it is.
+    func testASecondPromptAfterTheFirstAnswerIsNoAnswer() {
+        let first = [line("07:44:49.430", "permission.requested"),
+                     hook("07:44:49.430", "notification", session: sid),
+                     hookEnd("07:44:49.600", "notification")]
+        let second = [line("07:44:54.152", "permission.completed"),
+                      line("07:44:54.154", "permission.requested"),
+                      hook("07:44:54.154", "notification", session: sid),
+                      hookEnd("07:44:54.300", "notification")]
+        XCTAssertEqual(waitDecision(first + second, since: stamp("07:44:49.500")), .nothing)
+        XCTAssertEqual(waitDecision(first + second, since: stamp("07:44:54.200")), .nothing)
+        XCTAssertEqual(waitDecision(first + second + [line("07:44:59.789", "permission.completed")],
+                                    since: stamp("07:44:54.200")),
+                       .answered(at: stamp("07:44:59.789")))
+    }
+
+    /// A step stamped at or before the wait began is the work the wait
+    /// interrupted, not an answer to it.
+    func testAStepFromBeforeTheWaitIsNoAnswer() {
+        let steps = [line("07:45:10.000", "tool.execution_complete"), line("07:45:14.000", "permission.completed")]
+        XCTAssertEqual(waitDecision(steps, since: promptWaitSince), .nothing)
+        XCTAssertEqual(waitDecision(steps, since: stamp("07:45:14.000")), .nothing, "at the instant the wait began")
+    }
+
+    /// Only the permission's own `permission.completed` answers it: a tool
+    /// called beside the prompt (Copilot runs several at once) can finish,
+    /// and the model write, while the prompt is still open.
+    func testOnlyTheCompletedPermissionAnswersAWait() {
+        let waitSince = stamp("23:00:00.000")
+        for type in ["tool.execution_start", "tool.execution_complete", "assistant.turn_start",
+                     "assistant.message", "user.message"] {
+            XCTAssertEqual(waitDecision([line("22:59:59.000", "permission.requested"), line("23:00:01.000", type)],
+                                        since: waitSince), .nothing, type)
         }
+        XCTAssertEqual(waitDecision(prompt + [line("07:45:16.000", "tool.execution_complete")], since: promptWaitSince),
+                       .nothing, "a view finishing beside the open prompt")
+        XCTAssertEqual(waitDecision([line("22:59:59.000", "permission.requested"),
+                                     line("23:00:01.000", "permission.completed")], since: waitSince),
+                       .answered(at: stamp("23:00:01.000")))
+        XCTAssertEqual(waitDecision([line("23:00:01.000", "permission.requested")], since: waitSince), .nothing)
+    }
+
+    /// Ctrl+C or Esc Esc at the prompt: an `abort` stamped after the wait
+    /// began ends the turn as a working turn's abort does; one from before
+    /// the wait changes nothing. The other ends are no answer: a finish, a
+    /// failure or a close after the wait began change nothing, nor does a
+    /// subagent's `agentStop` after an open prompt.
+    func testAnAbortEndsAWaitAndNoOtherEndAnswersIt() {
+        let waitSince = stamp("23:50:28.786")
+        let cancelled = [line("23:50:28.573", "permission.requested"),
+                         hook("23:50:28.573", "notification", session: sid),
+                         hookEnd("23:50:28.786", "notification"),
+                         line("23:50:34.360", "permission.completed"),
+                         line("23:50:34.361", "assistant.turn_end"),
+                         line("23:50:34.361", "abort")]
+        XCTAssertEqual(waitDecision(cancelled, since: waitSince), .aborted(endedAt: stamp("23:50:34.361")))
+        XCTAssertEqual(waitDecision([line("23:50:20.000", "abort")], since: waitSince), .nothing)
+        XCTAssertEqual(waitDecision([line("23:50:28.786", "abort")], since: waitSince), .nothing)
+        let open = [line("23:50:28.573", "permission.requested")]
+        for end in [hook("23:50:40.000", "agentStop", session: sid), line("23:50:40.000", "session.error"),
+                    line("23:50:40.000", "session.shutdown")] {
+            XCTAssertEqual(waitDecision(open + [line("23:50:35.000", "permission.completed"), end], since: waitSince),
+                           .nothing, end)
+        }
+        XCTAssertEqual(waitDecision(open + [hook("23:50:40.000", "agentStop", session: subagent)], since: waitSince),
+                       .nothing, "a subagent's stop is no marker")
+    }
+
+    /// Only what can be read decides: an empty or garbled tail, a last line
+    /// cut mid-write, and a step with no stamp of its own (the verdict's
+    /// last-line stamp is not the step's) answer nothing. Lines that do not
+    /// parse are skipped.
+    func testAnUnreadableOrCutTailAnswersNothing() {
+        let waitSince = stamp("23:00:00.000")
+        XCTAssertEqual(CopilotTranscriptTail.waitDecision(tail: Data(), sessionId: sid, waitSince: waitSince),
+                       .nothing)
+        XCTAssertEqual(CopilotTranscriptTail.waitDecision(tail: Data("not json\n{also not\n".utf8), sessionId: sid,
+                                                          waitSince: waitSince), .nothing)
+        let open = [line("22:59:59.000", "permission.requested")]
+        XCTAssertEqual(waitDecision(open + [String(line("23:00:05.000", "permission.completed").prefix(60))],
+                                    since: waitSince), .nothing, "a last line cut mid-write is no line")
+        XCTAssertEqual(waitDecision(open + [#"{"data":{},"type":"permission.completed"}"#,
+                                            hookEnd("23:00:06.000", "notification")], since: waitSince),
+                       .nothing, "a step with no stamp of its own")
+        XCTAssertEqual(waitDecision(open + [line("23:00:05.000", "permission.completed"), "not json"],
+                                    since: waitSince), .answered(at: stamp("23:00:05.000")),
+                       "a line that does not parse is skipped")
+    }
+
+    /// A tail longer than the window starts inside a line unless the byte
+    /// before it is a newline, and a cut first line answers nothing.
+    func testACutFirstLineAnswersNothing() {
+        let first = line("23:50:34.361", "permission.completed")
+        let filler = line("23:50:40.000", "session.usage_checkpoint")
+        var text = first + "\n"
+        while text.utf8.count + filler.utf8.count + 1 < CopilotTranscriptTail.tailBytes - 64 {
+            text += filler + "\n"
+        }
+        let padLine = { (n: Int) in #"{"type":"system.notification","pad":"\#(String(repeating: "a", count: n))"}"# }
+        let short = CopilotTranscriptTail.tailBytes - text.utf8.count - padLine(0).utf8.count - 1
+        text += padLine(short) + "\n"
+        let window = Data(text.utf8)
+        XCTAssertEqual(window.count, CopilotTranscriptTail.tailBytes)
+        let waitSince = stamp("23:50:30.000")
+        XCTAssertEqual(CopilotTranscriptTail.waitDecision(tail: Data("\n".utf8) + window, sessionId: sid,
+                                                          waitSince: waitSince),
+                       .answered(at: stamp("23:50:34.361")))
+        XCTAssertEqual(CopilotTranscriptTail.waitDecision(tail: Data("}".utf8) + window, sessionId: sid,
+                                                          waitSince: waitSince), .nothing)
     }
 
     // MARK: which file may be read

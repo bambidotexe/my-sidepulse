@@ -255,7 +255,9 @@ object per line, `{type, data, id, timestamp, parentId}`, `timestamp` in ISO
 8601 with milliseconds. A turn at work writes `user.message`,
 `assistant.turn_start`, `assistant.message`, `tool.execution_start`,
 `tool.execution_complete`, `permission.requested` and `permission.completed`;
-`assistant.turn_end` ends every model call, not the turn. Its ends: `abort`
+`assistant.turn_end` ends every model call, not the turn. A permission prompt
+answered (approved or denied) writes `permission.completed` and fires no hook;
+a second prompt can open 2 ms later, still with no hook between. Its ends: `abort`
 (`data.reason` `user_initiated` for Ctrl+C or Esc Esc), `session.error` (a
 failed turn: the retries of a model call write only their `errorOccurred`
 hook's mirror, and only the last failure writes it), and `session.shutdown`
@@ -269,8 +271,8 @@ finished marker without hooks: `session.idle` and `assistant.idle` are never
 written. A turn's opening `system.message` is up to 91 KB, and a `/compact`
 writes about 95 KB of model lines; everything else written after a turn's end
 came to at most 6.7 KB in the five probe sessions of 2026-09-25. MySidepulse
-reads the last 64 KB of the file of a quiet working session
-(`CopilotTranscript`, a regular file only, opened without blocking), and of
+reads the last 64 KB of the file of a quiet working session, and of a
+session in an open wait (`CopilotTranscript`, a regular file only, opened without blocking), and of
 its lines only the type, the stamp, and a `hook.start`'s hook name and
 session.
 

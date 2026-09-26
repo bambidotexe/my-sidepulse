@@ -898,12 +898,12 @@ final class Engine {
     // MARK: Copilot's events.jsonl
 
     /// Copilot has no registry and no daemon, and fires no hook for Ctrl+C,
-    /// Esc Esc or a failed turn. Every quiet working Copilot session, and
-    /// every one waiting on a permission or a question, is read from its
-    /// `events.jsonl`: `CopilotTranscriptTail` decides; this only reads
-    /// the file (the recorded path when Core trusts it, else the session's
-    /// own under `~/.copilot/session-state`), maps the decision onto the
-    /// store and logs identifiers, never a line of the file.
+    /// Esc Esc, a failed turn or an answered prompt. Every quiet working
+    /// Copilot session, and every one waiting on a permission or a question,
+    /// is read from its `events.jsonl`: `CopilotTranscriptTail` decides;
+    /// this only reads the file (the recorded path when Core trusts it, else
+    /// the session's own under `~/.copilot/session-state`), maps the decision
+    /// onto the store and logs identifiers, never a line of the file.
     private func checkCopilotTurns(now: Date, quietSeconds: TimeInterval) -> Bool {
         var ended = false
         for (sessionId, recorded) in store.copilotCandidates(at: now, quietSeconds: quietSeconds) {
@@ -965,13 +965,19 @@ final class Engine {
                 }
             }
         }
-        // Ctrl+C or Esc Esc at a permission or question prompt fires no hook
-        // either: an `abort` stamped after the wait began ends the turn;
-        // anything else leaves the wait to the next hook.
+        // A permission prompt fires no hook when it is answered, nor when
+        // Ctrl+C or Esc Esc cancels it: the file says which
+        // (`CopilotTranscriptTail.waitDecision`). An `abort` stamped after
+        // the wait began ends the turn; with the turn at work, a latest
+        // permission line that is `permission.completed`, stamped after it,
+        // is the answer, and the session is back to working; anything else
+        // leaves the wait standing.
         for (sessionId, recorded, waitSince) in store.copilotWaitCandidates(at: now, quietSeconds: quietSeconds) {
-            let verdict = CopilotTranscript.verdict(sessionId: sessionId, recorded: recorded,
-                                                    root: Paths.copilotSessionState)
-            if case .aborted(let endedAt) = CopilotTranscriptTail.waitDecision(verdict: verdict, waitSince: waitSince) {
+            let tail = CopilotTranscript.tail(sessionId: sessionId, recorded: recorded,
+                                              root: Paths.copilotSessionState)
+            switch tail.map({ CopilotTranscriptTail.waitDecision(tail: $0, sessionId: sessionId, waitSince: waitSince) })
+                ?? .nothing {
+            case .aborted(let endedAt):
                 Log.app.notice("""
                     turn abandoned: Copilot session \(sessionId, privacy: .public) — events.jsonl \
                     ends on abort at \(endedAt, privacy: .public), during its wait — going dark
@@ -979,7 +985,17 @@ final class Engine {
                 persist(.turnAbandoned, sessionId: sessionId,
                         at: store.abandonWait(sessionId: sessionId, now: now, endedAt: endedAt))
                 ended = true
-            } else if verdict == .unreadable, warnedNoTranscript.insert(sessionId).inserted {
+            case .answered(let at):
+                Log.app.notice("""
+                    wait answered: Copilot session \(sessionId, privacy: .public) — events.jsonl \
+                    shows the prompt answered at \(at, privacy: .public) — back to working
+                    """)
+                dialogAnswered(sessionId, now: now)
+            case .nothing:
+                guard !warnedNoTranscript.contains(sessionId),
+                      (tail.map { CopilotTranscriptTail.verdict(tail: $0, sessionId: sessionId) } ?? .unreadable)
+                        == .unreadable else { continue }
+                warnedNoTranscript.insert(sessionId)
                 Log.app.warning("""
                     quiet Copilot wait undecidable: session \(sessionId, privacy: .public) — its \
                     events.jsonl cannot be read or holds no turn marker; the wait stands until a \

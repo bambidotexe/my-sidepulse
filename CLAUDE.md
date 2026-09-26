@@ -38,7 +38,7 @@ TUI's sessions, and the session's rollout, whose turn markers say whether a
 quiet turn runs, finished or was aborted (the pid a Codex session records is a
 shared app-server, Codex's daemon or the desktop app's, which proves nothing
 about the session); for Copilot, its own `events.jsonl`, checked the same way
-for a quiet turn and for an open wait cancelled with Ctrl+C. OpenCode needs no
+for a quiet turn and for an open wait, cancelled with Ctrl+C or answered. OpenCode needs no
 such check: every busy period ends in one terminal event.
 
 Two names, never to be confused: **SidePulse is the hardware** (its volumes are
@@ -323,7 +323,7 @@ Full version in `docs/architecture.md`.
   four messages and the answers of Codex's daemon) · `CopilotSessionState`
   (Copilot's session-state root, a subagent filter, the transcript path) ·
   `CopilotTranscriptTail` (what a Copilot session's `events.jsonl` says about a
-  quiet turn or an open wait cancelled with Ctrl+C) · `TurnVerdict` (the outcome of a
+  quiet turn or an open wait, cancelled with Ctrl+C or answered) · `TurnVerdict` (the outcome of a
   rescue, journaled so a relaunch applies it again) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
   program text) · `LedPalette` (the eleven colours the owner can change, which
@@ -520,10 +520,10 @@ Known limitations, in plain words — the authority is *Open issues* in
   fires `PreToolUse` for `request_user_input` is unobserved.
 - A quiet Copilot turn is read from its `events.jsonl` within about 35 s, on
   the same rule as Codex's rollout; a Copilot open wait cancelled with Ctrl+C
-  goes dark the same way. Approving a Copilot permission fires no hook, and
-  `permission.completed` is not read as the answer, so an approved wait stays
-  amber until the next event or the 2 h backstop. Nothing here has run against
-  a live Copilot.
+  goes dark the same way, and one answered (approving a permission fires no
+  hook) goes back to working the same way, from the file's latest permission
+  line.
+  Nothing here has run against a live Copilot.
 - The shared roll (one colour per pass on the whole strip wherever the passes
   fit: two agents on the Pro, any number on the Dot; one pass, one colour per
   LED, for three or four on the Pro; one per LED under a zone, LED *i* keeping

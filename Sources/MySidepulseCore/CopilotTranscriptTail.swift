@@ -5,7 +5,9 @@ import Foundation
 /// session (`<session-state>/<session id>/events.jsonl`), whose path the
 /// hook records on a Copilot start, prompt or stop. Copilot writes there
 /// what no hook reports: Ctrl+C and Esc Esc fire no hook and write an
-/// `abort`; a failed turn fires no `agentStop` and writes a `session.error`.
+/// `abort`; a failed turn fires no `agentStop` and writes a `session.error`;
+/// an answered permission prompt fires no hook and writes a
+/// `permission.completed`.
 ///
 /// The markers are a line's `type`: `abort` (the turn was interrupted),
 /// `session.error` (the turn failed: only the last of a model call's retries
@@ -57,6 +59,16 @@ public enum CopilotTranscriptTail {
         case nothing
     }
 
+    /// What the store does with a session in an open wait.
+    public enum WaitDecision: Equatable {
+        /// Ctrl+C or Esc Esc at the prompt: `abandonWait`, dark, no push.
+        case aborted(endedAt: Date)
+        /// The prompt was answered and the turn works on: `dialogAnswered`.
+        /// `at` is the stamp of its `permission.completed`.
+        case answered(at: Date)
+        case nothing
+    }
+
     /// How much of the file's end is read. Across the five probe sessions
     /// recorded on this Mac on 2026-09-25 (219 lines, 11 end markers), a
     /// turn's end was followed by at most 6.7 KB before the next marker,
@@ -77,33 +89,41 @@ public enum CopilotTranscriptTail {
     /// line included. A line that does not parse, the last one cut
     /// mid-write included, is no line.
     public static func verdict(tail: Data, sessionId: String) -> Verdict {
+        scan(tail: tail, sessionId: sessionId).verdict
+    }
+
+    /// The verdict, and for a `.running` one the latest permission step in
+    /// the window (`permission.requested` or `permission.completed`) with
+    /// its own stamp: whichever came last says whether a prompt is open.
+    private static func scan(tail: Data, sessionId: String) -> (verdict: Verdict, permission: (answered: Bool, at: Date?)?) {
         var body = tail[...]
         if tail.count > tailBytes {
-            guard let newline = tail.firstIndex(of: 0x0A) else { return .unreadable }
+            guard let newline = tail.firstIndex(of: 0x0A) else { return (.unreadable, nil) }
             body = tail[tail.index(after: newline)...]
         }
         let lines = body.split(separator: 0x0A, omittingEmptySubsequences: true)
         var writtenAt: Date?
         var shutdownAt: Date?
-        for line in lines.reversed() {
+        for index in lines.indices.reversed() {
+            let line = lines[index]
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
                   let type = object["type"] as? String else { continue }
             let stamp = (object["timestamp"] as? String).flatMap(JournalCodec.date(from:))
             if writtenAt == nil { writtenAt = stamp }
             switch marker(type, object, sessionId: sessionId) {
             case .work?:
-                if let shutdownAt { return .closed(at: shutdownAt) }
-                guard let written = writtenAt ?? stamp else { return .unreadable }
-                return .running(writtenAt: written)
+                if let shutdownAt { return (.closed(at: shutdownAt), nil) }
+                guard let written = writtenAt ?? stamp else { return (.unreadable, nil) }
+                return (.running(writtenAt: written), latestPermission(in: lines[...index]))
             case .complete?:
-                return stamp.map { .complete(at: $0) } ?? .unreadable
+                return (stamp.map { .complete(at: $0) } ?? .unreadable, nil)
             case .aborted?:
-                return stamp.map { .aborted(at: $0) } ?? .unreadable
+                return (stamp.map { .aborted(at: $0) } ?? .unreadable, nil)
             case .failed?:
-                return stamp.map { .failed(at: $0) } ?? .unreadable
+                return (stamp.map { .failed(at: $0) } ?? .unreadable, nil)
             case .shutdown?:
-                if let shutdownAt { return .closed(at: shutdownAt) }
-                guard let stamp else { return .unreadable }
+                if let shutdownAt { return (.closed(at: shutdownAt), nil) }
+                guard let stamp else { return (.unreadable, nil) }
                 // The look-back: the scan goes on for the turn's own end. A
                 // new prompt closed before Copilot wrote its `user.message`
                 // (a window of milliseconds) finds the previous turn's end,
@@ -113,7 +133,19 @@ public enum CopilotTranscriptTail {
                 continue
             }
         }
-        return shutdownAt.map { .closed(at: $0) } ?? .unreadable
+        return (shutdownAt.map { .closed(at: $0) } ?? .unreadable, nil)
+    }
+
+    /// The last `permission.requested` or `permission.completed` among
+    /// `lines`, and its own stamp.
+    private static func latestPermission(in lines: ArraySlice<Data.SubSequence>) -> (answered: Bool, at: Date?)? {
+        for line in lines.reversed() {
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  let type = object["type"] as? String,
+                  type == "permission.requested" || type == "permission.completed" else { continue }
+            return (type == "permission.completed", (object["timestamp"] as? String).flatMap(JournalCodec.date(from:)))
+        }
+        return nil
     }
 
     /// Copilot names no turn: an end marker ends the session's turn only
@@ -131,14 +163,34 @@ public enum CopilotTranscriptTail {
         }
     }
 
-    /// What a verdict means for a session waiting on a permission or a
-    /// question since `waitSince`: an `abort` stamped after the wait began
-    /// is Ctrl+C or Esc Esc at the prompt, and ends the turn as a working
-    /// turn's abort does. Anything else changes nothing: an answer fires the
-    /// next hook, which clears the wait.
-    public static func waitDecision(verdict: Verdict, waitSince: Date) -> Decision {
-        if case .aborted(let at) = verdict, at > waitSince { return .aborted(endedAt: at) }
-        return .nothing
+    /// What a session's tail means for it while it waits on a permission or
+    /// a question since `waitSince`. The latest turn marker decides:
+    /// - an `abort` stamped after the wait began is Ctrl+C or Esc Esc at the
+    ///   prompt, and ends the turn as a working turn's abort does;
+    /// - with the turn still running, a latest permission step that is a
+    ///   `permission.completed` stamped after the wait began is the prompt
+    ///   answered (approving or denying fires no hook and writes it),
+    ///   reported at its own stamp;
+    /// - anything else changes nothing: a latest `permission.requested` is a
+    ///   prompt still open (a second one opens right after the first is
+    ///   answered), a tool finishing beside an open prompt is no answer, a
+    ///   finish, a failure or a close is no answer, and a step or an abort
+    ///   stamped at or before the wait began is not about it. A question's
+    ///   answer needs none of this: it ends its tool, and `postToolUse` fires.
+    /// The verdict's `writtenAt` never decides: the wait's own `notification`
+    /// hook writes a `hook.end` after the wait began, answered or not.
+    public static func waitDecision(tail: Data, sessionId: String, waitSince: Date) -> WaitDecision {
+        let read = scan(tail: tail, sessionId: sessionId)
+        switch read.verdict {
+        case .aborted(let at) where at > waitSince:
+            return .aborted(endedAt: at)
+        case .running:
+            guard let permission = read.permission, permission.answered,
+                  let at = permission.at, at > waitSince else { return .nothing }
+            return .answered(at: at)
+        default:
+            return .nothing
+        }
     }
 
     /// A recorded path is read only when it is exactly
