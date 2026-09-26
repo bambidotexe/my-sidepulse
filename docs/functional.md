@@ -590,7 +590,7 @@ Every unknown widens acknowledgement; none can strand an alert.
 Acknowledging clears the strip *and* cancels the pending push. It is written to
 the journal, so a restart does not resurrect it. A new alert on the same
 session is unacknowledged again. Terminal jobs are acknowledged by host app
-only, and not persisted.
+only, and written to the journal the same way.
 
 ## 6. Phone notifications (ntfy)
 
@@ -689,6 +689,18 @@ The only other tool wired in is the terminal itself.
   shell at its prompt, so its job is cleared while it runs: 5 s after the
   first probe that sees it, which comes up to 15 s after it began, so 5 to
   20 s in all.
+- A job reaches the app as journal lines: `job begin` (and `run`) appends a
+  `JobBegin` line, `job end` (and `run`, with the command's status) a
+  `JobEnd` line carrying the exit status, each one write the CLI makes
+  without waiting on the app. The app follows them like every other line
+  and, at launch, replays this boot's with the rest, the outcomes and their
+  acknowledgements included: a restart keeps a command that still runs and
+  an outcome not yet seen. At launch each replayed running job's shell is
+  asked once before anything shows: a shell gone, or a pid now held by a
+  process started after the job began, leaves nothing to show, and one at
+  its prompt goes through the settle below. If the app is not running, the
+  command runs all the same, and the app started later in the same boot
+  picks the job up.
 - Settings › System › Terminal writes that line into `~/.zshrc`:
   `Set Up Terminal Hook` appends a block that opens and closes with
   `# ---------- MySidepulse ----------`, holding a few comment lines and
@@ -708,8 +720,7 @@ silently. A job that ends before it became visible is never shown. Outcomes
 stay for `K.jobVisibleSeconds` (20 min) or until acknowledged; a running job
 whose owner process dies is removed; a running job with an owner process is
 never timed out, however long it runs; a running job without one expires
-after `K.jobStaleSeconds` (2 h). If the app is not running, the command runs
-all the same.
+after `K.jobStaleSeconds` (2 h).
 
 An agent outranks a job at every rung, so a running job's colour is hidden
 while an agent works; a job *outcome* takes the alert zone over the
@@ -1299,7 +1310,7 @@ rule rather than a gap (§15).
 | `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
 | `doctor` | twelve health checks | number of failures |
 | `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists, with their trust in `~/.codex/config.toml` (backup `config.toml.backup-mysidepulse`; removed first by `uninstall-hooks`); writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours (`install-hooks` only: it refuses to touch a Copilot or OpenCode file it does not recognise; `uninstall-hooks` leaves such a file alone and still returns 0), or on error |
-| `run …`, `job begin\|end …` | terminal jobs | the command's status; 2 bad usage |
+| `run …`, `job begin\|end …` | terminal jobs, each a line appended to the journal (§7) | the command's status; 2 bad usage |
 | `notify [on\|off\|topic new\|topic T\|server URL\|test]` | notification settings; bare `notify` prints them, **including the full topic** | 0; 1; 2 |
 | `autostart [on\|off]` | the launch agent | 0; 1; 2 |
 | `shell-init zsh` | prints the zsh snippet | 0; 2 |
@@ -1474,6 +1485,7 @@ agent's colour while it works.
 | `controlRetrySeconds` | 30 s | control socket bind retry |
 | `journalSoftMaxBytes` / `journalHardMaxBytes` | 5 MB / 20 MB | journal rotation |
 | `journalLineMaxBytes` / `hookStdinMaxBytes` / `messageTailMaxChars` | 4096 / 8 MB / 500 | hook and journal caps |
+| `jobLabelMaxChars` | 60 | a job's label, as its line records it |
 | `pathMaxChars` | 1024 | a transcript path the hook records; identifiers stay at 200 |
 | `playgroundPreviewSeconds` | 30 s | a Playground state or effect, or a Colours row, holds the strip this long, and each page's hint says the number |
 | `brightnessGamma` | 2.0 | perceived brightness to the strip's `brightness N`, measured on the owner's strip |

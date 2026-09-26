@@ -141,11 +141,13 @@ final class ControlTests: XCTestCase {
         try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
     }
 
-    func testJobRequestRoundTrips() throws {
-        let request = ControlRequest(cmd: "job-begin", job: JobRequest(
-            id: "zsh-900", pid: 900, label: "npm build", exitCode: nil,
-            showAfterSeconds: 10, hostBundleId: "com.mitchellh.ghostty"))
-        XCTAssertEqual(try roundTrip(request), request)
+    /// Jobs travel in the journal, not over the socket. An older CLI's job
+    /// request still decodes, its `job` object ignored, so the app answers it
+    /// as an unknown command instead of dropping the connection.
+    func testAnOlderCLIsJobRequestStillDecodes() throws {
+        let data = Data(#"{"cmd":"job-begin","job":{"id":"zsh-900","pid":900,"showAfterSeconds":5}}"#.utf8)
+        let request = try JSONDecoder().decode(ControlRequest.self, from: data)
+        XCTAssertEqual(request, ControlRequest(cmd: "job-begin"))
     }
 
     func testNotifyRequestRoundTrips() throws {
@@ -168,7 +170,6 @@ final class ControlTests: XCTestCase {
         let request = try JSONDecoder().decode(ControlRequest.self, from: data)
         XCTAssertEqual(request.cmd, "led")
         XCTAssertEqual(request.mode, "auto")
-        XCTAssertNil(request.job)
         XCTAssertNil(request.notify)
     }
 

@@ -39,6 +39,30 @@ final class TailerTests: XCTestCase {
         tailer.stop()
     }
 
+    /// A `run` wrapper appends its end line and exits: the exit's kqueue
+    /// event can reach the app before the line's. Catching up first puts
+    /// the line in front of whatever the caller does next.
+    func testCatchUpDeliversWhatIsOnDiskBeforeItsCompletion() {
+        let tailer = JournalTailer(url: url)
+        var seen: [String] = []
+        let lock = NSLock()
+        tailer.onEvents = { events in lock.lock(); seen += events.compactMap(\.sessionId); lock.unlock() }
+        tailer.start()
+        for round in 0..<20 {
+            JournalWriter.append(line("end\(round)"), to: url)
+            let done = expectation(description: "caught up \(round)")
+            tailer.catchUp {
+                lock.lock(); XCTAssertEqual(seen.last, "end\(round)", "delivered before the completion"); lock.unlock()
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 5)
+        }
+        tailer.stop()
+        let after = expectation(description: "a stopped tailer still completes")
+        tailer.catchUp { after.fulfill() }
+        wait(for: [after], timeout: 5)
+    }
+
     func testPartialLineHeldUntilNewline() {
         let tailer = JournalTailer(url: url)
         var count = 0

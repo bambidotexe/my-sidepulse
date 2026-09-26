@@ -1,27 +1,5 @@
 import Foundation
 
-/// One ordinary command borrowing the strip. `exitCode` present means the
-/// job has ended.
-public struct JobRequest: Codable, Equatable {
-    public var id: String
-    /// The process to watch for death. `slotPid` is the terminal that owns
-    /// the job slot; for a shell hook the two are the same, for the `run`
-    /// wrapper they are not.
-    public var pid: Int32?
-    public var slotPid: Int32?
-    public var label: String?
-    public var exitCode: Int32?
-    public var showAfterSeconds: Double?
-    public var hostBundleId: String?
-    public init(id: String, pid: Int32? = nil, slotPid: Int32? = nil, label: String? = nil,
-                exitCode: Int32? = nil, showAfterSeconds: Double? = nil,
-                hostBundleId: String? = nil) {
-        self.id = id; self.pid = pid; self.slotPid = slotPid; self.label = label
-        self.exitCode = exitCode
-        self.showAfterSeconds = showAfterSeconds; self.hostBundleId = hostBundleId
-    }
-}
-
 /// A field left nil is left unchanged — `notify` with everything nil is a
 /// status read.
 public struct NotifyRequest: Codable, Equatable {
@@ -36,17 +14,16 @@ public struct NotifyRequest: Codable, Equatable {
 }
 
 /// Every field beyond `cmd` is optional so a CLI and an app from different
-/// installs can still talk to each other.
+/// installs can still talk to each other. Terminal jobs do not come this
+/// way: they are journal lines (`JobJournal`).
 public struct ControlRequest: Codable, Equatable {
     public var cmd: String
     public var mode: String?
-    public var job: JobRequest?
     public var notify: NotifyRequest?
     /// `brightness-cycle`: how many steps the cycle has.
     public var steps: Int?
-    public init(cmd: String, mode: String? = nil, job: JobRequest? = nil,
-                notify: NotifyRequest? = nil, steps: Int? = nil) {
-        self.cmd = cmd; self.mode = mode; self.job = job; self.notify = notify
+    public init(cmd: String, mode: String? = nil, notify: NotifyRequest? = nil, steps: Int? = nil) {
+        self.cmd = cmd; self.mode = mode; self.notify = notify
         self.steps = steps
     }
 }

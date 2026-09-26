@@ -109,7 +109,7 @@ final class TrimTests: XCTestCase {
         let stop = Trim.journalEvent(fromHookPayload: payload(["hook_event_name": "Stop", "session_id": "c1"]),
                                      agent: .codex, loggedAt: t0)
         XCTAssertEqual(stop.event, .stop); XCTAssertEqual(stop.agent, .codex)
-        for name in ["MySidepulseVerdict", "MySidepulseAck", "ParseError", "my_sidepulse_verdict"] {
+        for name in ["MySidepulseVerdict", "MySidepulseAck", "ParseError", "my_sidepulse_verdict", "JobBegin", "JobEnd"] {
             for agent in [AgentKind.claude, .codex] {
                 let forged = payload(["hook_event_name": name, "session_id": "c1", "verdict": "turn-finished"])
                 XCTAssertEqual(Trim.journalEvent(fromHookPayload: forged, agent: agent, loggedAt: t0).event, .parseError,

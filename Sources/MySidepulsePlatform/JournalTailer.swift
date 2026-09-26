@@ -40,6 +40,17 @@ public final class JournalTailer {
         }
     }
 
+    /// Reads what the file holds now, delivers it, then runs `then`, in that
+    /// order on the tailer's queue: a line on disk before the call reaches
+    /// `onEvents` before `then` runs, whether or not its kqueue event has
+    /// fired yet.
+    public func catchUp(then: @escaping () -> Void) {
+        queue.async { [weak self] in
+            if let self, !self.stopped { self.drain() }
+            then()
+        }
+    }
+
     public static func readAll(url: URL) -> [JournalEvent] {
         guard let data = try? Data(contentsOf: url) else { return [] }
         return data.split(separator: 0x0A).compactMap { JournalCodec.decodeLine(Data($0)) }

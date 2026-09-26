@@ -160,3 +160,7 @@ job's violet shows. Watch the log:
 | [ ] | `sudo -v`, then `sudo sleep 20`; then `sudo -i` and `exit` | `sudo sleep 20` shows, labelled `sleep` in `mysidepulse status`; `sudo -i` never shows |
 | [ ] | A lost end: `sleep 20; _mysidepulse_job=` (the assignment empties the job the hook would end) | Within about 20 s of the prompt coming back the violet goes, with no green, and the log has `job zsh-<pid> ended without a hook (shell at its prompt)` |
 | [ ] | `sleep 7300` | Still violet after 2 h |
+| [ ] | `sleep 120`; while it runs, quit MySidepulse from its menu and open it again | The violet comes back with the app and stays until `sleep` ends; then the green |
+| [ ] | `sleep 60`; quit the app, close the tab, open the app again | Nothing violet at any point after the relaunch, and the log has `job zsh-<pid> ended without a hook (shell gone)` |
+| [ ] | `mysidepulse run -- sh -c 'sleep 2; exit 3'`, then `mysidepulse run -- true`, ten times each | Amber after every failing one and green after every passing one, never nothing: the wrapper's end line always lands before its exit |
+| [ ] | `sh -c 'sleep 8; exit 1'`, focus another app until the amber shows, focus the terminal to see it, then quit and reopen the app | The amber does not come back |

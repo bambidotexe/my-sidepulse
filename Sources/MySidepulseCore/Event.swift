@@ -30,6 +30,12 @@ public enum HookEventName: String, Codable, Equatable {
     /// when hooks said nothing (`TurnVerdict`), appended to the journal so a
     /// relaunch replays it. Older app versions skip it, as they skip `.ack`.
     case verdict = "MySidepulseVerdict"
+    /// Not a hook event: a terminal job, written by the CLI (`job begin`,
+    /// `job end`, `run`), never by an agent's hook, whose trims refuse both
+    /// names. A line of neither names a session. Older app versions skip
+    /// them, as they skip `.ack`.
+    case jobBegin = "JobBegin"
+    case jobEnd = "JobEnd"
 }
 
 /// What a `.verdict` line says the app decided about a quiet turn or an open
@@ -102,6 +108,19 @@ public struct JournalEvent: Codable, Equatable {
     /// For `.verdict` lines only: a `TurnVerdict` raw value. A string, so a
     /// verdict a later version adds reads as unknown and changes nothing.
     public var verdict: String?
+    /// For the job lines, and an `.ack` line that names a job instead of a
+    /// session: the job (`zsh-<pid>` for a shell, a UUID for `run`).
+    public var jobId: String?
+    /// For `.jobBegin` only: the process watched for the job's end (the
+    /// shell, or the `run` wrapper), the shell whose one slot the job takes,
+    /// its label, and how long it waits before it shows. The host app is
+    /// `hostBundleId`.
+    public var jobPid: Int32?
+    public var jobSlotPid: Int32?
+    public var jobLabel: String?
+    public var jobShowAfterSeconds: Double?
+    /// For `.jobEnd` only: the command's exit status.
+    public var jobExitCode: Int32?
 
     public init(loggedAt: Date, event: HookEventName) {
         self.loggedAt = loggedAt
@@ -134,5 +153,11 @@ public struct JournalEvent: Codable, Equatable {
         case rawPrefix = "raw_prefix"
         case ackStateSince = "ack_state_since"
         case verdict
+        case jobId = "job_id"
+        case jobPid = "job_pid"
+        case jobSlotPid = "job_slot_pid"
+        case jobLabel = "job_label"
+        case jobShowAfterSeconds = "job_show_after_seconds"
+        case jobExitCode = "job_exit_code"
     }
 }

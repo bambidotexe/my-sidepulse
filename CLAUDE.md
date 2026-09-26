@@ -199,7 +199,7 @@ are `docs/functional.md`.
 | **what** a push says | `Core/StringsAlerts.swift` for the words, `Core/Alert.swift` (`AlertCopy`: the title is the agent's name, the body the kind's) — `NotifyTests` pins every string in both languages | §6, §15 |
 | how a push is sent, which sessions are silent, the click link | `Platform/Notifier.swift` (`Notifier`, `ClaudeSessions`), `Engine.deliver` | §6 |
 | notification settings | `Engine.applyNotifySettings`, `App/AppConfig.swift`, `CLI/RunCommand.swift` (`NotifyCommand`), `App/SettingsNotificationsPage.swift` | §6, §10, §11 |
-| terminal jobs, the block in `~/.zshrc` | `Core/JobStore.swift`, `Core/ShellInit.swift` (the snippet, and the block's text rules), `Core/ShellJobLiveness.swift` (`probe`, `judge`: whether a job's shell still runs a command), `Engine.probeJobs`, `Platform/ProcWalk.swift` (`childStartTimes`, `ProcInfo.shellReading`), `Platform/HookInstaller.swift`, `CLI/RunCommand.swift` — `JobTests`, `ShellInitTests` (runs a real zsh), `ShellJobLivenessTests` | §7 |
+| terminal jobs, the block in `~/.zshrc` | `Core/JobStore.swift` (`JobStore.apply` folds a job's journal line in, `JobLine` builds the `JobBegin` / `JobEnd` lines and a job's ack), `Core/ShellInit.swift` (the snippet, and the block's text rules), `Core/ShellJobLiveness.swift` (`probe`, `judge`: whether a job's shell still runs a command), `Engine.ingest`, `Engine.probeJobs` (also once at launch, before the first paint), `Platform/JobJournal.swift` (the CLI's append), `JournalTailer.catchUp` (a process exit waits for the lines written before it), `Platform/ProcWalk.swift` (`childStartTimes`, `ProcInfo.shellReading`), `Platform/HookInstaller.swift`, `CLI/RunCommand.swift` — `JobTests`, `CodecTests`, `ShellInitTests` (runs a real zsh), `ShellJobLivenessTests`, `TailerTests` | §7 |
 | battery | `Core/BatteryRules.swift`, `App/PowerMonitor.swift`, `Engine.powerChanged` | §8 |
 | finding the strip, the eject guard | `App/DeviceMonitor.swift`, `Platform/LedDevice.swift`, `Core/EjectGuard.swift` | §2, `macOS.md` |
 | writing to the strip, keepalive | `Platform/LedWriter.swift`, `Keepalive.swift` | `device.md`, §2 |
@@ -361,6 +361,7 @@ Full version in `docs/architecture.md`.
   iTerm2) · **`LedWriter`** (the only code that writes `LEDS.LED`: one io queue,
   dedupe, 2 s watchdog) · `LedDevice` (identity = `st_dev`, `st_ino`) ·
   `Keepalive` · `Notifier` + `ClaudeSessions` (the only ntfy client) ·
+  `JobJournal` (a terminal job's lines, for the CLI) ·
   `Control` + `ControlServer` + `ControlClient` (Unix socket, JSON lines) ·
   `Doctor` · `CrashReports` (the Health page's crash line) · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
   Claude Code's and Codex's hook entries, Copilot's hook file, OpenCode's
@@ -547,7 +548,6 @@ Known limitations, in plain words — the authority is *Open issues* in
   host app, so an OpenCode "needs you" or "finished" is acknowledged by the
   next keystroke or click anywhere on the Mac — the same rule as Codex's
   daemon-hosted TUI sessions.
-- Jobs are not journaled: a restart forgets them.
 - One write queue serves every strip: a card whose write never returns freezes
   all of them until the app restarts.
 - The eject guard matches the built-in reader, so it holds any card in that

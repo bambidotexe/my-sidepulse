@@ -2,9 +2,9 @@ import Foundation
 
 public enum JobState: Equatable { case running, succeeded, failed }
 
-/// One ordinary command borrowing the strip. Pushed by `mysidepulse run` or a
-/// shell hook; never discovered. Not journaled — a job is seconds-to-minutes
-/// of transient state, and an app restart is allowed to forget it.
+/// One ordinary command borrowing the strip. Journaled by `mysidepulse run`
+/// or a shell hook (`JobLine`) and folded in from the journal like every
+/// other line, so a restart replays it; never discovered.
 public struct Job: Equatable {
     public var id: String
     /// Watched for death: while this process is gone and the job is still
@@ -35,9 +35,76 @@ public struct Job: Equatable {
     public var presentedState: JobState { settlingFrom ?? state }
 }
 
+/// A seen job outcome, journaled so that a relaunch replays it seen: the job
+/// and the `stateSince` of the outcome, which a shell's next outcome, under
+/// the same job id, never shares.
+public struct JobAckRecord: Equatable {
+    public let jobId: String
+    public let stateSince: Date
+    public init(jobId: String, stateSince: Date) {
+        self.jobId = jobId; self.stateSince = stateSince
+    }
+}
+
+/// The journal lines of a terminal job: what the CLI writes for `job begin`,
+/// `job end` and `run`, and the app for a seen outcome. Every field is
+/// bounded, so a job's line always fits the journal's line cap.
+public enum JobLine {
+    public static func begin(id: String, pid: Int32?, slotPid: Int32?, label: String?,
+                             showAfterSeconds: Double, hostBundleId: String?, loggedAt: Date) -> JournalEvent {
+        var e = JournalEvent(loggedAt: loggedAt, event: .jobBegin)
+        e.jobId = Trim.clamp(id)
+        e.jobPid = pid
+        e.jobSlotPid = slotPid
+        e.jobLabel = label.map { String($0.prefix(K.jobLabelMaxChars)) }
+        e.jobShowAfterSeconds = max(0, showAfterSeconds)
+        e.hostBundleId = Trim.clamp(hostBundleId)
+        return e
+    }
+
+    public static func end(id: String, exitCode: Int32, loggedAt: Date) -> JournalEvent {
+        var e = JournalEvent(loggedAt: loggedAt, event: .jobEnd)
+        e.jobId = Trim.clamp(id)
+        e.jobExitCode = exitCode
+        return e
+    }
+
+    public static func ack(_ record: JobAckRecord, loggedAt: Date) -> JournalEvent {
+        var e = JournalEvent(loggedAt: loggedAt, event: .ack)
+        e.jobId = Trim.clamp(record.jobId)
+        e.ackStateSince = record.stateSince
+        return e
+    }
+}
+
 public struct JobStore {
     public private(set) var jobs: [String: Job] = [:]
     public init() {}
+
+    /// Folds one journal line in, live or replayed, as of the line's own
+    /// stamp; true when the line is a job's (`.jobBegin`, `.jobEnd`, an
+    /// `.ack` naming a job), which the session store has no use for. A begin
+    /// with no slot takes its watched process as its slot, and one with no
+    /// grace the `run` default; an end with no status is a success.
+    @discardableResult
+    public mutating func apply(_ e: JournalEvent) -> Bool {
+        switch e.event {
+        case .jobBegin:
+            guard let id = e.jobId else { return true }
+            begin(id: id, pid: e.jobPid, slotPid: e.jobSlotPid ?? e.jobPid, label: e.jobLabel,
+                  hostBundleId: e.hostBundleId,
+                  showAfterSeconds: e.jobShowAfterSeconds ?? K.jobShowAfterDefaultSeconds, now: e.loggedAt)
+        case .jobEnd:
+            guard let id = e.jobId else { return true }
+            end(id: id, exitCode: e.jobExitCode ?? 0, now: e.loggedAt)
+        case .ack:
+            guard let id = e.jobId else { return false }
+            if let since = e.ackStateSince { acknowledge(JobAckRecord(jobId: id, stateSince: since)) }
+        default:
+            return false
+        }
+        return true
+    }
 
     public mutating func begin(id: String, pid: Int32?, slotPid: Int32?, label: String?,
                                hostBundleId: String?, showAfterSeconds: Double, now: Date) {
@@ -147,10 +214,11 @@ public struct JobStore {
     }
 
     /// A finished job is an unread notification, acknowledged by focusing the
-    /// terminal it was started from — the same policy sessions use.
+    /// terminal it was started from — the same policy sessions use. Returns
+    /// what was seen, for the journal.
     @discardableResult
-    public mutating func acknowledge(hostBundleId: String) -> Bool {
-        var changed = false
+    public mutating func acknowledge(hostBundleId: String) -> [JobAckRecord] {
+        var seen: [JobAckRecord] = []
         for (id, original) in jobs {
             var job = original
             guard !job.acknowledged, job.state != .running,
@@ -158,10 +226,22 @@ public struct JobStore {
             job.acknowledged = true
             job.settlingFrom = nil
             job.settlingUntil = nil
-            changed = true
+            seen.append(JobAckRecord(jobId: id, stateSince: job.stateSince))
             jobs[id] = job
         }
-        return changed
+        return seen.sorted { $0.jobId < $1.jobId }
+    }
+
+    /// A journaled acknowledgement, replayed: it clears only the outcome it
+    /// was recorded against (its `stateSince`, within the journal's
+    /// millisecond stamps), never a job in flight or a later outcome.
+    mutating func acknowledge(_ record: JobAckRecord) {
+        guard var job = jobs[record.jobId], job.state != .running,
+              abs(job.stateSince.timeIntervalSince(record.stateSince)) < 0.005 else { return }
+        job.acknowledged = true
+        job.settlingFrom = nil
+        job.settlingUntil = nil
+        jobs[record.jobId] = job
     }
 
     public var trackedPids: Set<Int32> {

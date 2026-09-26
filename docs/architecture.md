@@ -29,10 +29,10 @@ Both executables ship in one bundle, `MySidepulse.app/Contents/MacOS/`:
 
 ```
 Claude Code ─hook─▶ mysidepulse hook ──────────┐
-Codex ─hook─▶ mysidepulse hook --agent codex ──┴─append─▶ journal.jsonl
+Codex ─hook─▶ mysidepulse hook --agent codex ──┤
+mysidepulse job (zsh hooks) · mysidepulse run ─┴─append─▶ journal.jsonl
                                                      │
                                                JournalTailer ─┐
-zsh hooks / mysidepulse run ─── control socket ───────────────┤
 PowerMonitor · DeviceMonitor · AttentionMonitor ──────────────┤
                                                               ▼
                                                         Engine.sync()
@@ -98,9 +98,16 @@ sync():
   scheduleNextDeadline(now)
 ```
 
-Inputs that call `sync()`: journal events (`handle`), process exits, power
-changes, device arrival, acknowledgement, mode / brightness / preview changes,
-job begin / end, wake from sleep, and the deadline timer.
+Inputs that call `sync()`: journal events (`handle`), terminal jobs among
+them, process exits, power changes, device arrival, acknowledgement, mode /
+brightness / preview changes, wake from sleep, and the deadline timer.
+
+Every journal line, live or replayed, goes through `Engine.ingest`: a job's
+line (`JobBegin`, `JobEnd`, an ack naming a job) to `JobStore.apply`, any
+other to `SessionStore.apply`. A process exit is applied only after the
+tailer has caught up (`JournalTailer.catchUp`): a `mysidepulse run` wrapper
+appends its `JobEnd` and then exits, and the exit's kqueue event can reach the
+main queue first.
 
 **Carrying an animation on.** `paint` keeps, per strip, what it is playing and
 since when, and the loop to hand over to. A brightness change on the same
@@ -124,7 +131,8 @@ with `wallDeadline`, so time spent asleep counts.
    drop sessions whose pid is dead or no longer that agent's process, and
    Claude sessions whose pid's registry record names another session
    (`pruneDead`), scrub push deadlines already past the late-drop window
-   (`dropStaleNotifications`), run the stores' `tick`; when a working session
+   (`dropStaleNotifications`), run the stores' `tick`, ask each replayed
+   running job's shell whether it still runs a command (`probeJobs`); when a working session
    is hosted by Codex's managed daemon and its socket exists, ask the daemon
    `thread/loaded/list` and decide each such session missing from the
    complete list by its rollout (`daemonListed`), at most 1 s later; then
@@ -147,14 +155,14 @@ after it.
 | Codex | 12 hooks → `mysidepulse hook --agent codex` → the same journal, the line saying `codex` | the same |
 | GitHub Copilot | 7 hooks in `~/.copilot/hooks/mysidepulse.json` → `mysidepulse hook --agent copilot --event <name>` → the same journal, the line saying `copilot`; no line for a subagent's session | the same |
 | OpenCode | the plugin `~/.config/opencode/plugins/mysidepulse.js`, inside OpenCode's server → `mysidepulse hook --agent opencode` per forwarded event → the same journal, mapped onto its names, the line saying `opencode` | the same |
-| Journal | kqueue on the file (`DispatchSourceFileSystemObject`: write, extend, rename, delete); follows rotation, retries a failed reopen every 0.5 s | `SessionStore.apply` |
+| Journal | kqueue on the file (`DispatchSourceFileSystemObject`: write, extend, rename, delete); follows rotation, retries a failed reopen every 0.5 s | `SessionStore.apply`, `JobStore.apply` |
 | Agent processes, every agent's (for OpenCode, its server) | kqueue `EVFILT_PROC` exit per tracked pid (`ProcessWatcher`) | `processExited` on both stores |
 | Claude's own registry | `<config>/sessions/<pid>.json`, `<config>` taken from the session's transcript path (`ClaudeProcessRegistry.configDir(fromTranscriptPath:)`), read only for quiet `working` turns and open waits of Claude sessions, and once per Claude session by the launch prune (`ClaudeProcessRegistry`; `ClaudeQuietTurn` in Core decides: `idle` stamped after the last main-agent event ends the turn, `busy` is liveness); Codex has none | `finishTurn`, `abandonTurn`, `noteBusy`, `dialogAnswered`, `pruneDead` |
 | Transcript | last 256 KB of a Claude session's JSONL (`TranscriptTail`) | finished vs interrupted, once the registry has ended the turn; unreadable is dark |
 | Codex's daemon | its control socket, `~/.codex/app-server-control/app-server-control.sock` (`CodexDaemonClient`, a WebSocket over the unix socket on a utility queue, 1 s per call, completing on main; `WebSocketFrame` and `CodexThreadRecord` in Core read the frames and the answers): `thread/read` for a quiet `working` Codex session whose pid is the managed daemon (`ProcWalk.isManagedCodexDaemon`), one question out per session, the answer applied only if the session is still `working` with the same `lastMainEventAt`; `thread/loaded/list` once at launch. `notLoaded` / `idle` → the rollout tells finished from aborted, dark by default; `active` → `noteBusy`; anything else, or no answer, leaves the session to the rollout for 15 s | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Codex's rollout | last 64 KB of a Codex session's `rollout-…-<session id>.jsonl` under `~/.codex/sessions/` (`CodexRollout` reads, `CodexRolloutTail` in Core decides from the turn markers alone), read for quiet `working` Codex sessions (`SessionStore.codexCandidates`) the daemon does not host or could not decide, and after the daemon says a thread runs nothing; the recorded `transcript_path` when Core trusts it, else the daemon's `path` when Core trusts it, else found by session id | `finishTurn`, `abandonTurn`, `noteBusy` |
 | Copilot's `events.jsonl` | last 64 KB of `~/.copilot/session-state/<session id>/events.jsonl` (`CopilotTranscript` reads, through the same non-blocking regular-file reader as the rollout, `FileTail`; `CopilotTranscriptTail` in Core decides from the lines' types and stamps and the session an `agentStop` mirror names), read for quiet `working` Copilot sessions (`SessionStore.copilotCandidates`), and for Copilot sessions in an open wait from the moment it began, with no quiet gate (`copilotWaitCandidates`, where the latest marker decides, `CopilotTranscriptTail.waitDecision`: an `abort` after the wait began cancels it, with the turn at work, a latest `permission.completed` after it answers it), by `Engine.checkCopilotTurns`; the recorded path when it is exactly the session's own under that folder, else the session's own. `abort` and `session.shutdown` → dark, the session's `agentStop` → finished, `session.error` → `waiting(error)`; a wait's `abort` → dark, a wait's answer → `working` (journaled as `dialog-answered`) | `finishTurn`, `abandonTurn`, `abandonWait`, `failTurn`, `noteBusy`, `dialogAnswered` |
-| Terminal jobs | `mysidepulse run` and the zsh hooks, over the control socket | `JobStore` |
+| Terminal jobs | `mysidepulse run` and the zsh hooks, as `JobBegin` / `JobEnd` journal lines (`JobLine`, `JobJournal`) | `JobStore.apply` |
 | A running job's shell | `ProcWalk.info` (`e_pgid`, `e_tpgid`, `p_comm`, `p_starttime`) and `ProcWalk.childStartTimes` (`proc_listchildpids`, each child's fork time), read at every `sync()` for each running job with a pid; `JobStore.nextDeadline` brings one at least every `K.jobProbeSeconds` and `K.jobPromptSettleSeconds` after a first sighting at the prompt; `ShellJobLiveness` in Core builds the probe and judges it | `JobStore.probe` |
 | Strip | DiskArbitration callbacks + `/Volumes` scan + 300 s rescan | `Engine.deviceAppeared` / `deviceGone` |
 | Battery | IOKit power-source run-loop source + 300 s refresh | `Engine.powerChanged` |
@@ -214,7 +222,8 @@ A Unix-domain stream socket at
 `~/Library/Application Support/MySidepulse/control.sock`, mode `0600`. One JSON
 object per line in each direction (`ControlRequest` → `ControlResponse`,
 `Sources/MySidepulsePlatform/Control.swift`). Requests are capped at 1 MB and must
-arrive within 3 s; the client waits 2 s (1 s for job calls).
+arrive within 3 s; the client waits 2 s. Terminal jobs do not use it: they
+are journal lines, which need no app to be up.
 
 | `cmd` | Payload | Effect |
 |---|---|---|
@@ -222,7 +231,6 @@ arrive within 3 s; the client waits 2 s (1 s for job calls).
 | `led` | `mode` = `auto`, `off`, `toggle`, `#RRGGBB` or an effect name | Sets the mode. `toggle` is resolved in the app. |
 | `brightness-cycle` | `steps` | One step of `BrightnessCycle`, resolved in the app against the mode and the plugged-in strips' brightness; replies with the mode and `brightnessPercent`, absent when the step was off. |
 | `autostart` | `mode` = `on`, `off` or absent | Installs or removes the launch agent; replies with its state. |
-| `job-begin`, `job-end` | `job` | Drives `JobStore`. |
 | `notify` | `notify` or absent | Reads or changes notification settings; can send a test. |
 
 `ControlResponse` has a field for the raw ntfy topic, filled only by the
@@ -241,7 +249,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 
 | File | Writer | Content |
 |---|---|---|
-| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is (OpenCode's server for OpenCode): the key kept its name. Copilot's and OpenCode's events are written under the journal's own names (`SessionStart`, `Stop`, …), never their own; an OpenCode subagent's line carries its top session as `session_id` and its own session as `agent_id`. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `turn-failed`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. An older app version skips both names. |
+| `journal.jsonl` | `mysidepulse hook` (one `O_APPEND` write per event), `mysidepulse job` and `run` (one per begin and end); the app appends its own `MySidepulseAck` and `MySidepulseVerdict` lines | One `JournalEvent` per line, JSON, sorted keys, ISO-8601 with milliseconds, at most 4096 bytes. `agent` says `claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's. `claude_pid` is the agent's process whichever agent it is (OpenCode's server for OpenCode): the key kept its name. Copilot's and OpenCode's events are written under the journal's own names (`SessionStart`, `Stop`, …), never their own; an OpenCode subagent's line carries its top session as `session_id` and its own session as `agent_id`. A `MySidepulseAck` line carries the seen alert's `ack_state_since`; a `MySidepulseVerdict` line carries `session_id` and `verdict` (`turn-abandoned`, `turn-finished`, `turn-failed`, `dialog-answered`, `TurnVerdict`) and is stamped when the verdict took effect, which can be earlier than the line before it. Both are the app's, never hook traffic: a reader after the newest hook event (`doctor`, `status`) filters them out. A `JobBegin` line carries `job_id`, `job_pid` (the watched process), `job_slot_pid` (the shell whose one slot it takes), `job_label`, `job_show_after_seconds` and `host_bundle_id`; a `JobEnd` line `job_id` and `job_exit_code`; neither names a session, and the readers after the newest hook event filter them out too. A `MySidepulseAck` line for a seen job outcome carries `job_id` in place of `session_id`. An older app version skips `MySidepulseAck`, `MySidepulseVerdict`, `JobBegin` and `JobEnd`. |
 | `journal.1.jsonl` | the app, by rename | The previous journal. Rotation at 20 MB, or at 5 MB when no session is active. |
 | `config.json` | the app only, mode `0600`, atomic | `AppConfig`, below. |
 | `control.sock` | the app | The control socket. |
@@ -268,7 +276,7 @@ The one `UserDefaults` key is `showInMenuBar` (default `true`).
 `MenuBarController` observes it, so the settings toggle and a `defaults write`
 both take effect at once.
 
-The journal is the app's only memory of sessions. Its lines keep more than the
+The journal is the app's only memory of sessions and terminal jobs. Its lines keep more than the
 state machine reads — `prompt_id`, `agent_type`, `reason`, `error_type`,
 `is_interrupt`, `stop_hook_active`, `last_message_tail`, `host_app_pid`,
 `permission_mode`, `raw_prefix` are recorded and never consumed by the app.
@@ -285,8 +293,8 @@ and `result`, one line (`UpdateResult`), which the launch that reads it renames
 to `result.read` for the helper to see; the next launch, or the helper, removes
 that.
 
-Not persisted: jobs and their acknowledgements, the Playground preview, the
-battery glance, stalled-device state.
+Not persisted: the Playground preview, the battery glance, stalled-device
+state.
 
 Outside the app's own directory, `HookInstaller` — behind both
 `install-hooks` / `uninstall-hooks` and the settings window's hook rows —

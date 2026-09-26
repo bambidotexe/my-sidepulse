@@ -50,6 +50,30 @@ final class CodecTests: XCTestCase {
         XCTAssertTrue(text.contains(#""verdict":"turn-abandoned""#))
     }
 
+    /// A terminal job's two lines, written by the CLI. An older app version
+    /// fails to decode either name and skips the line.
+    func testTheJobLinesRoundTrip() throws {
+        var begin = JournalEvent(loggedAt: Date(timeIntervalSince1970: 1_787_652_000.25), event: .jobBegin)
+        begin.jobId = "zsh-900"; begin.jobPid = 1001; begin.jobSlotPid = 900; begin.jobLabel = "make"
+        begin.jobShowAfterSeconds = 5; begin.hostBundleId = "com.mitchellh.ghostty"
+        let beginData = try JournalCodec.encodeLine(begin)
+        XCTAssertEqual(JournalCodec.decodeLine(beginData), begin)
+        let beginText = String(decoding: beginData, as: UTF8.self)
+        for key in [#""event":"JobBegin""#, #""job_id":"zsh-900""#, #""job_pid":1001"#, #""job_slot_pid":900"#,
+                    #""job_label":"make""#, #""job_show_after_seconds":5"#, #""host_bundle_id":"com.mitchellh.ghostty""#] {
+            XCTAssertTrue(beginText.contains(key), key)
+        }
+        XCTAssertFalse(beginText.contains("session_id"), "a job belongs to no session")
+
+        var end = JournalEvent(loggedAt: Date(timeIntervalSince1970: 1_787_652_010.5), event: .jobEnd)
+        end.jobId = "zsh-900"; end.jobExitCode = 130
+        let endData = try JournalCodec.encodeLine(end)
+        XCTAssertEqual(JournalCodec.decodeLine(endData), end)
+        let endText = String(decoding: endData, as: UTF8.self)
+        XCTAssertTrue(endText.contains(#""event":"JobEnd""#))
+        XCTAssertTrue(endText.contains(#""job_exit_code":130"#))
+    }
+
     func testDateWithoutFractionAccepted() throws {
         let line = #"{"logged_at":"2026-08-21T10:00:00Z","event":"UserPromptSubmit","session_id":"s1"}"#
         XCTAssertNotNil(JournalCodec.decodeLine(Data(line.utf8)))

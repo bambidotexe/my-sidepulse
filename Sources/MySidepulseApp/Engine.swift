@@ -86,6 +86,9 @@ final class Engine {
     /// The agent-hosted shells already logged as ignored; one line per
     /// shell, the set kept small.
     private var agentShells: Set<Int32> = []
+    /// While the journal replays, the agent each shell runs under, read once
+    /// per shell: every line of that shell reads the same processes then.
+    private var replayedShells: [Int32: AgentKind?] = [:]
     /// The Codex sessions with a question out to Codex's daemon, skipped by
     /// the periodic check until it is answered, and, after an answer that
     /// decided nothing, when each may be asked again: until then its rollout
@@ -158,7 +161,7 @@ final class Engine {
         replaying = true
         for event in JournalTailer.readAll(url: Paths.journalRotated)
         where event.loggedAt >= bootCut {
-            store.apply(event)
+            ingest(event)
         }
         let tailer = JournalTailer(url: Paths.journal)
         self.tailer = tailer
@@ -177,6 +180,7 @@ final class Engine {
             guard let self else { return }
             // Everything queued by the drain has now been applied.
             self.replaying = false
+            self.replayedShells.removeAll()
             // Alive is not enough: a pid recycled while the app was down
             // must not keep a dead session's state on the strip. A Claude
             // session is kept only while the pid runs Claude and its
@@ -209,6 +213,10 @@ final class Engine {
             let now = Date()
             let alerts = self.store.tick(now: now, userPresent: AttentionMonitor.userIsPresent())
             self.jobs.tick(now: now)
+            // Each replayed running job's shell is asked before the first
+            // paint: its end may have been written while the app was away,
+            // or lost with the shell.
+            self.probeJobs(now: now)
             if !alerts.isEmpty { self.deliver(alerts) }
             // A working session Codex's daemon hosts, whose thread the daemon
             // no longer holds, has nothing running: the daemon is asked which
@@ -253,10 +261,12 @@ final class Engine {
 
     func handle(_ events: [JournalEvent]) {
         guard !events.isEmpty else { return }
-        for event in events { store.apply(event) }
-        // Ack and verdict lines are the app's own; "last event" answers "are
-        // hooks arriving", so only hook traffic may refresh it.
-        if let latest = events.filter({ $0.event != .ack && $0.event != .verdict }).map(\.loggedAt).max(),
+        for event in events { ingest(event) }
+        // Ack and verdict lines are the app's own and job lines the
+        // terminal's; "last event" answers "are hooks arriving", so only an
+        // agent's hook traffic may refresh it.
+        if let latest = events.filter({ ![.ack, .verdict, .jobBegin, .jobEnd].contains($0.event) })
+            .map(\.loggedAt).max(),
            latest > (lastEventSeen ?? .distantPast) {
             lastEventSeen = latest
         }
@@ -265,7 +275,39 @@ final class Engine {
         sync()
     }
 
+    /// One journal line, live or replayed: a job's to the job store, every
+    /// other to the session store. A shell under an agent runs that agent's
+    /// work: its session shows it, a job never does.
+    private func ingest(_ event: JournalEvent) {
+        if event.event == .jobBegin, let pid = event.jobPid, let agent = hostingAgent(ofShell: pid) {
+            if agentShells.count >= 64 { agentShells.removeAll() }
+            if agentShells.insert(pid).inserted {
+                Log.app.notice("""
+                    job ignored: shell \(pid, privacy: .public) runs under \(agent.productName, privacy: .public) \
+                    — its commands are that agent's work
+                    """)
+            }
+            return
+        }
+        if !jobs.apply(event) { store.apply(event) }
+    }
+
+    private func hostingAgent(ofShell pid: Int32) -> AgentKind? {
+        if replaying, let known = replayedShells[pid] { return known }
+        let agent = ProcWalk.hostingAgent(in: ProcWalk.chain(from: pid))
+        if replaying { replayedShells[pid] = .some(agent) }
+        return agent
+    }
+
+    /// A `mysidepulse run` wrapper appends its end line, then exits: the
+    /// journal is read up to now first, so the line lands before the exit,
+    /// which would clear a job still running and lose its outcome.
     private func handleProcessExit(_ pid: Int32) {
+        guard let tailer else { return processExited(pid) }
+        tailer.catchUp { [weak self] in DispatchQueue.main.async { self?.processExited(pid) } }
+    }
+
+    private func processExited(_ pid: Int32) {
         store.processExited(pid: pid)
         jobs.processExited(pid: pid)
         sync()
@@ -287,29 +329,33 @@ final class Engine {
     /// `store.acknowledgeAlerts(…) || jobs.acknowledge(…)` Swift short-circuits
     /// and silently skips the job acknowledgement on any pass where a session
     /// alert was cleared — which is exactly the pass where both are lit.
-    /// Jobs stay app-level: they are not journaled and carry no tty.
+    /// Jobs are acknowledged by host app only: they carry no tty.
     @discardableResult
     private func acknowledgeAll(bundleId: String, frontTTY: String?) -> Bool {
         let acked = store.acknowledgeAlerts(hostBundleId: bundleId, frontTTY: frontTTY,
                                             hostIsFocusable: AttentionMonitor.hostIsFocusable)
         let jobsSeen = jobs.acknowledge(hostBundleId: bundleId)
-        persist(acks: acked)
-        return !acked.isEmpty || jobsSeen
+        persist(acks: acked, jobAcks: jobsSeen)
+        return !acked.isEmpty || !jobsSeen.isEmpty
     }
 
     /// An acknowledgement is state the journal replay cannot reconstruct, so
-    /// it goes INTO the journal: one `MySidepulseAck` line per cleared alert,
-    /// keyed by the alert's stateSince. Without this every restart would
-    /// forget what had been seen and resurrect both the amber and its push.
-    /// Jobs are not journaled, so job acks are not either — a restart
-    /// forgets the whole job.
-    private func persist(acks: [AckRecord]) {
-        guard !acks.isEmpty else { return }
+    /// it goes INTO the journal: one `MySidepulseAck` line per cleared alert
+    /// or job outcome, keyed by its stateSince. Without this every restart
+    /// would forget what had been seen and resurrect both the amber and its
+    /// push.
+    private func persist(acks: [AckRecord], jobAcks: [JobAckRecord]) {
+        let now = Date()
         for record in acks {
-            var event = JournalEvent(loggedAt: Date(), event: .ack)
+            var event = JournalEvent(loggedAt: now, event: .ack)
             event.sessionId = record.sessionId
             event.ackStateSince = record.stateSince
             if let line = try? Trim.cappedLine(event) {
+                JournalWriter.append(line, to: Paths.journal)
+            }
+        }
+        for record in jobAcks {
+            if let line = try? Trim.cappedLine(JobLine.ack(record, loggedAt: now)) {
                 JournalWriter.append(line, to: Paths.journal)
             }
         }
@@ -1358,37 +1404,6 @@ final class Engine {
                 return ControlResponse(ok: false, error: "bad autostart \(other) — use on|off")
             }
             return ControlResponse(ok: true, loginItem: loginItemStatus())
-        case "job-begin":
-            guard let job = request.job else {
-                return ControlResponse(ok: false, error: "job-begin needs a job")
-            }
-            // A shell under an agent runs that agent's work: its session
-            // shows it, a job never does.
-            if let pid = job.pid, let agent = ProcWalk.hostingAgent(in: ProcWalk.chain(from: pid)) {
-                if agentShells.count >= 64 { agentShells.removeAll() }
-                if agentShells.insert(pid).inserted {
-                    Log.app.notice("""
-                        job ignored: shell \(pid, privacy: .public) runs under \(agent.productName, privacy: .public) \
-                        — its commands are that agent's work
-                        """)
-                }
-                return ControlResponse(ok: true)
-            }
-            jobs.begin(id: job.id, pid: job.pid, slotPid: job.slotPid ?? job.pid,
-                       label: job.label, hostBundleId: job.hostBundleId,
-                       showAfterSeconds: job.showAfterSeconds ?? K.jobShowAfterDefaultSeconds,
-                       now: Date())
-            armProcessWatchers()
-            sync()
-            return ControlResponse(ok: true)
-        case "job-end":
-            guard let job = request.job else {
-                return ControlResponse(ok: false, error: "job-end needs a job")
-            }
-            jobs.end(id: job.id, exitCode: job.exitCode ?? 0, now: Date())
-            armProcessWatchers()
-            sync()
-            return ControlResponse(ok: true)
         case "notify":
             guard let notify = request.notify else {
                 // Bare `mysidepulse notify` is THE deliberate read — the one

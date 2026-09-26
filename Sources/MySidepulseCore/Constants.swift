@@ -382,6 +382,9 @@ public enum K {
     /// hooks fire on every command, so they wait — short commands stay dark.
     public static let jobShowAfterDefaultSeconds: Double = 0
     public static let shellShowAfterDefaultSeconds: Double = 5
+    /// A job's label, as its line records it: long enough to recognise in
+    /// `mysidepulse status`, short enough not to turn that output into a wall.
+    public static let jobLabelMaxChars = 60
 
     /// After vetoing an eject, retry the mount on this period. The retries
     /// are dissented while the screen is locked and succeed after unlock, so

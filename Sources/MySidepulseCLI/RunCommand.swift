@@ -2,28 +2,20 @@ import Foundation
 import MySidepulseCore
 import MySidepulsePlatform
 
-/// Job control over the socket. Every call is best-effort and short: an app
-/// that is down, wedged or older must never delay or fail the user's command.
-enum JobControl {
-    static let timeoutSeconds: Int32 = 1
-
+/// A job's begin and end, each one journal line (`JobJournal`): no call to
+/// the app, so an app that is down, wedged or older never delays or fails
+/// the user's command, and a restart replays the line.
+enum JobReport {
     static func begin(id: String, pid: Int32, slotPid: Int32, label: String?, showAfter: Double) {
-        _ = ControlClient.send(
-            ControlRequest(cmd: "job-begin", job: JobRequest(
-                id: id, pid: pid, slotPid: slotPid, label: label, showAfterSeconds: showAfter,
-                hostBundleId: ProcWalk.callerHostBundleId())),
-            socketPath: Paths.controlSocket.path, timeoutSeconds: timeoutSeconds)
+        JobJournal.append(JobLine.begin(id: id, pid: pid, slotPid: slotPid, label: label,
+                                        showAfterSeconds: showAfter,
+                                        hostBundleId: ProcWalk.callerHostBundleId(), loggedAt: Date()),
+                          to: Paths.journal)
     }
 
     static func end(id: String, exitCode: Int32) {
-        _ = ControlClient.send(
-            ControlRequest(cmd: "job-end", job: JobRequest(id: id, exitCode: exitCode)),
-            socketPath: Paths.controlSocket.path, timeoutSeconds: timeoutSeconds)
+        JobJournal.append(JobLine.end(id: id, exitCode: exitCode, loggedAt: Date()), to: Paths.journal)
     }
-
-    /// Long enough to recognise in `mysidepulse status`, short enough not to
-    /// turn the status output into a wall.
-    static func trim(_ label: String) -> String { String(label.prefix(60)) }
 }
 
 /// `mysidepulse run [--show-after N] [--label L] -- <cmd…>`
@@ -63,9 +55,8 @@ enum RunCommand {
         let id = UUID().uuidString
         // Watch this process; own the shell's slot. A second `mysidepulse run`
         // from the same shell then replaces this one instead of stacking.
-        JobControl.begin(id: id, pid: getpid(), slotPid: getppid(),
-                         label: JobControl.trim(label ?? command.joined(separator: " ")),
-                         showAfter: showAfter)
+        JobReport.begin(id: id, pid: getpid(), slotPid: getppid(),
+                        label: label ?? command.joined(separator: " "), showAfter: showAfter)
 
         let process = Process()
         // env, so the command is found on PATH exactly as the shell would.
@@ -74,7 +65,7 @@ enum RunCommand {
         do {
             try process.run()
         } catch {
-            JobControl.end(id: id, exitCode: 127)
+            JobReport.end(id: id, exitCode: 127)
             FileHandle.standardError.write(Data(
                 "mysidepulse run: cannot run \(command[0]): \(error.localizedDescription)\n".utf8))
             return 127
@@ -85,7 +76,7 @@ enum RunCommand {
         let code = process.terminationReason == .uncaughtSignal
             ? 128 + process.terminationStatus
             : process.terminationStatus
-        JobControl.end(id: id, exitCode: code)
+        JobReport.end(id: id, exitCode: code)
         return code
     }
 
@@ -122,11 +113,10 @@ enum JobCommand {
         case "begin":
             // A shell hook passes its own pid: the watched process and the
             // slot are the same shell.
-            JobControl.begin(id: id, pid: pid, slotPid: pid, label: label.map(JobControl.trim),
-                             showAfter: showAfter)
+            JobReport.begin(id: id, pid: pid, slotPid: pid, label: label, showAfter: showAfter)
             return 0
         case "end":
-            JobControl.end(id: id, exitCode: exitCode)
+            JobReport.end(id: id, exitCode: exitCode)
             return 0
         default:
             return usage()

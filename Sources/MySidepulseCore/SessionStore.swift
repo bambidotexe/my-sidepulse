@@ -363,7 +363,7 @@ public struct SessionStore {
             clearPending(&s)
             s.compactionSnapshot = nil
             applyStopVerdict(&s, now: now)
-        case .sessionEnd, .parseError, .ack, .verdict, .subagentStart, .subagentStop:
+        case .sessionEnd, .parseError, .ack, .verdict, .jobBegin, .jobEnd, .subagentStart, .subagentStop:
             break // handled above; subagent shapes without agent_id carry no signal
         }
         updateHoldRelease(&s, now: now)

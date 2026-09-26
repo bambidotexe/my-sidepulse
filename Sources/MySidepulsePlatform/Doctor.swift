@@ -267,8 +267,8 @@ public enum Doctor {
             binaryExists: { FileManager.default.isExecutableFile(atPath: $0) },
             journalWritable: {
                 // Probe the directory with a scratch file — never the real
-                // journal, which carries only real records (hook events and
-                // the app's ack lines).
+                // journal, which carries only real records (hook events, job
+                // lines and the app's own ack and verdict lines).
                 try? FileManager.default.createDirectory(at: Paths.appSupport,
                                                          withIntermediateDirectories: true)
                 let probe = Paths.appSupport.appendingPathComponent(".doctor-probe")
@@ -276,10 +276,11 @@ public enum Doctor {
                 return JournalWriter.append(Data("probe".utf8), to: probe)
             },
             lastEventAge: {
-                // Ack and verdict lines are the app's own; this check answers "are
-                // hooks arriving", so only hook traffic counts.
+                // Ack and verdict lines are the app's own and job lines the
+                // terminal's; this check answers "are hooks arriving", so only
+                // an agent's hook traffic counts.
                 let events = JournalTailer.readAll(url: Paths.journal)
-                guard let last = events.last(where: { $0.event != .parseError && $0.event != .ack && $0.event != .verdict })
+                guard let last = events.last(where: { ![.parseError, .ack, .verdict, .jobBegin, .jobEnd].contains($0.event) })
                 else { return nil }
                 return Date().timeIntervalSince(last.loggedAt)
             })
