@@ -268,7 +268,7 @@ rejected by eye within minutes of a build whose tests were green.
 ### Esc and Ctrl-C fire no hook
 - **Symptom.** The roll runs on after an interrupted turn.
 - **Why.** 11 of 199 recorded prompts ended that way. Ctrl-C also writes no interrupt marker in the transcript, and can kill hook delivery for the whole session.
-- **Instead.** A quiet `working` session is checked against Claude Code's own registry, then the transcript tail: a completed assistant answer means a lost `Stop` (green, push); an unanswered last entry means an interrupt (dark). Sidechain entries are subagent traffic and never speak for the main turn.
+- **Instead.** A quiet `working` session is checked against Claude Code's own registry: `idle` stamped after the last main-agent event ends the turn at once (`ClaudeQuietTurn`). Only then is the transcript tail read, to say how it ended: a completed assistant answer means a lost `Stop` (green, push); an unanswered last entry, or a transcript that cannot be read, is dark. Sidechain entries are subagent traffic and never speak for the main turn.
 - **Rule.** Both surfaces are undocumented upstream. The canary is `quiet turn undecidable` in the log; the 2 h backstop remains.
 
 ### CPU sampling cannot tell idle from light work

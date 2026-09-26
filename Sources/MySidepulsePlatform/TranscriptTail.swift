@@ -1,8 +1,10 @@
 import Foundation
+import MySidepulseCore
 
 /// How a quiet turn actually ended, read from the session transcript's
-/// tail. Claude Code writes NO interrupt marker on Ctrl-C, but the SHAPE
-/// of the last substantive entry tells the two endings apart:
+/// tail once Claude Code's registry has said the turn is over
+/// (`ClaudeQuietTurn`). Claude Code writes NO interrupt marker on Ctrl-C, but
+/// the SHAPE of the last substantive entry tells the two endings apart:
 ///
 /// - a completed assistant message — `stop_reason: "end_turn"`, observed
 ///   stamped at the exact second of a real Stop hook — is a finish;
@@ -13,10 +15,10 @@ import Foundation
 ///   speak for the main turn; the trailing state records (cost-state,
 ///   ai-title, …) carry no message at all and are skipped.
 ///
-/// Anything unreadable answers `.unreadable`, which the caller treats as
-/// "decide nothing yet" — never as either verdict.
+/// Anything unreadable answers `.unreadable`, which cannot tell a finish:
+/// the turn the registry ended goes dark.
 public enum TranscriptTail {
-    public enum Verdict: Equatable { case finished, incomplete, unreadable }
+    public typealias Verdict = ClaudeQuietTurn.Ending
 
     /// How much of the file's tail is examined. A turn's final entries sit
     /// well inside this; a file whose last substantive entry is further

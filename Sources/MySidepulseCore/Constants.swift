@@ -185,8 +185,8 @@ public enum K {
     /// firing any hook at all (11 of 199 recorded prompts), and a Ctrl-C
     /// can even kill hook delivery for the whole session, so the registry
     /// is the only truthful signal left. 20 s is enough: the registry
-    /// alone can only say "not running", but paired with the transcript
-    /// tail (interrupt vs lost-Stop finish) the verdict is complete, so
+    /// says "not running" on its own, which ends the turn, and the
+    /// transcript tail only tells an interrupt from a lost-Stop finish, so
     /// the gate only bounds read churn and covers stamp races.
     ///
     /// CPU sampling cannot serve here instead: an idle Claude with a
@@ -199,10 +199,6 @@ public enum K {
     /// the hook that would have reported it (`turn_aborted` 1 ms after the
     /// `Interrupt` was logged, session 01a0d9e4), so 20 s races nothing.
     public static let abandonQuietSeconds: TimeInterval = 20
-    /// When the registry says idle but the transcript cannot say HOW the
-    /// turn ended (no recorded path, unreadable file, nothing substantive
-    /// in the tail), dark still happens — at this conservative distance.
-    public static let abandonUndecidedDarkSeconds: TimeInterval = 90
     /// Re-read cadence for the registry, or a Codex session's rollout,
     /// while a session stays quiet, and therefore the detection latency on
     /// top of the gate. Also the cadence for re-checking open waits

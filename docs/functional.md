@@ -398,7 +398,10 @@ of type `shell`), the strip stays on `working` and the finish is *held*:
 
 Esc and Ctrl-C end a Claude Code turn without any hook, and hook delivery can
 stop mid-session. For Claude Code sessions, the rescues below read Claude
-Code's own registry and transcript.
+Code's own registry and transcript. The registry alone says whether a quiet
+turn is over: `idle` stamped after the last main-agent event ends it at once.
+The transcript only says how it ended: a completed answer is the lost `Stop`,
+anything else, a transcript that cannot be read included, is dark.
 
 Copilot fires nothing either for Ctrl+C or Esc Esc, nor for an answered
 prompt, nor any end for a turn that fails; its `events.jsonl` says each
@@ -515,8 +518,7 @@ most.
 |---|---|---|---|
 | Lost `Stop` | `idle_prompt` / `agent_needs_input` on a `working` session whose main agent has been quiet ≥ `K.idleSignalMinQuietSeconds` (50 s) | treated as the `Stop` | ~60 s |
 | Lost `Stop` | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); Claude's registry says `idle`; the transcript ends on a completed assistant answer (`end_turn` / `stop_sequence`) | `done`, with its push | 20–35 s |
-| Interrupted turn | same, but the transcript ends on an unanswered entry | `idle` (dark) | 20–35 s |
-| Same, transcript unreadable | — | `idle` after `K.abandonUndecidedDarkSeconds` (90 s) | 90 s |
+| Interrupted turn | same, but the transcript ends on an unanswered entry, or cannot be read | `idle` (dark) | 20–35 s |
 | Dialog answered with no hook | an open wait; the registry says `busy`, stamped more than `K.dialogAnswerMinStampLeadSeconds` (2 s) after the dialog | `working` | ≤ 15 s + |
 | Codex: lost `Stop` | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); the rollout's last turn marker is a `task_complete` stamped after the last main-agent event, or naming its turn | `done`, with its push | 20–35 s |
 | Codex: interrupted turn, `Interrupt` lost | same, but the marker is a `turn_aborted` | `idle` (dark), no push | 20–35 s |
@@ -1433,7 +1435,6 @@ agent's colour while it works.
 | `CodexRolloutTail.tailBytes` | 64 KB | how much of a Codex rollout's end is read |
 | `CopilotTranscriptTail.tailBytes` | 64 KB | how much of a Copilot `events.jsonl`'s end is read |
 | `CodexDaemonClient.deadlineSeconds` | 1 s | the whole of one question to Codex's daemon, connection included |
-| `abandonUndecidedDarkSeconds` | 90 s | dark when the transcript cannot decide |
 | `dialogAnswerMinStampLeadSeconds` | 2 s | busy stamp must be this much newer than the dialog |
 | `hooksSilentWarnSeconds` | 5 min | the registry, a rollout or an `events.jsonl` says the turn runs with no hook event → one log warning per session |
 | `inputPollSeconds` | 0.5 s | input poll while an alert shows |

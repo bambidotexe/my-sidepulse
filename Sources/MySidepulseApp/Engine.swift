@@ -704,12 +704,14 @@ final class Engine {
     /// delivery for the whole session while its turn keeps running. So a
     /// `working` session that has gone silent is asked about at the source:
     /// Claude Code's own per-process registry record, which does not travel
-    /// through hooks.
-    /// "idle", stamped after our last main-agent event → the turn is over
-    /// and delivered no verdict → dark. "busy" → genuinely still working
-    /// (silent thinking, or dead hooks) → stay on the roll and keep the
-    /// session alive. Anything else — no record, wrong session, stale
-    /// stamp, unknown status — proves nothing and changes nothing.
+    /// through hooks (`ClaudeQuietTurn` decides).
+    /// "idle", stamped after our last main-agent event → the turn is over,
+    /// at once; the transcript only says how: a completed answer is the lost
+    /// `Stop` (green, push), anything else, an unreadable transcript
+    /// included, is dark. "busy" → genuinely still working (silent thinking,
+    /// or dead hooks) → stay on the roll and keep the session alive.
+    /// Anything else — no record, wrong session, stale stamp, unknown
+    /// status — proves nothing and changes nothing.
     /// A quiet Codex turn is asked about at Codex's daemon or read from its
     /// rollout instead (`checkCodexTurns`), and a quiet Copilot turn is read
     /// from its `events.jsonl` (`checkCopilotTurns`). `quietSeconds` is the quiet
@@ -732,44 +734,42 @@ final class Engine {
                 }
                 continue
             }
-            if record.isIdle, let stamped = record.statusUpdatedAt,
-               stamped > session.lastMainEventAt {
-                // The turn is over. HOW it ended is the transcript's to say:
-                // a completed assistant answer means the Stop was lost and
-                // the finish is real (green, push); anything unanswered is
-                // the interrupt (dark); an unreadable transcript decides
-                // nothing and dark falls back to the old conservative gate.
-                let ending = session.transcriptPath.map(TranscriptTail.verdict(atPath:))
-                    ?? .unreadable
-                switch ending {
-                case .finished:
+            // The transcript is read only once the record has ended the turn,
+            // and what it said is kept for the log line.
+            var ending: ClaudeQuietTurn.Ending?
+            let decision = ClaudeQuietTurn.decision(
+                status: record.status, statusUpdatedAt: record.statusUpdatedAt,
+                lastMainEventAt: session.lastMainEventAt) {
+                    let read = session.transcriptPath.map(TranscriptTail.verdict(atPath:)) ?? .unreadable
+                    ending = read
+                    return read
+                }
+            switch decision {
+            case .finished(let stamped):
+                Log.app.notice("""
+                    lost Stop recovered: session \(sessionId, privacy: .public) — claude \
+                    pid \(pid) reports idle and the transcript ends on a completed \
+                    answer — finished
+                    """)
+                finishTurn(sessionId, now: now, endedAt: stamped)
+                ended = true
+            case .abandoned(let stamped):
+                if ending == .unreadable {
                     Log.app.notice("""
-                        lost Stop recovered: session \(sessionId, privacy: .public) — claude \
-                        pid \(pid) reports idle and the transcript ends on a completed \
-                        answer — finished
+                        turn abandoned: session \(sessionId, privacy: .public) — claude \
+                        pid \(pid) reports idle since \(stamped, privacy: .public) and the \
+                        transcript is unreadable — going dark
                         """)
-                    finishTurn(sessionId, now: now, endedAt: stamped)
-                    ended = true
-                case .incomplete:
+                } else {
                     Log.app.notice("""
                         turn abandoned: session \(sessionId, privacy: .public) — claude pid \
                         \(pid) reports idle since \(stamped, privacy: .public) with no \
                         completed answer in the transcript — going dark
                         """)
-                    abandonTurn(sessionId, now: now, endedAt: stamped)
-                    ended = true
-                case .unreadable:
-                    if now.timeIntervalSince(session.lastEventAt) >= K.abandonUndecidedDarkSeconds {
-                        Log.app.notice("""
-                            turn abandoned: session \(sessionId, privacy: .public) — claude \
-                            pid \(pid) reports idle, the transcript is unreadable, and the \
-                            conservative window has passed — going dark
-                            """)
-                        abandonTurn(sessionId, now: now, endedAt: stamped)
-                        ended = true
-                    }
                 }
-            } else if record.isBusy {
+                abandonTurn(sessionId, now: now, endedAt: stamped)
+                ended = true
+            case .busy:
                 // lastMainEventAt is NOT refreshed by this, so it keeps
                 // measuring true hook silence while liveness is extended.
                 if now.timeIntervalSince(session.lastMainEventAt) >= K.hooksSilentWarnSeconds,
@@ -782,6 +782,8 @@ final class Engine {
                         """)
                 }
                 store.noteBusy(sessionId: sessionId, now: now)
+            case .nothing:
+                break
             }
         }
         // The answered dialog: approving a plan can fire no hook at all, so
