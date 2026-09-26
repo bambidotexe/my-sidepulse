@@ -137,6 +137,18 @@ final class ShellInitTests: XCTestCase {
         XCTAssertEqual(try zsh("vim"), [], "every editor session would hold the strip")
     }
 
+    /// An agent is shown through its own hooks; as a command it would hold
+    /// the strip for as long as its session stays open, working or not.
+    /// Stand-ins, so no real agent ever runs.
+    func testTheAgentsAreNeverCommands() throws {
+        for agent in ["claude", "codex", "copilot", "opencode"] {
+            try write("bin/\(agent)", "#!/bin/sh\nexit 0\n")
+            XCTAssertEqual(try zsh(agent), [], agent)
+            XCTAssertEqual(try zsh("\(agent) --help"), [], agent)
+            XCTAssertEqual(try zsh("cd '\(dir.path)' && \(agent)"), [], agent)
+        }
+    }
+
     func testTheSkipListIsUsersToExtend() throws {
         let calls = try zsh("true", preamble: "MYSIDEPULSE_SKIP=(true)")
         XCTAssertEqual(calls, [], "a user-set skip list replaces the default")

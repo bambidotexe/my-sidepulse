@@ -129,7 +129,7 @@ typeset -ga MYSIDEPULSE_SKIP
   vi vim nvim emacs nano pico less more man info
   ssh mosh tmux screen top htop btop watch tig lazygit
   zsh bash sh fish dash ksh su login
-  claude codex grok mysidepulse
+  claude codex copilot opencode grok mysidepulse
 )
 : ${MYSIDEPULSE_SHOW_AFTER:=@SHOWAFTER@}
 # Declared, never reset: a `source ~/.zshrc` inside a command keeps the job it

@@ -607,8 +607,9 @@ The only other tool wired in is the terminal itself.
   commands stay dark. A command line is skipped when the head of *any* of its
   segments (split on `&& || | |& ; & ( ) { }`, quotes and directories stripped)
   is in `MYSIDEPULSE_SKIP` — by default editors, pagers, `ssh`, `tmux`, `top`,
-  `watch`, `tig`, `lazygit`, `su`, `login`, `claude`, `codex`, `grok`,
-  `mysidepulse` and the like. Leading `VAR=value` words and the prefixes
+  `watch`, `tig`, `lazygit`, `su`, `login`, `grok`, `mysidepulse` and the
+  like, and the agents, shown through their own hooks: `claude`, `codex`,
+  `copilot` and `opencode`. Leading `VAR=value` words and the prefixes
   `sudo`, `time`, `command`, `builtin`, `exec`, `nice`, `nohup`, `env`,
   `noglob` and `caffeinate`, each with the `-` flags after it (and the
   argument of `sudo -u`, `-g`, `-h`, `-p`, `-C`, `-D`, `-T`, `-U`, `-r`, `-t`,
