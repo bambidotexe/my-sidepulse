@@ -181,6 +181,9 @@ only after the owner has said so.**
 
 Paths are under `Sources/`; `Core` = `MySidepulseCore`, and so on. § numbers
 are `docs/functional.md`.
+A change to what a hook event means, a rescue, a job's liveness or a detection
+constant starts in `docs/shared/activity-detection.md` and is made in KoffeeLid
+too (Rules).
 
 | To change… | Edit | Then document in |
 |---|---|---|
@@ -398,6 +401,16 @@ The app target has no automated tests. Its verification is the strip,
   a change.** Quote the rule, ask whether it is overruled, and only then
   implement. If the owner reaffirms the request, that is the answer: replace
   the rule.
+- **Detecting work is one contract with KoffeeLid.**
+  `docs/shared/activity-detection.md` is what both apps implement to decide
+  whether an agent or a terminal command is working: the sources, the session
+  machine, the rescues, the jobs and their constants. A change to any of it is
+  made in the contract first (in `~/Projects/macos-app-template`, then
+  synced), then here **and** in `~/Projects/koffeelid` in the same session,
+  each with its test; a rule one app follows and the other does not is a bug
+  in one of them, and the better rule wins in both. What MySidepulse does with
+  a session that is not working (wait reasons, colours, the settle, pushes,
+  acknowledgement, job outcomes) is its own.
 - **Comments and documents state the present.** A comment records a rule, an
   invariant, a fact the code depends on, or the measurement behind a derived
   constant. No dates, versions, attributions or accounts of what the code
