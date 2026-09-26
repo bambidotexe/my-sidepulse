@@ -93,25 +93,28 @@ public enum Doctor {
         // working (an event missing, a stale binary, disableAllHooks, a plugin from elsewhere) fails; the
         // file existing and unreadable fails too. Claude Code's hooks are the one exception that can fail
         // while empty: they stay required unless another agent's hooks have something of ours instead.
-        func missingEvents(in root: [String: Any], events: [String]) -> (missing: [String], staleBinary: Bool) {
+        func missingEvents(in root: [String: Any], agent: AgentKind) -> (missing: [String], staleBinary: Bool, nameNoAgent: Bool) {
             var missing: [String] = []
             var staleBinary = false
-            for event in events {
+            var nameNoAgent = false
+            for event in HookConfig.events(for: agent) {
                 guard let command = HookConfig.installedCommand(in: root, event: event) else {
                     missing.append(event)
                     continue
                 }
                 if !p.binaryExists(HookConfig.binary(ofCommand: command)) { staleBinary = true }
+                // An entry from before the hook had to name its agent writes nothing now.
+                if !HookConfig.namesItsAgent(command, agent) { nameNoAgent = true }
             }
-            return (missing, staleBinary)
+            return (missing, staleBinary, nameNoAgent)
         }
 
         let claudeRoot = p.settingsRoot()
-        let claudeFacts = claudeRoot.map { missingEvents(in: $0, events: HookConfig.events) }
+        let claudeFacts = claudeRoot.map { missingEvents(in: $0, agent: .claude) }
         let claudeNotSetUp = claudeFacts.map { $0.missing.count == HookConfig.events.count } ?? false
 
         let codexRoot = p.codexHooksRoot()
-        let codexFacts = codexRoot.map { missingEvents(in: $0, events: HookConfig.codexEvents) }
+        let codexFacts = codexRoot.map { missingEvents(in: $0, agent: .codex) }
         let codexNotSetUp = codexFacts.map { $0.missing.count == HookConfig.codexEvents.count } ?? false
 
         let copilotRoot = p.copilotHooksRoot()
@@ -139,6 +142,8 @@ public enum Doctor {
         if let root = claudeRoot, let facts = claudeFacts {
             if claudeNotSetUp && anotherAgentHasSomething {
                 r.check(true, "hooks installed", t.claudeHooksNotSetUp)
+            } else if facts.nameNoAgent {
+                r.check(false, "hooks installed", t.hooksNameNoAgent)
             } else {
                 r.check(facts.missing.isEmpty, "hooks installed",
                         facts.missing.isEmpty ? t.allEventsSubscribed(HookConfig.events.count)

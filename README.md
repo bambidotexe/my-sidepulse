@@ -293,7 +293,7 @@ CLI, OpenCode and the terminal**. It trades the official app's wider reach for d
 
 ## How it works
 
-Claude Code runs `mysidepulse hook` on fifteen of its events and Codex `mysidepulse hook --agent codex` on
+Claude Code runs `mysidepulse hook --agent claude` on fifteen of its events and Codex `mysidepulse hook --agent codex` on
 twelve; GitHub Copilot CLI's own hook file and OpenCode's own plugin run the same binary for their events. Each
 hook drops everything private (prompts, tool inputs, tool outputs), appends one short line to a journal and
 exits; it never blocks a turn and never fails one. The app follows the journal, folds it into one state machine

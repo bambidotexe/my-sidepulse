@@ -14,7 +14,7 @@ final class HookCommandTests: XCTestCase {
         let payload = #"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"Bash","tool_input":{"command":"ls"}}"#
         let origin = ProcWalk.Origin(agentPid: 4242, hostAppPid: 99, hostBundlePath: nil)
         let code = HookCommand.run(input: Data(payload.utf8), environment: [:],
-                                   journalURL: url, now: Date(), origin: origin)
+                                   journalURL: url, now: Date(), origin: origin, agent: .claude)
         XCTAssertEqual(code, 0)
         let line = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").first
         let e = try XCTUnwrap(JournalCodec.decodeLine(Data(String(line!).utf8)))
@@ -35,7 +35,7 @@ final class HookCommandTests: XCTestCase {
         func line(origin: ProcWalk.Origin) throws -> JournalEvent {
             try? FileManager.default.removeItem(at: url)
             XCTAssertEqual(HookCommand.run(input: Data(payload.utf8), environment: [:],
-                                           journalURL: url, now: Date(), origin: origin), 0)
+                                           journalURL: url, now: Date(), origin: origin, agent: .claude), 0)
             let raw = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").first
             return try XCTUnwrap(JournalCodec.decodeLine(Data(String(raw!).utf8)))
         }
@@ -65,7 +65,7 @@ final class HookCommandTests: XCTestCase {
         payload.append(Data(repeating: UInt8(ascii: "x"), count: K.hookStdinMaxBytes))
         payload.append(Data(#""}"#.utf8))
         XCTAssertEqual(HookCommand.run(input: payload, environment: [:],
-                                       journalURL: url, now: Date(), origin: nil), 0)
+                                       journalURL: url, now: Date(), origin: nil, agent: .claude), 0)
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("ParseError"), "an over-cap payload is not a trustable event")
         XCTAssertLessThanOrEqual(text.utf8.count, K.journalLineMaxBytes + 1,
@@ -102,11 +102,12 @@ final class HookCommandTests: XCTestCase {
         return try XCTUnwrap(JournalCodec.decodeLine(Data(String(try XCTUnwrap(raw)).utf8)))
     }
 
-    /// The flag always wins. With none, the hook is Claude Code's, whose
-    /// hooks carry no flag: its pid is the nearest Claude Code ancestor,
-    /// never the nearest agent of another kind, and none when the walk finds
-    /// no Claude Code (one run through an interpreter).
-    func testTheFlagAlwaysWinsAndABareHookIsClaudeCodes() throws {
+    /// The flag says who fired the hook, and there is no hook without it: a
+    /// bare `hook` names no agent, writes nothing and still exits 0. Claude
+    /// Code's pid is the nearest Claude Code ancestor, never the nearest agent
+    /// of another kind, and none when the walk finds no Claude Code (one run
+    /// through an interpreter).
+    func testTheFlagNamesTheAgentAndABareHookWritesNothing() throws {
         let url = tempJournal()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let chain = [
@@ -115,29 +116,28 @@ final class HookCommandTests: XCTestCase {
             proc(500, 1, "copilot", "/Users/u/.local/bin/copilot"),
         ]
         let payload = Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"s1"}"#.utf8)
-        func record(_ chain: [ProcWalk.ProcInfo], _ agent: AgentKind?) throws -> JournalEvent {
+        func record(_ chain: [ProcWalk.ProcInfo], _ agent: AgentKind?) throws -> JournalEvent? {
             try? FileManager.default.removeItem(at: url)
             let origin = HookCommand.origin(for: chain, agent: agent, input: payload)
             XCTAssertEqual(HookCommand.run(input: payload, environment: [:], journalURL: url, now: Date(),
                                            origin: origin, agent: agent), 0)
-            return try firstLine(url)
+            return FileManager.default.fileExists(atPath: url.path) ? try firstLine(url) : nil
         }
-        let bare = try record(chain, nil)
-        XCTAssertEqual(bare.agent, .claude, "a Claude Code the walk cannot recognise, under a Copilot")
-        XCTAssertEqual(bare.event, .userPromptSubmit, "Claude Code's own event passes")
-        XCTAssertNil(bare.agentPid, "the Copilot is not the hook's agent")
-        let flagged = try record(chain, .claude)
+        XCTAssertNil(try record(chain, nil), "no agent named: no line, exit 0 all the same")
+        let flagged = try XCTUnwrap(try record(chain, .claude))
         XCTAssertEqual(flagged.agent, .claude, "the flag says who fired it")
-        XCTAssertNil(flagged.agentPid, "and no Claude process is in the chain")
+        XCTAssertEqual(flagged.event, .userPromptSubmit, "Claude Code's own event passes")
+        XCTAssertNil(flagged.agentPid, "the Copilot is not the hook's agent, and no Claude process is in the chain")
 
         let underOpenCode = [
             proc(700, 650, "node", "/opt/homebrew/bin/node"),
             proc(650, 1, "opencode", "/Users/u/.opencode/bin/opencode"),
         ]
-        let bareUnderOpenCode = try record(underOpenCode, nil)
-        XCTAssertEqual(bareUnderOpenCode.agent, .claude)
-        XCTAssertNil(bareUnderOpenCode.agentPid)
-        XCTAssertNil(bareUnderOpenCode.tty)
+        XCTAssertNil(try record(underOpenCode, nil))
+        let claudeUnderOpenCode = try XCTUnwrap(try record(underOpenCode, .claude))
+        XCTAssertEqual(claudeUnderOpenCode.agent, .claude)
+        XCTAssertNil(claudeUnderOpenCode.agentPid)
+        XCTAssertNil(claudeUnderOpenCode.tty)
 
         let claudeUnderCopilot = [
             proc(700, 500, "node", "/opt/homebrew/bin/node"),
@@ -145,7 +145,7 @@ final class HookCommandTests: XCTestCase {
             proc(400, 300, "zsh", "/bin/zsh"),
             proc(300, 1, "claude", "/Users/u/.local/bin/claude"),
         ]
-        let nearestClaude = try record(claudeUnderCopilot, nil)
+        let nearestClaude = try XCTUnwrap(try record(claudeUnderCopilot, .claude))
         XCTAssertEqual(nearestClaude.agent, .claude)
         XCTAssertEqual(nearestClaude.agentPid, 300, "the nearest Claude Code, past a nearer agent of another kind")
         XCTAssertEqual(HookCommand.origin(for: claudeUnderCopilot, agent: .copilot, input: payload).agentPid, 500,
@@ -256,7 +256,7 @@ final class HookCommandTests: XCTestCase {
         let url = tempJournal()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         XCTAssertEqual(HookCommand.run(input: Data("{oops".utf8), environment: [:],
-                                       journalURL: url, now: Date(), origin: nil), 0)
+                                       journalURL: url, now: Date(), origin: nil, agent: .claude), 0)
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("ParseError"))
     }

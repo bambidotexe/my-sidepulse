@@ -159,6 +159,38 @@ final class NotifyTests: XCTestCase {
                        "the machine slept through the recheck — drop, not fire")
     }
 
+    /// A rescue at launch dates a finish to when it ended, minutes or hours ago: found that late, it shows
+    /// done and never pushes, whether or not the user is at the Mac when the first tick sees it. A present
+    /// user's deferral must not launder the lateness into a fresh deadline.
+    func testARescuedFinishFoundLateNeverPushesEvenWhenTheUserIsPresentAtFirst() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0, turn: "p1"))
+        XCTAssertNotNil(s.finishTurn(sessionId: "s1", now: at(600), endedAt: at(0.5)))
+        XCTAssertEqual(s.sessions["s1"]?.state, .done)
+        XCTAssertEqual(s.tick(now: at(600), userPresent: true), [], "late by ~585 s: dropped, not deferred")
+        XCTAssertEqual(s.tick(now: at(600 + K.notifyDeferRecheckSeconds + 1), userPresent: false), [])
+        XCTAssertNil(s.sessions["s1"]?.notifyAt, "nothing left to announce")
+    }
+
+    func testARescuedFailureFoundLateNeverPushesEvenWhenTheUserIsPresentAtFirst() {
+        var s = SessionStore()
+        var prompt = ev(.userPromptSubmit, 0); prompt.agent = .copilot
+        s.apply(prompt)
+        // A session.error found 90 min later: a wait never expires, so the window is the 2 h staleness.
+        XCTAssertNotNil(s.failTurn(sessionId: "s1", now: at(5400), endedAt: at(1)))
+        XCTAssertEqual(s.sessions["s1"]?.state, .waiting(.error))
+        XCTAssertEqual(s.tick(now: at(5400), userPresent: true), [])
+        XCTAssertEqual(s.tick(now: at(5400 + K.notifyDeferRecheckSeconds + 1), userPresent: false), [])
+    }
+
+    /// A deferral that is not late fires at the first absent tick, as before: presence defers, it never drops.
+    func testAPresentUsersDeferralStillFiresOnceTheyAreGone() {
+        var s = SessionStore()
+        s.apply(ev(.stop, 0, tail: "Done."))
+        XCTAssertEqual(s.tick(now: at(40), userPresent: true), [], "deferred to t=70")
+        XCTAssertEqual(s.tick(now: at(75), userPresent: false).map(\.kind), [.finished])
+    }
+
     /// An unreadable idle time must notify rather than silently swallow.
     func testPresenceGateFailsOpen() {
         var s = SessionStore()

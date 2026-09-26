@@ -288,11 +288,13 @@ final class CodexPlatformTests: XCTestCase {
         XCTAssertEqual(flagged.agent, .codex)
         XCTAssertEqual(flagged.agentPid, 77)
         XCTAssertEqual(flagged.event, .interrupt)
-        let walked = try line(origin: ProcWalk.Origin(agentPid: 77, agent: .codex), agent: nil)
-        XCTAssertEqual(walked.agent, .claude, "no flag: Claude Code's, whatever the chain holds")
-        XCTAssertEqual(walked.event, .parseError, "and Claude Code has no Interrupt")
-        let bare = try line(origin: ProcWalk.Origin(agentPid: 42, agent: nil), agent: nil)
-        XCTAssertEqual(bare.agent, .claude, "no flag and no agent found: Claude, as every line always was")
+        let asClaude = try line(origin: ProcWalk.Origin(agentPid: 77, agent: .codex), agent: .claude)
+        XCTAssertEqual(asClaude.agent, .claude, "the flag says who fired it, whatever the chain holds")
+        XCTAssertEqual(asClaude.event, .parseError, "and Claude Code has no Interrupt")
+        try? FileManager.default.removeItem(at: url)
+        XCTAssertEqual(HookCommand.run(input: Data(payload.utf8), environment: [:], journalURL: url,
+                                       now: Date(), origin: ProcWalk.Origin(agentPid: 42, agent: nil), agent: nil), 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "no flag: no agent's, nothing written")
         let flagWins = try line(origin: ProcWalk.Origin(agentPid: 42, agent: .claude), agent: .codex)
         XCTAssertEqual(flagWins.agent, .codex)
     }
@@ -311,7 +313,7 @@ final class CodexPlatformTests: XCTestCase {
         return Doctor.Probes(
             appResponse: { ControlResponse(ok: true, mode: "auto", loginItem: "enabled") },
             settingsRoot: {
-                HookConfig.install(into: [:], command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook")
+                HookConfig.install(into: [:], command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent claude")
             },
             codexHooksRoot: { codexRoot },
             codexConfigText: { codexConfig ?? trusted },

@@ -51,21 +51,35 @@ public enum HookConfig {
     }
 
     /// Our own entries, recognized for idempotent reinstall and uninstall.
-    /// Both agents' commands carry it: `… hook` and `… hook --agent codex`.
+    /// Every agent's command carries it, and so does the bare `… hook` an
+    /// older install wrote, which is still ours to replace and remove.
     public static let ourMarker = "/Contents/MacOS/mysidepulse hook"
 
-    /// The command an agent's hooks run. Claude Code's is the bare `hook`,
-    /// the shape every install has written; every other agent's names itself,
-    /// so the journal line carries the agent whatever process fired the hook.
-    /// Copilot's payloads carry no event name, so its command names the event
-    /// too, when one is given.
+    /// The command an agent's hooks run. Every agent's names itself, so the
+    /// journal line carries the agent whatever process fired the hook; a
+    /// `hook` naming none writes nothing. Copilot's payloads carry no event
+    /// name, so its command names the event too, when one is given.
     public static func command(cliPath: String, agent: AgentKind, event: String? = nil) -> String {
         switch agent {
-        case .claude: return "\(cliPath) hook"
+        case .claude: return "\(cliPath) hook --agent claude"
         case .codex: return "\(cliPath) hook --agent codex"
         case .copilot: return "\(cliPath) hook --agent copilot" + (event.map { " --event \($0)" } ?? "")
         case .opencode: return "\(cliPath) hook --agent opencode"
         }
+    }
+
+    /// Whether an installed command of ours names the agent, whichever copy of
+    /// the app it runs: the bare `… hook` of an older install does not, and
+    /// such a hook writes nothing now.
+    public static func namesItsAgent(_ command: String, _ agent: AgentKind) -> Bool {
+        command.contains("\(ourMarker) --agent \(agent.rawValue)")
+    }
+
+    /// How many of the agent's events hold something of ours, this copy's or
+    /// not, naming the agent or not: what puts the agent's line on the Health
+    /// page at all.
+    public static func eventsWithSomethingOfOurs(in root: [String: Any], agent: AgentKind) -> Int {
+        events(for: agent).filter { installedCommand(in: root, event: $0) != nil }.count
     }
 
     /// The binary an installed command runs: everything before ` hook`.
@@ -97,8 +111,11 @@ public enum HookConfig {
     }
 
     /// Our entry for each of the agent's events, appended after every group
-    /// already there: Codex names a hook's trust after its group's index, so
-    /// a stranger's group keeps its index and its trust.
+    /// already there the first time and replaced in its own place afterwards:
+    /// Codex names a hook's trust after its group's index, so a group added
+    /// after ours keeps its index and its trust through every re-install.
+    /// Any other trace of ours — a second group, a handler in a stranger's
+    /// group, an entry under an event no longer subscribed — is scrubbed.
     public static func install(into root: [String: Any], command: String,
                                agent: AgentKind = .claude) -> [String: Any] {
         var root = root
@@ -107,18 +124,33 @@ public enum HookConfig {
         // there; leave it, exactly as `uninstall` does.
         if let existing = root["hooks"], !(existing is [String: Any]) { return root }
         var hooks = (root["hooks"] as? [String: Any]) ?? [:]
-        for (event, value) in hooks {
-            guard value is [Any] else { continue }
+        let subscribed = events(for: agent)
+        for (event, value) in hooks where value is [Any] && !subscribed.contains(event) {
             hooks[event] = scrubEventValue(value)
         }
-        for event in events(for: agent) {
+        for event in subscribed {
             // An event whose value is not an array is a shape we do not
             // understand. Leave it exactly as it is rather than clobber it;
             // `doctor` reporting the hook as missing is the honest signal.
             if let existing = hooks[event], !(existing is [Any]) { continue }
-            var groups = (hooks[event] as? [Any]) ?? []
-            groups.append(entry(for: event, command: command, agent: agent))
-            hooks[event] = groups
+            let groups = (hooks[event] as? [Any]) ?? []
+            let fresh = entry(for: event, command: command, agent: agent)
+            // Our group for this agent: wholly ours and naming the agent. A bare entry (an older install's,
+            // or one Codex migrated from Claude Code's file) is scrubbed and ours appended after the rest.
+            func isOurGroup(_ element: Any) -> Bool {
+                guard let group = element as? [String: Any], scrubGroup(group) == nil,
+                      let items = group["hooks"] as? [[String: Any]] else { return false }
+                return items.allSatisfy { ($0["command"] as? String).map { namesItsAgent($0, agent) } ?? false }
+            }
+            if let index = groups.firstIndex(where: isOurGroup) {
+                hooks[event] = groups.enumerated().compactMap { i, group -> Any? in
+                    if i == index { return fresh }
+                    guard let group = group as? [String: Any] else { return group }
+                    return scrubGroup(group)
+                }
+            } else {
+                hooks[event] = scrubEventValue(groups) + [fresh]
+            }
         }
         root["hooks"] = hooks
         return root

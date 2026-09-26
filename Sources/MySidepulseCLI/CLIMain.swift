@@ -6,11 +6,12 @@ enum CLIMain {
     static func run(_ args: [String]) -> Int32 {
         switch args.first {
         case "hook":
-            // `hook [--agent claude|codex|copilot|opencode] [--event NAME]`:
-            // every agent's hooks but Claude Code's say who they are, and
-            // Copilot's name their event, which its payloads do not. With no
-            // flag the hook is Claude Code's. An unknown value or flag is
-            // ignored the same way, since the hook must never fail.
+            // `hook --agent claude|codex|copilot|opencode [--event NAME]`:
+            // every agent's hooks say who they are, and Copilot's name their
+            // event, which its payloads do not. A hook naming no agent is no
+            // agent's: it says so on stderr, writes nothing and still exits
+            // 0, since the hook must never fail. An unknown value or flag is
+            // ignored the same way.
             let flags = HookCommand.Arguments(args)
             // 64 KB chunks, retaining at most the 8 MB cap while still
             // draining stdin to EOF — stopping early could block or break the
@@ -22,6 +23,10 @@ enum CLIMain {
                 if input.count < K.hookStdinMaxBytes {
                     input.append(chunk.prefix(K.hookStdinMaxBytes - input.count))
                 }
+            }
+            guard flags.agent != nil else {
+                FileHandle.standardError.write(Data("usage: mysidepulse hook --agent claude|codex|copilot|opencode [--event NAME]\n".utf8))
+                return 0
             }
             let origin = HookCommand.origin(for: ProcWalk.chain(from: getppid()), agent: flags.agent, input: input)
             return HookCommand.run(input: input, environment: ProcessInfo.processInfo.environment,

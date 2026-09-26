@@ -202,6 +202,16 @@ public enum HookInstaller {
         }
     }
 
+    /// How many of a Claude Code's or Codex's events hold something of ours,
+    /// this bundle's or not, naming the agent or not: what puts the agent's
+    /// line on the Health page and lets Set Up replace what is there. Zero for
+    /// an absent file; nil when it exists and cannot be read.
+    public static func hooksPresent(for agent: AgentKind, file: URL? = nil) -> Int? {
+        guard let file = file ?? files(for: agent)?.file else { return 0 }
+        guard let root = try? SettingsFile.load(at: file) ?? [:] else { return nil }
+        return HookConfig.eventsWithSomethingOfOurs(in: root, agent: agent)
+    }
+
     /// Whether the agent's hooks are set up for this bundle's CLI: every one
     /// of its events, and for Codex every one trusted in its config.toml, or
     /// OpenCode's plugin as this bundle writes it; nil when a file cannot be

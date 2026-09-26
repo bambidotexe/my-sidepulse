@@ -258,6 +258,10 @@ public enum HealthReport {
             if anotherAgentHasSomething { return nil }
         }
         switch hooks {
+        case .missing where facts.hookBinary.map({ !$0.ok }) ?? false:
+            // Something of ours runs a copy of MySidepulse that is gone: Invalid, the command as the tooltip.
+            return HealthRow(id: "claude code hooks", label: label, level: .failure, word: words.invalid,
+                             detail: facts.hookCommand ?? facts.hookBinary?.detail, fix: t.hookCommandFix)
         case .notSetUp, .missing:
             return HealthRow(id: "claude code hooks", label: label, level: HealthRules.grant(held: false, required: true),
                              word: words.disabled, detail: facts.hooksCheck?.detail, fix: system.withoutHooksWarning)

@@ -480,7 +480,7 @@ final class CodexTests: XCTestCase {
         XCTAssertEqual(HookConfig.events(for: .codex), HookConfig.codexEvents)
         XCTAssertEqual(HookConfig.events(for: .claude), HookConfig.events)
         let cli = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse"
-        XCTAssertEqual(HookConfig.command(cliPath: cli, agent: .claude), "\(cli) hook")
+        XCTAssertEqual(HookConfig.command(cliPath: cli, agent: .claude), "\(cli) hook --agent claude")
         XCTAssertEqual(HookConfig.command(cliPath: cli, agent: .codex), "\(cli) hook --agent codex")
         for agent in AgentKind.allCases {
             let command = HookConfig.command(cliPath: cli, agent: agent)

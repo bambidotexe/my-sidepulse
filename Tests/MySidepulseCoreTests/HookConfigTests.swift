@@ -2,7 +2,50 @@ import XCTest
 @testable import MySidepulseCore
 
 final class HookConfigTests: XCTestCase {
-    let cmd = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook"
+    let cmd = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent claude"
+    /// The form every install wrote before the hook had to name its agent: still ours to replace and
+    /// remove, never counted as set up, since such a hook writes nothing now.
+    let bareCmd = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook"
+
+    func testTheClaudeCodeCommandNamesItsAgentAndABareOneIsOursButNotSetUp() {
+        XCTAssertEqual(HookConfig.command(cliPath: "/x/mysidepulse", agent: .claude), "/x/mysidepulse hook --agent claude")
+        XCTAssertTrue(HookConfig.namesItsAgent(cmd, .claude)); XCTAssertFalse(HookConfig.namesItsAgent(bareCmd, .claude))
+        XCTAssertFalse(HookConfig.namesItsAgent(cmd, .codex))
+        XCTAssertTrue(HookConfig.namesItsAgent("/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex", .codex))
+        let old = HookConfig.install(into: fixture, command: bareCmd)
+        XCTAssertEqual(HookConfig.installedCommand(in: old, event: "Stop"), bareCmd, "found: something of ours is there")
+        XCTAssertEqual(HookConfig.eventsWithSomethingOfOurs(in: old, agent: .claude), 15)
+        XCTAssertEqual(HookConfig.eventsWithSomethingOfOurs(in: [:], agent: .claude), 0)
+        let out = HookConfig.install(into: old, command: cmd)
+        XCTAssertEqual(commands(out, "Stop").filter { $0.contains("mysidepulse") }, [cmd], "Set up replaces the bare entry")
+        XCTAssertEqual(commands(HookConfig.uninstall(from: old), "Stop").filter { $0.contains("mysidepulse") }, [], "Remove takes it")
+    }
+
+    func testAReinstallKeepsOurGroupInItsPlace() {
+        // Ours first, then a group the user added after it: a re-install replaces ours where it sits, so the
+        // later group keeps its index (Codex names a hook's trust after it) and nothing of the user's moves.
+        let codexCmd = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"
+        for (agent, command, older) in [(AgentKind.codex, codexCmd, "/old/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"),
+                                        (AgentKind.claude, cmd, "/old/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent claude")] {
+            var root = HookConfig.install(into: [:], command: older, agent: agent)
+            var hooks = root["hooks"] as! [String: Any]
+            var stop = hooks["Stop"] as! [Any]
+            stop.append(["hooks": [["type": "command", "command": "say done"]]])
+            hooks["Stop"] = stop; root["hooks"] = hooks
+            let out = HookConfig.install(into: root, command: command, agent: agent)
+            XCTAssertEqual(commands(out, "Stop"), [command, "say done"], "\(agent): ours replaced at 0, theirs still at 1")
+            XCTAssertEqual(HookConfig.installedGroupIndex(in: out, event: "Stop", command: command), 0)
+            let again = HookConfig.install(into: out, command: command, agent: agent)
+            XCTAssertEqual(commands(again, "Stop"), [command, "say done"], "\(agent): and again")
+        }
+        // A group of ours found twice (an older layout) keeps the first and drops the rest.
+        var root = HookConfig.install(into: [:], command: codexCmd, agent: .codex)
+        var hooks = root["hooks"] as! [String: Any]
+        hooks["Stop"] = (hooks["Stop"] as! [Any]) + [["hooks": [["type": "command", "command": "say done"]]],
+                                                     HookConfig.entry(for: "Stop", command: codexCmd, agent: .codex)]
+        root["hooks"] = hooks
+        XCTAssertEqual(commands(HookConfig.install(into: root, command: codexCmd, agent: .codex), "Stop"), [codexCmd, "say done"])
+    }
 
     /// Shaped like a real settings.json: a hook of the user's own that must
     /// survive untouched. Made up on purpose — the fixture's job is to prove

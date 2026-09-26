@@ -36,25 +36,24 @@ public enum HookCommand {
     /// The entire hook path. Must never block on anything but the single
     /// append, and must always report success to the agent: Copilot denies a
     /// tool whose hook fails, so no form of it, bad input included, exits
-    /// other than 0. `agent` is who fired the hook: the command line's
-    /// `--agent`, which always wins, else Claude Code, whose hooks carry no
-    /// flag because they never needed one. A Copilot payload takes its event from `event` and writes nothing
-    /// for a subagent's session (`CopilotSessionState`, under
-    /// `$COPILOT_HOME` when the environment sets it); an OpenCode payload
-    /// is mapped by `Trim.opencodeEvent`, and an event outside its mapping
-    /// writes nothing.
+    /// other than 0. `agent` is who fired the hook, the command line's
+    /// `--agent`; a hook naming none is no agent's and writes nothing. A
+    /// Copilot payload takes its event from `event` and writes nothing for a
+    /// subagent's session (`CopilotSessionState`, under `$COPILOT_HOME` when
+    /// the environment sets it); an OpenCode payload is mapped by
+    /// `Trim.opencodeEvent`, and an event outside its mapping writes nothing.
     public static func run(input: Data, environment: [String: String],
                            journalURL: URL, now: Date,
                            origin: ProcWalk.Origin?, agent: AgentKind? = nil, event name: String? = nil,
                            home: String = FileManager.default.homeDirectoryForCurrentUser.path,
                            directoryExists: (String) -> Bool = HookCommand.directoryExists) -> Int32 {
         if environment["MYSIDEPULSE_DISABLE"] == "1" { return 0 }
+        guard let speaker = agent else { return 0 }
         // Spec §1: 8 MB cap. A payload past it parses as garbage and becomes
         // a ParseError line, which is the honest record of "too big to trust".
         let payload = input.prefix(K.hookStdinMaxBytes)
-        let speaker = agent ?? .claude
         var event: JournalEvent
-        switch agent {
+        switch speaker {
         case .copilot:
             let trimmed = Trim.copilotEvent(fromHookPayload: payload, named: name, loggedAt: now)
             let root = CopilotSessionState.root(environment: environment, home: home)
@@ -64,7 +63,7 @@ public enum HookCommand {
         case .opencode:
             guard let mapped = Trim.opencodeEvent(fromHookPayload: payload, loggedAt: now) else { return 0 }
             event = mapped
-        case .claude, .codex, nil:
+        case .claude, .codex:
             event = Trim.journalEvent(fromHookPayload: payload, agent: speaker, loggedAt: now)
         }
         event.agent = speaker

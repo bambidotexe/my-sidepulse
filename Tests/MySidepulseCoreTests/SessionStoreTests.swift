@@ -17,6 +17,68 @@ final class SessionStoreTests: XCTestCase {
     func state(_ store: SessionStore, _ sid: String = "s1") -> SessionState? {
         store.sessions[sid]?.state
     }
+    func codex(_ e: JournalEvent) -> JournalEvent { var e = e; e.agent = .codex; return e }
+
+    func testAHelpersWaitKeepsAHeldFinishAndTheHoldEndsIt() {
+        // A Stop with a helper live is held; the helper asks a permission, is answered and stops: the hold
+        // must still end the turn, since OpenCode has no rescue that would.
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0)); s.apply(ev(.subagentStart, 1, agent: "h1"))
+        s.apply(ev(.stop, 2, tail: "Done."))
+        XCTAssertEqual(state(s), .working); XCTAssertTrue(s.sessions["s1"]!.pendingDone)
+        s.apply(ev(.permissionRequest, 3, tool: "Bash", agent: "h1"))
+        XCTAssertEqual(state(s), .waiting(.permission))
+        XCTAssertTrue(s.sessions["s1"]!.pendingDone, "the wait keeps the held finish")
+        s.apply(ev(.postToolUse, 4, tool: "Bash", agent: "h1"))
+        XCTAssertEqual(state(s), .working); XCTAssertTrue(s.sessions["s1"]!.pendingDone, "answered, the hold goes on")
+        s.apply(ev(.subagentStop, 5, agent: "h1"))
+        s.tick(now: at(5 + K.holdGraceSeconds))
+        XCTAssertEqual(state(s), .done, "the hold ends the turn, as it would have without the prompt")
+    }
+
+    func testAHelpersUnansweredWaitFreezesTheHold() {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0)); s.apply(ev(.subagentStart, 1, agent: "h1"))
+        s.apply(ev(.stop, 2, tail: "Done.")); s.apply(ev(.permissionRequest, 3, tool: "Bash", agent: "h1"))
+        XCTAssertEqual(state(s), .waiting(.permission))
+        s.tick(now: at(3 + K.holdTTLSeconds + 1))
+        XCTAssertEqual(state(s), .waiting(.permission), "a prompt still open is not a finish: the hold's clocks run only while working")
+        s.apply(ev(.postToolUse, 4 + K.holdTTLSeconds, tool: "Bash", agent: "h1"))
+        XCTAssertEqual(state(s), .working); XCTAssertTrue(s.sessions["s1"]!.pendingDone, "answered at last, the hold resumes")
+    }
+
+    func testAHelpersLineWithNoTurnIdInsideTheQuarantineChangesNothing() {
+        var s = SessionStore()
+        s.apply(codex(ev(.userPromptSubmit, 0, pid: 300))); s.apply(codex(ev(.subagentStart, 1, agent: "h1", pid: 300)))
+        s.apply(codex(ev(.interrupt, 2, pid: 300))); XCTAssertEqual(state(s), .idle)
+        s.apply(codex(ev(.permissionRequest, 3, tool: "shell", agent: "h1", pid: 300)))
+        XCTAssertEqual(state(s), .idle, "a helper's straggler inside the quarantine")
+        s.apply(codex(ev(.postToolUse, 4, tool: "shell", agent: "h1", pid: 300)))
+        XCTAssertEqual(state(s), .idle)
+        XCTAssertTrue(s.sessions["s1"]!.liveAgents.isEmpty, "set aside, not registered again")
+        XCTAssertEqual(s.sessions["s1"]?.lastEventAt, at(4), "liveness still")
+        // Past the quarantine the same line is what it always was: a helper's wait.
+        s.apply(codex(ev(.permissionRequest, 2 + K.abortQuarantineSeconds + 1, tool: "shell", agent: "h2", pid: 300)))
+        XCTAssertEqual(state(s), .waiting(.permission))
+    }
+
+    func testALineOfAnEndedSessionCreatesNothingUntilAStartOrAPrompt() {
+        var s = SessionStore()
+        s.apply(codex(ev(.userPromptSubmit, 0, pid: 300, turn: "t1")))
+        s.apply(codex(ev(.interrupt, 1, pid: 300, turn: "t1")))
+        s.apply(codex(ev(.sessionEnd, 2, pid: 300))); XCTAssertNil(state(s))
+        s.apply(codex(ev(.postToolUse, 15, tool: "shell", pid: 300, turn: "t1")))
+        XCTAssertNil(state(s), "the late end of the aborted tool conjures no session")
+        s.apply(codex(ev(.stop, 16, pid: 300, turn: "t1"))); XCTAssertNil(state(s))
+        s.apply(codex(ev(.userPromptSubmit, 20, pid: 300, turn: "t2")))
+        XCTAssertEqual(state(s), .working, "a prompt of the same id is a session again")
+        // A start too; and past 120 s any line, as for a session never heard of.
+        s = SessionStore()
+        s.apply(ev(.sessionEnd, 0)); s.apply(ev(.sessionStart, 1, source: "resume")); XCTAssertEqual(state(s), .idle)
+        s = SessionStore()
+        s.apply(ev(.sessionEnd, 0)); s.apply(ev(.postToolUse, K.abortQuarantineSeconds + 1, tool: "Bash"))
+        XCTAssertEqual(state(s), .working)
+    }
 
     func testPlainTurnLifecycle() {
         var s = SessionStore()

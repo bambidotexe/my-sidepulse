@@ -202,6 +202,16 @@ final class CodexHookTrustTests: XCTestCase {
                         "a stranger's inline state is not in the way")
     }
 
+    func testADottedKeyStateUnderTheHeaderIsRefusedLikeAnInlineOne() {
+        // `"<key>".trusted_hash = …` under `[hooks.state]` defines the same table a `[hooks.state."<key>"]`
+        // header would: adding ours beside it would define it twice and Codex would refuse the file.
+        let ours = "[hooks.state]\n\"\(entries[0].key)\".trusted_hash = \"sha256:old\"\n"
+        XCTAssertNil(CodexHookTrust.trusting(ours, entries: entries, ourHashes: hashes))
+        let theirs = "[hooks.state]\n\"/elsewhere/hooks.json:stop:0:0\".trusted_hash = \"sha256:x\"\n"
+        XCTAssertNotNil(CodexHookTrust.trusting(theirs, entries: entries, ourHashes: hashes),
+                        "another program's dotted state is not in the way")
+    }
+
     func testTheScannerReadsQuotesAndCommentsTheWayTOMLDoes() {
         let toml = """
         [hooks.state.'/Users/me/.codex/hooks.json:stop:0:0']   # literal quotes

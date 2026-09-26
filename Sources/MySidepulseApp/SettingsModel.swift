@@ -120,6 +120,9 @@ final class SettingsModel: ObservableObject {
     /// OpenCode's Health lines read `copilotHooksSetUp` and `opencodeState` instead, whose own states
     /// already tell "nothing of ours" apart from "unreadable" and "stale".
     @Published private(set) var claudeHooksInstalledCount: Int?
+    /// Events holding something of ours, this copy's or not, naming the agent or not: what keeps the Claude
+    /// Code line on the Health page while the entries are there and wrong.
+    @Published private(set) var claudeHooksPresentCount: Int?
     @Published private(set) var codexHooksInstalledCount: Int?
     @Published private(set) var copilotHooksInstalledCount: Int?
     /// How many of Codex's events in hooks.json Codex trusts in its config.toml: nil when either file
@@ -168,6 +171,7 @@ final class SettingsModel: ObservableObject {
     func refreshHooks() {
         claudeHooksSetUp = HookInstaller.hooksSetUp(for: .claude)
         claudeHooksInstalledCount = HookInstaller.hooksInstalled(for: .claude)
+        claudeHooksPresentCount = HookInstaller.hooksPresent(for: .claude)
         codexHooksSetUp = HookInstaller.hooksSetUp(for: .codex)
         codexHooksInstalledCount = HookInstaller.hooksInstalled(for: .codex)
         codexHooksTrustedCount = HookInstaller.codexHooksTrusted()
@@ -421,12 +425,15 @@ final class SettingsModel: ObservableObject {
         if hooksRead {
             // A count of nil is a file that cannot be read; zero is nothing of ours there, never set up
             // or removed; anything short of the full count is something of ours but not all of it.
-            func state(count: Int?, setUpCount: Int) -> HealthFacts.HookFile {
+            func state(count: Int?, present: Int? = nil, setUpCount: Int) -> HealthFacts.HookFile {
                 guard let count else { return .unreadable }
-                if count <= 0 { return .notSetUp }
+                // Something of ours that is not this copy's command (another copy's path, or an entry
+                // from before the hook named its agent) is there and wrong, never "not set up".
+                if count <= 0 { return (present ?? 0) > 0 ? .missing : .notSetUp }
                 return count >= setUpCount ? .setUp : .missing
             }
-            facts.claudeHooks = state(count: claudeHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .claude))
+            facts.claudeHooks = state(count: claudeHooksInstalledCount, present: claudeHooksPresentCount,
+                                      setUpCount: HookConfig.setUpCount(for: .claude))
             // Codex's hooks count as set up only while every one is there and trusted in config.toml.
             (facts.codexHooks, facts.codexTrust) = HealthFacts.codex(installed: codexHooksInstalledCount,
                                                                      trusted: codexHooksTrustedCount)

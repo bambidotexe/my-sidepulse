@@ -139,6 +139,11 @@ public struct AckRecord: Equatable {
 /// code path as live events.
 public struct SessionStore {
     public private(set) var sessions: [String: Session] = [:]
+    /// The sessions a `SessionEnd` forgot, by id, for `K.abortQuarantineSeconds`:
+    /// until then only a start or a prompt of that id creates a session
+    /// again, and any other line of it (the late end of a tool the turn had
+    /// aborted, a `Stop` after the exit) conjures nothing.
+    var endedAt: [String: Date] = [:]
     public init() {}
 
     public mutating func apply(_ e: JournalEvent) {
@@ -146,6 +151,7 @@ public struct SessionStore {
         let now = e.loggedAt
         if e.event == .sessionEnd {
             sessions.removeValue(forKey: sid)
+            endedAt[sid] = now
             return
         }
         if e.event == .ack {
@@ -169,6 +175,15 @@ public struct SessionStore {
         // known (an OpenCode subagent that outlived its deleted top
         // session) it would invent an idle one.
         if sessions[sid] == nil, e.agentId != nil, e.event == .subagentStop { return }
+        // Nor does any line of a session just ended but a start or a prompt.
+        if sessions[sid] == nil, let ended = endedAt[sid] {
+            if e.event == .sessionStart || e.event == .userPromptSubmit
+                || now.timeIntervalSince(ended) >= K.abortQuarantineSeconds {
+                endedAt.removeValue(forKey: sid)
+            } else {
+                return
+            }
+        }
         var s = sessions[sid] ?? Session(id: sid, stateSince: now, lastEventAt: now)
         s.lastEventAt = now
         if let agent = e.agent { s.agent = agent }
@@ -199,9 +214,11 @@ public struct SessionStore {
                 s.liveAgents.removeValue(forKey: agentId)
             case .permissionRequest:
                 // The prompt surfaces in the main UI exactly like the main
-                // agent's own, so it raises the same wait.
+                // agent's own, so it raises the same wait. A held finish
+                // stays held through it: only a main-agent event cancels a
+                // hold, and the hold is what ends the turn once the helper
+                // is gone (OpenCode has no rescue that would).
                 s.liveAgents[agentId] = now
-                clearPending(&s)
                 set(&s, .waiting(Self.waitReason(forPermissionTool: e.toolName)), now,
                     fromAgent: true)
             default:
@@ -451,14 +468,18 @@ public struct SessionStore {
     /// reach it.
     private static func changesNothing(_ e: JournalEvent, in s: Session, now: Date) -> Bool {
         let ofAClosedTurn = e.turnId.map { s.closedTurnIds.contains($0) } ?? false
-        if e.agentId != nil { return ofAClosedTurn }
-        switch e.event {
-        case .sessionStart, .userPromptSubmit: return false
-        case .preToolUse:
-            if let id = e.turnId, ofAClosedTurn, !s.interruptedTurnIds.contains(id) { return false }
-        default: break
+        if e.agentId == nil {
+            switch e.event {
+            case .sessionStart, .userPromptSubmit: return false
+            case .preToolUse:
+                if let id = e.turnId, ofAClosedTurn, !s.interruptedTurnIds.contains(id) { return false }
+            default: break
+            }
         }
         if ofAClosedTurn { return true }
+        // The quarantine covers a helper's tool and permission lines too: an
+        // Interrupt ended its helpers, and a straggler of one must not raise
+        // a wait the helper's next line would then answer into `working`.
         guard e.turnId == nil, let interruptedAt = s.interruptedAt,
               now.timeIntervalSince(interruptedAt) < K.abortQuarantineSeconds else { return false }
         switch e.event {
@@ -565,11 +586,15 @@ public struct SessionStore {
     @discardableResult
     public mutating func tick(now: Date, userPresent: Bool = false) -> [Alert] {
         var fired: [Alert] = []
+        endedAt = endedAt.filter { now.timeIntervalSince($0.value) < K.abortQuarantineSeconds }
         for (id, original) in sessions {
             var s = original
             // A helper that simply stops reporting generates no event, so the
             // hold has to be re-examined on the clock, not only on arrival.
-            if s.pendingDone {
+            // The hold's clocks run only while the session works: a wait a
+            // helper raised freezes them until it is answered, since a prompt
+            // still open is not a finish.
+            if s.pendingDone, s.state == .working {
                 updateHoldRelease(&s, now: now)
                 let graceExpired = s.holdReleasedAt.map {
                     now.timeIntervalSince($0) >= K.holdGraceSeconds } ?? false
@@ -594,6 +619,14 @@ public struct SessionStore {
                 if s.acknowledged || Self.alertKind(for: s.state) == nil {
                     // Seen, or no longer an alert: nothing left to announce.
                     s.notifyAt = nil
+                } else if now.timeIntervalSince(due) > K.notifyMaxLatenessSeconds {
+                    // The late-drop, before presence is asked: a deadline
+                    // missed by more than the window means the machine slept
+                    // through it, this is journal replay, or a rescue dated
+                    // the end long ago — announcing an old turn now would be
+                    // noise, and a present-user deferral would only launder
+                    // the lateness into a fresh deadline.
+                    s.notifyAt = nil
                 } else if userPresent {
                     // Deferred, not dropped: the strip is doing the telling
                     // while the user is at the machine. "Seen" is what
@@ -602,12 +635,8 @@ public struct SessionStore {
                     // the user gone, however much later that is.
                     s.notifyAt = now.addingTimeInterval(K.notifyDeferRecheckSeconds)
                 } else {
-                    // The late-drop: a deadline missed by more than the window
-                    // means the machine slept through it or this is journal
-                    // replay — announcing an old turn now would be noise.
                     s.notifyAt = nil
-                    if now.timeIntervalSince(due) <= K.notifyMaxLatenessSeconds,
-                       let kind = Self.alertKind(for: s.state) {
+                    if let kind = Self.alertKind(for: s.state) {
                         fired.append(Alert(sessionId: id, agent: s.agent, kind: kind, at: now))
                     }
                 }

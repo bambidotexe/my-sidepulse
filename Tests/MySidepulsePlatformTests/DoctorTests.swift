@@ -11,7 +11,7 @@ final class DoctorTests: XCTestCase {
                                            loginItem: "enabled") },
             settingsRoot: {
                 HookConfig.install(into: [:],
-                                   command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook")
+                                   command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent claude")
             },
             binaryExists: { _ in true },
             journalWritable: { true },
@@ -22,6 +22,19 @@ final class DoctorTests: XCTestCase {
         let report = Doctor.run(probes())
         XCTAssertEqual(report.failures, 0, report.lines.joined(separator: "\n"))
         XCTAssertTrue(report.lines.allSatisfy { $0.hasPrefix("[OK]") })
+    }
+
+    /// Hooks from before the hook had to name its agent run `mysidepulse hook` alone, which writes nothing
+    /// now: they are ours, and they are wrong, so the check fails and says to set them up again.
+    func testHooksThatNameNoAgentFailAndSaySo() {
+        var p = probes()
+        p.settingsRoot = {
+            HookConfig.install(into: [:], command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook")
+        }
+        let report = Doctor.run(p)
+        let line = report.lines.first { $0.contains("hooks installed") }
+        XCTAssertTrue(line?.hasPrefix("[FAIL]") ?? false, line ?? "no line")
+        XCTAssertTrue(line?.contains("name no agent") ?? false, line ?? "no line")
     }
 
     func testFailuresAreCountedAndNamed() {
@@ -278,7 +291,7 @@ final class DoctorTests: XCTestCase {
         var p = probes()
         p.settingsRoot = {
             var root = HookConfig.install(into: [:],
-                command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook")
+                command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent claude")
             var hooks = root["hooks"] as! [String: Any]
             hooks.removeValue(forKey: "SubagentStart")
             root["hooks"] = hooks

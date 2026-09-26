@@ -57,6 +57,13 @@ public struct DoctorStrings {
         }
     }
 
+    public var hooksNameNoAgent: String {
+        switch language {
+        case .en: "the hooks name no agent, so they write nothing. Run mysidepulse install-hooks"
+        case .fr: "les hooks ne nomment aucun agent, donc n'écrivent rien. Lancez mysidepulse install-hooks"
+        }
+    }
+
     public var hookPointsAtMissingBinary: String {
         switch language {
         case .en: "hook command points at a missing binary. Run mysidepulse install-hooks"

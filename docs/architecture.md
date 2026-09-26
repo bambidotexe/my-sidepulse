@@ -138,7 +138,7 @@ with `wallDeadline`, so time spent asleep counts.
    running job's shell whether it still runs a command (`probeJobs`); when a working session
    is hosted by Codex's managed daemon and its socket exists, ask the daemon
    `thread/loaded/list` and decide each such session missing from the
-   complete list by its rollout (`daemonListed`), at most 1 s later; then
+   complete list by its rollout (`daemonListed`), at most 2 s later; then
    `finishLaunch`: `checkAbandonedTurns` with no quiet gate, arm the process
    watchers, rotate the journal if due, and `sync()`. Until `finishLaunch`,
    `sync()` returns at once (`launching`), so nothing replayed is ticked,
@@ -154,7 +154,7 @@ after it.
 
 | Source | Mechanism | Feeds |
 |---|---|---|
-| Claude Code | 15 hooks → `mysidepulse hook` → one line appended to the journal | `JournalTailer` → `Engine.handle` |
+| Claude Code | 15 hooks → `mysidepulse hook --agent claude` → one line appended to the journal | `JournalTailer` → `Engine.handle` |
 | Codex | 12 hooks → `mysidepulse hook --agent codex` → the same journal, the line saying `codex` | the same |
 | GitHub Copilot | 7 hooks in `~/.copilot/hooks/mysidepulse.json` → `mysidepulse hook --agent copilot --event <name>` → the same journal, the line saying `copilot`; no line for a subagent's session | the same |
 | OpenCode | the plugin `~/.config/opencode/plugins/mysidepulse.js`, inside OpenCode's server → `mysidepulse hook --agent opencode` per forwarded event → the same journal, mapped onto its names, the line saying `opencode` | the same |
@@ -323,8 +323,9 @@ symlink. The launch agent lives at
 
 ## The hook path
 
-`mysidepulse hook` runs inside every agent's turn, so it is built to be
-harmless: it drains stdin to EOF (keeping at most 8 MB), walks its ancestry
+`mysidepulse hook --agent <agent>` runs inside every agent's turn, so it is built to be
+harmless: it drains stdin to EOF (keeping at most 8 MB), and with no agent
+named prints its usage on stderr and exits 0 having written nothing; otherwise it walks its ancestry
 with `sysctl` (no subprocess) for the nearest process of the agent it speaks
 for, its host app and its tab, trims the payload to a bounded `JournalEvent`, appends one line, and
 returns 0 on every path — including unreadable input, which becomes a

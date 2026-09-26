@@ -56,6 +56,22 @@ final class HealthTests: XCTestCase {
         }
     }
 
+    /// Hooks of ours that run a copy of MySidepulse that is gone are Invalid, not merely Disabled, whether
+    /// or not they are this copy's: the doctor's binary check says so, and the command is the tooltip.
+    func testHooksOfOursRunningAGoneCopyAreInvalidEvenWhenNotThisCopys() {
+        withLanguage(.en) {
+            var facts = healthy()
+            facts.claudeHooks = .missing
+            facts.hookBinary = .init(ok: false, detail: "hook command points at a missing binary")
+            facts.hookCommand = "/Volumes/Old/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent claude"
+            let row = check("claude code hooks", facts)
+            XCTAssertEqual(row?.level, .failure)
+            XCTAssertEqual(row?.word, "Invalid")
+            XCTAssertEqual(row?.detail, facts.hookCommand)
+            XCTAssertEqual(row?.fix, Loc.settings.health.hookCommandFix)
+        }
+    }
+
     func testUnreadableClaudeSettingsAreRed() {
         var facts = healthy()
         facts.claudeHooks = .unreadable

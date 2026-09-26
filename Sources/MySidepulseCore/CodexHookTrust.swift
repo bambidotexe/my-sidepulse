@@ -241,7 +241,8 @@ public enum CodexHookTrust {
     }
 
     /// A `state` key under `[hooks]`, or a key of ours under `[hooks.state]`
-    /// written inline: forms Codex would read and this code would duplicate.
+    /// written inline or as a dotted key (`"<key>".trusted_hash = …`): forms
+    /// Codex would read and this code would duplicate.
     static func definesStateOtherwise(_ toml: String, keys: Set<String>) -> Bool {
         for block in blocks(of: toml) {
             if block.isHooksHeader, block.body.contains(where: { keyValue($0)?.0 == "state" }) { return true }
@@ -250,10 +251,27 @@ public enum CodexHookTrust {
                     guard let (name, _) = keyValue(line) else { continue }
                     let key = unquote(name)
                     if keys.contains(key) || keys.contains(where: { key.hasPrefix($0) }) { return true }
+                    if let first = quotedFirstComponent(name), keys.contains(first) { return true }
                 }
             }
         }
         return false
+    }
+
+    /// The quoted first component of a dotted key: `"a:b".c` → `a:b`; nil
+    /// when the name does not start with a quoted component.
+    static func quotedFirstComponent(_ name: String) -> String? {
+        guard let quote = name.first, quote == "\"" || quote == "'" else { return nil }
+        var escaped = false
+        for (offset, ch) in name.dropFirst().enumerated() {
+            if escaped { escaped = false; continue }
+            if ch == "\\", quote == "\"" { escaped = true; continue }
+            if ch == quote {
+                let end = name.index(name.startIndex, offsetBy: offset + 2)
+                return unquote(String(name[..<end]))
+            }
+        }
+        return nil
     }
 
     /// The key of a `[hooks.state."<key>"]` (or `'<key>'`) header, comment and

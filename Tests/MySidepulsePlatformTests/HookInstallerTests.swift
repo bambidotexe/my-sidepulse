@@ -30,7 +30,7 @@ final class HookInstallerTests: XCTestCase {
 
         let outcome = HookInstaller.installClaudeHooks(cliPath: cli, settings: settings, backup: backup)
         XCTAssertTrue(outcome.ok, outcome.message)
-        XCTAssertEqual(outcome.lines.first, "Installed 15 Claude Code hooks -> \(cli) hook")
+        XCTAssertEqual(outcome.lines.first, "Installed 15 Claude Code hooks -> \(cli) hook --agent claude")
         XCTAssertEqual(try String(contentsOf: backup, encoding: .utf8), foreign)
         XCTAssertEqual(HookInstaller.claudeHooksInstalled(cliPath: cli, settings: settings), 15)
 

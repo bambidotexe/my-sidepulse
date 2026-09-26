@@ -169,7 +169,7 @@ Colours, shapes and exact program text are in [device.md](device.md).
 
 ### Source
 
-`mysidepulse install-hooks` subscribes one command — `<bundle>/Contents/MacOS/mysidepulse hook`,
+`mysidepulse install-hooks` subscribes one command — `<bundle>/Contents/MacOS/mysidepulse hook --agent claude`,
 matcher `*`, timeout 5 s — to 15 Claude Code events in
 `~/.claude/settings.json`: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
 `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`,
@@ -232,8 +232,12 @@ path that holds anything else is neither replaced nor deleted, and
 `install-hooks` says so and fails. Every agent but Claude Code is set up only
 when it is on this Mac; `install-hooks` says which were not, and
 `uninstall-hooks` removes every agent's hooks, on the Mac or not. The
-`--agent` flag is how a journal line says who fired the hook, and it always
-wins; a hook without it is Claude Code's, whose hooks carry no flag, and
+`--agent` flag is how a journal line says who fired the hook, and every hook
+carries it: a `mysidepulse hook` naming no agent is no agent's, prints its
+usage on stderr, writes nothing and still exits 0. An entry of that older
+form in `~/.claude/settings.json` is still MySidepulse's (the Health page and
+`doctor` say the hooks are there and name no agent, Set Up Hooks replaces it
+in place, Remove takes it) and never counts as set up. Claude Code's hook
 records the nearest Claude Code process its ancestry shows, never an agent of
 another kind.
 
@@ -352,8 +356,12 @@ whose events then count again. A main-agent `PreToolUse` reopens a turn a
 verdict closed, and counts, since a new tool call is never the straggler of
 an aborted tool and Claude Code carries one `prompt_id` across consecutive
 turns; a turn an `Interrupt` closed is reopened by a prompt only. For `K.abortQuarantineSeconds` (120 s) after an
-`Interrupt`, and until a prompt, a tool or permission event without a turn id
-changes nothing either. A line without a turn id otherwise follows the rules
+`Interrupt`, and until a prompt, a tool or permission event without a turn id,
+the main agent's or a subagent's, changes nothing either (a subagent's
+`SubagentStop` still marks it gone). A `SessionEnd` forgets the session and
+remembers its id for the same 120 s: until then only a start or a prompt of
+that id makes a session again, and any other line of it (the late end of a
+tool the turn had aborted, a `Stop` after the exit) makes none. A line without a turn id otherwise follows the rules
 above.
 
 A turn that ends in prose is **finished**, questions included: "Want me to
@@ -378,6 +386,11 @@ left out), the strip stays on `working` and the finish is *held*:
 - a subagent that reports nothing for `K.agentStaleSeconds` (240 s) stops
   counting as live;
 - a hold never outlasts `K.holdTTLSeconds` (30 min) without an event;
+- a permission prompt a subagent raises pauses the hold: the session waits,
+  the finish stays held, and both clocks run again once the subagent acts
+  (the hold's clocks run only while the session is `working`), so a turn
+  whose subagent asked a question before it ended still ends when the
+  subagent is gone;
 - any new main-agent event cancels the hold.
 
 `waiting` is never held.
@@ -524,8 +537,8 @@ nothing running and is decided by its rollout at once, dark when the rollout
 says nothing, while a partial list or no answer decides nothing; then every
 working Claude Code, Codex or Copilot session, and every Copilot session
 waiting on a permission or a question, is checked at once, with no quiet
-gate, before the strip is painted. The paint waits for the daemon's answer, 1 s at
-most.
+gate, before the strip is painted. The paint waits for the daemon's answer, 2 s at
+most (the client answers within 1 s; the second bounds the launch should it not).
 
 | Situation | Signal | Result | Latency |
 |---|---|---|---|
