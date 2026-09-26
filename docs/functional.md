@@ -1414,7 +1414,7 @@ started perfectly well, so it leaves the mark that says so (`result.read`) and
 leaves the outcome itself for the copy launchd starts, which is the one that
 opens the window saying how the install ended.
 
-**Environment:** `MYSIDEPULSE_DISABLE=1` makes `hook` do nothing.
+**Environment:** `MYSIDEPULSE_DISABLE=1` makes `hook` do nothing, and `job` and `run` write no line (`run` still runs its command).
 `MYSIDEPULSE_SKIP` and `MYSIDEPULSE_SHOW_AFTER` tune the zsh hooks.
 `MYSIDEPULSE_REPLAY_JOURNAL` names a journal for `RealJournalReplayTests`.
 

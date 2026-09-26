@@ -6,17 +6,21 @@ import MySidepulsePlatform
 /// the app, so an app that is down, wedged or older never delays or fails
 /// the user's command, and a restart replays the line. No begin is written
 /// for a process with an agent on its chain (`JobJournal.begin`); true when
-/// one was.
+/// one was. `MYSIDEPULSE_DISABLE=1` silences both, as it silences the hook.
 enum JobReport {
+    static var disabled: Bool { ProcessInfo.processInfo.environment["MYSIDEPULSE_DISABLE"] == "1" }
+
     @discardableResult
     static func begin(id: String, pid: Int32, slotPid: Int32, label: String?, showAfter: Double) -> Bool {
-        JobJournal.begin(JobLine.begin(id: id, pid: pid, slotPid: slotPid, label: label,
+        guard !disabled else { return false }
+        return JobJournal.begin(JobLine.begin(id: id, pid: pid, slotPid: slotPid, label: label,
                                        showAfterSeconds: showAfter,
                                        hostBundleId: ProcWalk.callerHostBundleId(), loggedAt: Date()),
                          chain: ProcWalk.chain(from: pid), to: Paths.journal)
     }
 
     static func end(id: String, exitCode: Int32) {
+        guard !disabled else { return }
         JobJournal.append(JobLine.end(id: id, exitCode: exitCode, loggedAt: Date()), to: Paths.journal)
     }
 }
