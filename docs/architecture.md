@@ -341,10 +341,12 @@ and prompts never reach the journal.
 
 Each agent's payload has its own trim in Core. Claude Code's and Codex's name
 their event (`Trim.journalEvent`), and only the agent's own events pass
-(`HookConfig.events(for:)`, in Claude Code's spelling or Codex's snake case):
-any other name, the app's own line names included, is a `ParseError` line. Copilot's camelCase payloads do not, so
-the entry passes `--event` (`Trim.copilotEvent`); an event outside the seven
-subscribed is a `ParseError` that keeps its name and none of the body. The
+(`HookConfig.events(for:)`, in the spelling both send, `SessionStart`):
+any other name, a snake-case spelling and the app's own line names included, is a `ParseError` line. Copilot's camelCase payloads do not, so
+the entry passes `--event` and that argument alone is the event
+(`Trim.copilotEvent`), in Copilot's own spelling; no flag, another spelling,
+or an event outside the seven subscribed is a `ParseError` that keeps the
+name and none of the body. The
 hook then drops a Copilot line whose session has no folder under Copilot's
 session state, `$COPILOT_HOME/session-state` when the hook's environment sets
 `COPILOT_HOME`, else `~/.copilot/session-state` (a subagent's own prompt and

@@ -149,7 +149,9 @@ final class CopilotTests: XCTestCase {
     }
 
     /// An event the file does not name is a `ParseError`, and keeps its name,
-    /// never its body. No flag: the payload's own name, when it has one.
+    /// never its body. The event is the hook's argument and nothing else: no
+    /// flag, a PascalCase name or the payload's own `hook_event_name` is no
+    /// Copilot event.
     func testAnUnknownEventIsAParseErrorThatKeepsNoBody() {
         let unknown = line("preToolUse", ["sessionId": "c1", "toolArgs": ["command": "SECRET"]])
         XCTAssertEqual(unknown.event, .parseError)
@@ -157,7 +159,12 @@ final class CopilotTests: XCTestCase {
         XCTAssertFalse(unknown.rawPrefix?.contains("SECRET") ?? false)
         XCTAssertEqual(line(nil, ["sessionId": "c1", "prompt": "SECRET"]).event, .parseError)
         XCTAssertEqual(line(nil, ["sessionId": "c1", "hook_event_name": "Notification",
-                                  "notification_type": "elicitation_dialog"]).event, .notification)
+                                  "notification_type": "elicitation_dialog"]).event, .parseError,
+                       "the payload's own name is not the hook's argument")
+        for pascal in ["SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure",
+                       "Notification", "Stop", "SessionEnd"] {
+            XCTAssertEqual(line(pascal, ["sessionId": "c1"]).event, .parseError, pascal)
+        }
         let garbage = Trim.copilotEvent(fromHookPayload: Data("{oops".utf8), named: "agentStop", loggedAt: t0)
         XCTAssertEqual(garbage.event, .parseError)
     }

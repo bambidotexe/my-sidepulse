@@ -10,9 +10,10 @@ public enum Trim {
     /// Bodies are dropped here so the journal stays small and appends stay
     /// atomic. The hook says which agent sent it (`agent`), never the
     /// payload, and only that agent's own events pass
-    /// (`HookConfig.events(for:)`: Claude Code's 15, Codex's 12), in either
-    /// spelling (`eventName`): any other name, the app's own line names
-    /// included, is a `ParseError` that keeps the payload's first bytes and
+    /// (`HookConfig.events(for:)`: Claude Code's 15, Codex's 12), in the
+    /// spelling both send, Claude Code's (`SessionStart`): any other name, a
+    /// snake-case spelling and the app's own line names included, is a
+    /// `ParseError` that keeps the payload's first bytes and
     /// none of its fields, so a payload cannot forge another agent's
     /// `Interrupt` or a verdict. Copilot's and OpenCode's payloads have
     /// their own trims (`copilotEvent`, `opencodeEvent`), and here are a
@@ -23,7 +24,7 @@ public enum Trim {
         guard agent == .claude || agent == .codex,
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let name = obj["hook_event_name"] as? String,
-              let event = eventName(name), HookConfig.events(for: agent).contains(event.rawValue)
+              let event = HookEventName(rawValue: name), HookConfig.events(for: agent).contains(event.rawValue)
         else {
             var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
             e.agent = agent
@@ -61,16 +62,16 @@ public enum Trim {
         return e
     }
 
-    /// A GitHub Copilot payload. Its event comes from the hook's `--event`,
-    /// one of `HookConfig.copilotEvents`, since a camelCase payload names
-    /// none; without the flag, the payload's own `hook_event_name`, which a
-    /// `notification` and the PascalCase shape carry. The body is camelCase
-    /// (`sessionId`, `toolName`, `transcriptPath`), but for
-    /// `notification_type`; the snake-case spellings are taken too. Copilot
-    /// names no turn. An event outside the seven is a `ParseError` that keeps
-    /// the name it was given and none of the body, whose prompt or tool
-    /// input a `preToolUse` or a `userPromptTransformed` would carry. Which
-    /// sessions are subagents' is `CopilotSessionState`'s to say.
+    /// A GitHub Copilot payload. Its event is the hook's `--event` and
+    /// nothing else, one of `HookConfig.copilotEvents` in Copilot's own
+    /// spelling, since a camelCase payload names none: no flag, another
+    /// spelling or the payload's own `hook_event_name` is no Copilot event.
+    /// The body is camelCase (`sessionId`, `toolName`, `transcriptPath`), but
+    /// for `notification_type`; the snake-case field names are taken too.
+    /// Copilot names no turn. An event outside the seven is a `ParseError`
+    /// that keeps the name it was given and none of the body, whose prompt or
+    /// tool input a `preToolUse` or a `userPromptTransformed` would carry.
+    /// Which sessions are subagents' is `CopilotSessionState`'s to say.
     public static func copilotEvent(fromHookPayload data: Data, named name: String?, loggedAt: Date) -> JournalEvent {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
@@ -78,11 +79,10 @@ public enum Trim {
             e.rawPrefix = String(decoding: data.prefix(300), as: UTF8.self)
             return e
         }
-        let given = name ?? obj["hook_event_name"] as? String
-        guard let given, let event = copilotEventNames[given] else {
+        guard let name, let event = copilotEventNames[name] else {
             var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
             e.agent = .copilot
-            e.rawPrefix = given.map { "copilot event: " + String($0.prefix(64)) }
+            e.rawPrefix = name.map { "copilot event: " + String($0.prefix(64)) }
             return e
         }
         var e = JournalEvent(loggedAt: loggedAt, event: event)
@@ -100,16 +100,16 @@ public enum Trim {
         return e
     }
 
-    /// Copilot's seven subscribed events, and the PascalCase aliases it
-    /// accepts for them, onto the journal's names.
+    /// Copilot's seven subscribed events, in its own spelling, onto the
+    /// journal's names.
     static let copilotEventNames: [String: HookEventName] = [
-        "sessionStart": .sessionStart, "SessionStart": .sessionStart,
-        "userPromptSubmitted": .userPromptSubmit, "UserPromptSubmit": .userPromptSubmit,
-        "postToolUse": .postToolUse, "PostToolUse": .postToolUse,
-        "postToolUseFailure": .postToolUseFailure, "PostToolUseFailure": .postToolUseFailure,
-        "notification": .notification, "Notification": .notification,
-        "agentStop": .stop, "Stop": .stop,
-        "sessionEnd": .sessionEnd, "SessionEnd": .sessionEnd,
+        "sessionStart": .sessionStart,
+        "userPromptSubmitted": .userPromptSubmit,
+        "postToolUse": .postToolUse,
+        "postToolUseFailure": .postToolUseFailure,
+        "notification": .notification,
+        "agentStop": .stop,
+        "sessionEnd": .sessionEnd,
     ]
 
     /// An OpenCode payload, which MySidepulse's plugin writes: OpenCode's own
@@ -184,16 +184,6 @@ public enum Trim {
               let value = obj["opencode_pid"] as? Int,
               let pid = Int32(exactly: value), pid > 1 else { return nil }
         return pid
-    }
-
-    /// The event names are Claude Code's spellings, which Codex shares. Codex
-    /// spells the same names in snake case in its own configuration, so that
-    /// spelling is taken too, in case a payload ever carries it. Whether the
-    /// name is one of the agent's own is `journalEvent`'s to say.
-    static func eventName(_ raw: String) -> HookEventName? {
-        if let event = HookEventName(rawValue: raw) { return event }
-        let pascal = raw.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
-        return HookEventName(rawValue: pascal)
     }
 
     static func clamp(_ value: Any?) -> String? {
