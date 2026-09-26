@@ -7,8 +7,9 @@ import MySidepulseCore
 /// a unix socket; each call opens it, upgrades it, sends `initialize`,
 /// `initialized` and the one read, and closes it. Nothing else is ever sent
 /// (`CodexDaemonRPC.methods`). The protocol is undocumented and versioned,
-/// so every call fails closed: a refusal, a timeout or an answer of any
-/// other shape completes with nil, and the rollout decides. The I/O runs on
+/// so every call fails closed: a refusal, a timeout, a record of a thread
+/// other than the one asked about, or an answer of any other shape
+/// completes with nil, and the rollout decides. The I/O runs on
 /// a utility queue, non-blocking, never past `deadlineSeconds` from the
 /// call, and every completion runs on the main queue.
 public enum CodexDaemonClient {
@@ -23,7 +24,8 @@ public enum CodexDaemonClient {
 
     public static func readThread(id: String, socket: URL = Paths.codexControlSocket,
                                   completion: @escaping (CodexThreadRecord?) -> Void) {
-        call(CodexDaemonRPC.threadRead(threadId: id), socket: socket, read: CodexThreadRecord.parse, completion: completion)
+        call(CodexDaemonRPC.threadRead(threadId: id), socket: socket,
+             read: { CodexThreadRecord.parse($0, expecting: id) }, completion: completion)
     }
 
     public static func loadedThreadIds(socket: URL = Paths.codexControlSocket,

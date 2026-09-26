@@ -196,6 +196,15 @@ final class CodexDaemonClientTests: XCTestCase {
         XCTAssertNil(read(daemon.link).record)
     }
 
+    /// The thread asked about is the one the answer must name: a record of
+    /// another thread is nil, and the rollout decides.
+    func testAnAnswerAboutAnotherThreadIsNil() throws {
+        let other = Self.notLoaded.replacingOccurrences(of: #""id":"t1""#, with: #""id":"t2""#)
+        let daemon = try FakeCodexDaemon(.answers(other, pingFirst: false))
+        defer { daemon.stop() }
+        XCTAssertNil(read(daemon.link).record)
+    }
+
     func testAServerThatNeverAnswersIsNilWithinTheDeadline() throws {
         let daemon = try FakeCodexDaemon(.silent)
         defer { daemon.stop() }

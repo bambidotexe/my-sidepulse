@@ -1,10 +1,10 @@
 import Foundation
 
 /// What Codex's daemon answers `thread/read` about one thread: its status
-/// now, when it last changed and its rollout file. Only
-/// `result.thread.status.type`, `updatedAt` and `path` are read; the rest of
-/// the thread (its preview, its name, its working directory) is never kept,
-/// returned or logged.
+/// now, when it last changed and its rollout file. Only `result.thread.id`,
+/// `status.type`, `updatedAt` and `path` are read; the rest of the thread
+/// (its preview, its name, its working directory) is never kept, returned or
+/// logged.
 public struct CodexThreadRecord: Equatable {
     public var status: String
     public var updatedAt: Date?
@@ -38,11 +38,12 @@ public struct CodexThreadRecord: Equatable {
         }
     }
 
-    /// The record in a `thread/read` answer, or nil for a refusal or any
-    /// other shape.
-    public static func parse(_ data: Data) -> CodexThreadRecord? {
+    /// The record in a `thread/read` answer about `threadId`, or nil for a
+    /// refusal, any other shape, or a record that does not name that thread:
+    /// a record of another thread says nothing about the one asked about.
+    public static func parse(_ data: Data, expecting threadId: String) -> CodexThreadRecord? {
         guard let result = CodexDaemonRPC.result(of: data),
-              let thread = result["thread"] as? [String: Any],
+              let thread = result["thread"] as? [String: Any], thread["id"] as? String == threadId,
               let status = (thread["status"] as? [String: Any])?["type"] as? String else { return nil }
         return CodexThreadRecord(status: status, updatedAt: stamp(thread["updatedAt"]),
                                  rolloutPath: thread["path"] as? String)

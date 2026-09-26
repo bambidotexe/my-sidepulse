@@ -485,8 +485,9 @@ desktop-app thread in the app's own `codex`, and the daemon would call either
 one not loaded while it works, so those keep the rollout alone. When nothing
 runs, the rollout tells how the turn ended: a `task_complete` that ends it is
 the lost `Stop` (`done`, with its push); a `turn_aborted`, or no end of this
-turn at all, is dark, with no push. Any other status decides nothing, and the
-rollout decides that session for the next `K.abandonRecheckSeconds`. Every
+turn at all, is dark, with no push. Any other status, or an answer about a
+thread other than the one asked about, decides nothing, and the rollout
+decides that session for the next `K.abandonRecheckSeconds`. Every
 question has 1 s to be answered, and an answer that arrives after a
 main-agent hook moved the session is dropped.
 

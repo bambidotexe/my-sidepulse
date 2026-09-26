@@ -5,46 +5,66 @@ import MySidepulseCore
 /// (`result.thread.status.type`, `path`, `updatedAt` in Unix seconds;
 /// `result.data`, `nextCursor`); ids, paths and stamps are made up.
 final class CodexThreadRecordTests: XCTestCase {
+    let thread = "019a0000-0000-7000-8000-000000000001"
+
     func answer(status: String, extra: String = "") -> Data {
         Data(#"{"id":2,"result":{"thread":{"id":"019a0000-0000-7000-8000-000000000001","status":{"type":"\#(status)"\#(extra)},"path":"/Users/someone/.codex/sessions/2026/09/25/rollout-2026-09-25T21-20-43-019a0000-0000-7000-8000-000000000001.jsonl","createdAt":1790000000,"updatedAt":1790000100,"cwd":"/tmp","turns":[]}}}"#.utf8)
     }
 
     func testNotLoadedMeansNothingRuns() {
-        let record = CodexThreadRecord.parse(answer(status: "notLoaded"))
+        let record = CodexThreadRecord.parse(answer(status: "notLoaded"), expecting: thread)
         XCTAssertEqual(record?.status, "notLoaded")
         XCTAssertEqual(record?.verdict(), .over)
-        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "idle"))?.verdict(), .over,
+        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "idle"), expecting: thread)?.verdict(), .over,
                        "a loaded thread with no turn has nothing running either")
     }
 
     func testAnActiveThreadIsBusy() {
-        let record = CodexThreadRecord.parse(answer(status: "active", extra: #","activeFlags":["waitingOnApproval"]"#))
+        let record = CodexThreadRecord.parse(answer(status: "active", extra: #","activeFlags":["waitingOnApproval"]"#),
+                                             expecting: thread)
         XCTAssertEqual(record?.status, "active")
         XCTAssertEqual(record?.verdict(), .busy)
     }
 
     func testAnUnknownStatusDecidesNothing() {
-        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "systemError"))?.verdict(), .undecided)
-        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "Active"))?.verdict(), .undecided, "the vocabulary is exact")
-        XCTAssertNil(CodexThreadRecord.parse(Data(#"{"id":2,"error":{"code":-32600,"message":"no such thread"}}"#.utf8)),
+        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "systemError"), expecting: thread)?.verdict(), .undecided)
+        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "Active"), expecting: thread)?.verdict(), .undecided, "the vocabulary is exact")
+        XCTAssertNil(CodexThreadRecord.parse(Data(#"{"id":2,"error":{"code":-32600,"message":"no such thread"}}"#.utf8),
+                                             expecting: thread),
                      "a refusal is no record")
-        XCTAssertNil(CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"status":"idle"}}}"#.utf8)),
+        XCTAssertNil(CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"id":"019a0000-0000-7000-8000-000000000001","status":"idle"}}}"#.utf8),
+                                             expecting: thread),
                      "a status of another shape is no record")
-        XCTAssertNil(CodexThreadRecord.parse(Data("{\"id\":2,\"result\":{\"thr".utf8)), "a cut answer is no record")
+        XCTAssertNil(CodexThreadRecord.parse(Data("{\"id\":2,\"result\":{\"thr".utf8), expecting: thread),
+                     "a cut answer is no record")
     }
 
     func testTheRecordCarriesTheRolloutPath() {
-        let record = CodexThreadRecord.parse(answer(status: "notLoaded"))
+        let record = CodexThreadRecord.parse(answer(status: "notLoaded"), expecting: thread)
         XCTAssertEqual(record?.rolloutPath,
                        "/Users/someone/.codex/sessions/2026/09/25/rollout-2026-09-25T21-20-43-019a0000-0000-7000-8000-000000000001.jsonl")
         XCTAssertEqual(record?.updatedAt, Date(timeIntervalSince1970: 1_790_000_100), "Unix seconds, as the daemon sends them")
-        let iso = CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"status":{"type":"idle"},"updatedAt":"2026-09-25T19:20:43.962Z"}}}"#.utf8))
+        let iso = CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"id":"019a0000-0000-7000-8000-000000000001","status":{"type":"idle"},"updatedAt":"2026-09-25T19:20:43.962Z"}}}"#.utf8),
+                                            expecting: thread)
         XCTAssertEqual(iso?.updatedAt, JournalCodec.date(from: "2026-09-25T19:20:43.962Z"), "an ISO 8601 stamp reads too")
         XCTAssertNil(iso?.rolloutPath)
-        let millis = CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"status":{"type":"idle"},"updatedAt":1790000100500}}}"#.utf8))
+        let millis = CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"id":"019a0000-0000-7000-8000-000000000001","status":{"type":"idle"},"updatedAt":1790000100500}}}"#.utf8),
+                                            expecting: thread)
         XCTAssertEqual(millis?.updatedAt, Date(timeIntervalSince1970: 1_790_000_100.5), "milliseconds are told from seconds")
-        let flag = CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"status":{"type":"idle"},"updatedAt":true}}}"#.utf8))
+        let flag = CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"id":"019a0000-0000-7000-8000-000000000001","status":{"type":"idle"},"updatedAt":true}}}"#.utf8),
+                                            expecting: thread)
         XCTAssertNil(flag?.updatedAt, "a boolean is no stamp")
+    }
+
+    /// The record must name the thread asked about: an answer about
+    /// another thread, or one that names none, says nothing about it.
+    func testAnAnswerAboutAnotherThreadIsRefused() {
+        XCTAssertNil(CodexThreadRecord.parse(answer(status: "notLoaded"), expecting: "019a0000-0000-7000-8000-000000000002"),
+                     "a record of another thread says nothing about the one asked about")
+        XCTAssertNil(CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"status":{"type":"notLoaded"}}}}"#.utf8), expecting: thread),
+                     "a record that names no thread is refused too")
+        XCTAssertNil(CodexThreadRecord.parse(Data(#"{"id":2,"result":{"thread":{"id":7,"status":{"type":"idle"}}}}"#.utf8), expecting: "7"))
+        XCTAssertEqual(CodexThreadRecord.parse(answer(status: "notLoaded"), expecting: thread)?.verdict(), .over)
     }
 
     func testTheLoadedListNamesTheThreads() {
