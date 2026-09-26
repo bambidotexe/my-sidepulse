@@ -53,15 +53,21 @@ struct StripPreviewView: View {
         if case .split(let alert, let work) = state {
             return splitAppearance(alert: alert, work: work, dot: index, at: t)
         }
-        if case .working(let agents) = state, let t {
-            // The device program's own timeline: one pass per colour, each
-            // the single roll's cycle, so a shared roll changes colour at
-            // every pass exactly as the strip does.
-            let colors = palette.rollColors(agents)
-            let cycle = rollCycle
-            let raw = (t / cycle).rounded(.down)
-            let pass = Int(raw) % colors.count
-            return (screen(colors[(pass + colors.count) % colors.count]), intensity(dot: index, at: t))
+        if case .working(let agents) = state {
+            // The device program's own passes (`LedProgram.rollPasses`), each
+            // the single roll's cycle: a roll two agents share changes colour
+            // at every pass, and one three or four share gives each LED an
+            // agent's colour in turn, exactly as the strip does. A still frame
+            // shows the first pass.
+            let passes = LedProgram.rollPasses(palette.rollColors(agents), ledCount: max(2, min(8, ledCount)))
+            var pass = 0
+            if let t {
+                let raw = Int((t / rollCycle).rounded(.down)) % passes.count
+                pass = (raw + passes.count) % passes.count
+            }
+            let leds = passes[pass]
+            let level = t.map { intensity(dot: index, at: $0) } ?? staticIntensity(dot: index)
+            return (screen(leds[index % leds.count]), level)
         }
         let level = t.map { intensity(dot: index, at: $0) } ?? staticIntensity(dot: index)
         return (solidColor, level)
@@ -76,9 +82,8 @@ struct StripPreviewView: View {
     }
 
     /// The one colour of a state that paints the whole strip in one colour,
-    /// the battery bar's being the one its charge picks. A roll shared by
-    /// both agents has two, one per pass, which `appearance` picks by the
-    /// pass under way; this is its first, for a still frame.
+    /// the battery bar's being the one its charge picks. A roll is painted
+    /// per dot by `appearance`, from its passes; this is its first colour.
     private var solidColor: Color {
         switch state {
         case .working(let agents): return screen(palette.rollColors(agents)[0])
@@ -107,8 +112,8 @@ struct StripPreviewView: View {
         let count = max(2, ledCount)
         let zone = LedProgram.splitZone(alert: alert, ledCount: count)
         let rest = count - zone
-        // Under a zone a shared roll alternates its colour by LED, as the
-        // device program does (`LedProgram.splitProgram`).
+        // Under a zone a roll several agents share alternates its colour by
+        // LED, as the device program does (`LedProgram.splitProgram`).
         let workColors: [Color]
         switch work {
         case .working(let agents): workColors = palette.rollColors(agents).map(screen)

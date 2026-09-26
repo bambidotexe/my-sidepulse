@@ -2,11 +2,12 @@ import XCTest
 @testable import MySidepulseCore
 
 final class PaletteTests: XCTestCase {
-    /// Nine colours no default uses, one per slot, so a program that paints
+    /// Eleven colours no default uses, one per slot, so a program that paints
     /// a slot's colour can only have taken it from that slot. Bright enough
     /// that the battery bar's dimmed partial LED cannot land on another one.
     private let custom = LedPalette(
-        working: "#c10000", codexWorking: "#c90000", needsYou: "#00c200", done: "#0000c3",
+        working: "#c10000", codexWorking: "#c90000", copilotWorking: "#00caca",
+        opencodeWorking: "#cc00cc", needsYou: "#00c200", done: "#0000c3",
         jobRunning: "#c4c400", batteryCritical: "#00c5c5", batteryLow: "#c600c6",
         batteryMid: "#c7c7c7", batteryHigh: "#c8c8c8")
 
@@ -20,6 +21,8 @@ final class PaletteTests: XCTestCase {
         let standard = LedPalette.standard
         XCTAssertEqual(standard[.working], K.claudeWorking)
         XCTAssertEqual(standard[.codexWorking], K.codexWorking)
+        XCTAssertEqual(standard[.copilotWorking], K.copilotWorking)
+        XCTAssertEqual(standard[.opencodeWorking], K.opencodeWorking)
         XCTAssertEqual(standard[.needsYou], K.askAmber)
         XCTAssertEqual(standard[.done], K.doneGreen)
         XCTAssertEqual(standard[.jobRunning], K.jobRunning)
@@ -31,9 +34,32 @@ final class PaletteTests: XCTestCase {
 
     func testTheSlotKeysAreTheOnesConfigJsonHolds() {
         XCTAssertEqual(LedPalette.Slot.allCases.map(\.rawValue),
-                       ["working", "codexWorking", "needsYou", "done", "jobRunning", "batteryCritical",
-                        "batteryLow", "batteryMid", "batteryHigh"],
+                       ["working", "codexWorking", "copilotWorking", "opencodeWorking", "needsYou", "done",
+                        "jobRunning", "batteryCritical", "batteryLow", "batteryMid", "batteryHigh"],
                        "a renamed key orphans every saved colour")
+    }
+
+    /// The owner's colours for the two agents that joined Claude and Codex.
+    func testCopilotAndOpenCodeWorkInTheOwnersColours() {
+        XCTAssertEqual(K.copilotWorking, "#0e5cff")
+        XCTAssertEqual(K.opencodeWorking, "#ff0043")
+        XCTAssertEqual(LedPalette.Slot.copilotWorking.preview.state, .working(.copilot))
+        XCTAssertEqual(LedPalette.Slot.opencodeWorking.preview.state, .working(.opencode))
+    }
+
+    /// Each agent rolls in its own slot, and a shared roll lists the colours
+    /// in the agents' order, Claude's first, whatever the palette holds.
+    func testEachAgentRollsInItsOwnSlot() {
+        XCTAssertEqual(custom.working(.claude), custom.working)
+        XCTAssertEqual(custom.working(.codex), custom.codexWorking)
+        XCTAssertEqual(custom.working(.copilot), custom.copilotWorking)
+        XCTAssertEqual(custom.working(.opencode), custom.opencodeWorking)
+        XCTAssertEqual(custom.rollColors(.all),
+                       [custom.working, custom.codexWorking, custom.copilotWorking, custom.opencodeWorking])
+        XCTAssertEqual(custom.rollColors([.opencode, .copilot]), [custom.copilotWorking, custom.opencodeWorking])
+        XCTAssertEqual(custom.rollColors([]), [custom.working], "never empty")
+        let palette = LedPalette.standard.applying(overrides: ["copilotWorking": "#123456", "opencodeWorking": "#654321"])
+        XCTAssertEqual(palette.rollColors(.all), [K.claudeWorking, K.codexWorking, "#123456", "#654321"])
     }
 
     func testAnOverrideReplacesOnlyItsOwnSlot() {

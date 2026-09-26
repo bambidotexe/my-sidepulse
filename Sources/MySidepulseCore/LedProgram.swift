@@ -9,15 +9,16 @@ public enum SplitAlert: Equatable {
 }
 
 /// What plays on the rest of the strip under a split alert. A roll names the
-/// agents it rolls for: one colour, or both in turn.
+/// agents it rolls for: one colour, or several, one per LED in turn.
 public enum SplitWork: Equatable {
     case working(Agents), jobRunning
 }
 
 public enum DisplayState: Equatable {
     case off
-    /// The roll: Claude's colour, Codex's, or both. With both, the wave takes
-    /// one colour on one pass and the other on the next.
+    /// The roll, in the colour of each agent it names. Two agents take one
+    /// colour on one pass and the other's on the next; three or four take
+    /// one colour per LED in turn, on one pass.
     case working(Agents)
     case waiting(Agents)
     case done(Agents)
@@ -109,24 +110,38 @@ public enum LedProgram {
                 "off \(K.askBlinkPauseMs)ms", "repeat"].joined(separator: "\n")
     }
 
-    /// The roll: a dark fade, then one staggered pulse per LED, looped. With
-    /// two colours the loop holds one pass per colour, each opening with the
-    /// same fade, so the wave keeps its rhythm and changes colour at every
-    /// pass. Two passes of eight LEDs are 496 bytes, inside the strip's 512.
+    /// The roll: a dark fade, then one staggered pulse per LED, looped, in
+    /// the passes `rollPasses` lays out. With two colours the loop holds one
+    /// pass per colour, each opening with the same fade, so the wave keeps
+    /// its rhythm and changes colour at every pass: two passes of eight LEDs
+    /// are 496 bytes, inside the strip's 512. With three or four, one pass
+    /// whose LEDs take the colours in turn, 251 bytes: three passes would be
+    /// 741.
     static func rolling(colors: [String], ledCount: Int) -> String {
         let count = max(2, min(8, ledCount))
         let stagger = count == 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs
-        let passes = colors.map { color in
-            let segments = (0..<count)
-                .map { "\($0):\(color) \(K.rollingPulseMs)ms pulse \($0 * stagger)ms" }
+        let passes = rollPasses(colors, ledCount: count).map { leds in
+            let segments = leds.indices
+                .map { "\($0):\(leds[$0]) \(K.rollingPulseMs)ms pulse \($0 * stagger)ms" }
                 .joined(separator: "; ")
             return "off \(K.rollingFadeMs)ms cosine\n\(segments)"
         }
         return (passes + ["repeat"]).joined(separator: "\n")
     }
 
+    /// The colour of each of `count` LEDs on each pass of a roll in `colors`:
+    /// for one or two colours one pass per colour, the whole strip in it;
+    /// for three or more one pass, LED i in colour i mod n. Public because
+    /// the settings replica draws the roll from the same rule.
+    public static func rollPasses(_ colors: [String], ledCount count: Int) -> [[String]] {
+        guard colors.count > 2 else {
+            return colors.map { color in Array(repeating: color, count: count) }
+        }
+        return [(0..<count).map { colors[$0 % colors.count] }]
+    }
+
     /// Whether a change of state is the full-strip roll changing colour:
-    /// Claude's roll becoming the shared one, or the reverse. The wave then
+    /// the agents rolling changing, one joining or one leaving. The wave then
     /// carries on from where it is and takes the new colours at its next
     /// pass (`Engine.paint`), instead of restarting from its first line.
     public static func rollRecolour(from: DisplayState, to: DisplayState) -> Bool {
@@ -183,7 +198,7 @@ public enum LedProgram {
     }
 
     /// The alert zone on the left, the working roll on the rest, in the
-    /// work's colour or, for a roll both agents share, alternating by LED —
+    /// work's colour or, for a roll several agents share, alternating by LED —
     /// built entirely from shapes this strip has PROVEN:
     ///
     /// - a per-LED pulse returns to its PRE-pulse value, not to black, so
@@ -211,10 +226,10 @@ public enum LedProgram {
         let count = max(2, min(8, ledCount))
         let zone = splitZone(alert: alert, ledCount: count)
         let rest = count - zone
-        // A roll shared by both agents cannot alternate its colour by pass
+        // A roll several agents share cannot alternate its colour by pass
         // here: two passes of blink lines and roll lines are over 700 bytes
-        // on eight LEDs, and the strip takes 512. Under a zone the shared
-        // roll alternates its colour by LED instead.
+        // on eight LEDs, and the strip takes 512. Under a zone a shared roll
+        // of any number of agents alternates its colour by LED instead.
         let workColors: [String]
         switch work {
         case .working(let agents): workColors = palette.rollColors(agents)

@@ -1095,16 +1095,16 @@ final class Engine {
                 // Claude's session record says whether the session is an
                 // agent of its own (a background, daemon or teammate
                 // session lights the strip but must not ring a phone) and
-                // carries the claude.ai link. Codex has neither: its push
-                // lands on Codex's web app.
+                // carries the claude.ai link. The other agents have neither:
+                // a push lands on the agent's own page.
                 let click: String
                 switch alert.agent {
                 case .claude:
                     let record = ClaudeSessions.find(sessionId: alert.sessionId, in: Paths.claudeSessions)
                     if ClaudeSessions.isSilent(record) { continue }
                     click = ClaudeSessions.link(for: record)
-                case .codex:
-                    click = AgentKind.codex.homeLink
+                case .codex, .copilot, .opencode:
+                    click = alert.agent.homeLink
                 }
                 let tag = AlertCopy.tag(for: alert.kind)
                 guard let request = Notifier.request(

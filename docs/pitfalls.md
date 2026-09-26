@@ -204,10 +204,10 @@ rejected by eye within minutes of a build whose tests were green.
 - **Instead.** Frames of per-LED assignments, each crossfading into the next, with no dark line.
 
 ### Two passes of the shared roll fit the strip; two passes under a zone do not
-- **Symptom.** A roll both agents share that alternates its colour by pass on the whole strip and by LED under an alert zone.
+- **Symptom.** A roll two agents share that alternates its colour by pass on the whole strip and by LED under an alert zone; a roll three or four share that alternates by LED everywhere.
 - **Why.** The device takes 512 bytes. Two passes of the roll are 496 bytes on 8 LEDs; add the split's baseline and its two blink lines per pass and the program is over 700 bytes, with no token to drop: the delays and durations are the shape the strip has proven.
 - **Instead.** `LedProgram.rolling(colors:)` writes one pass per colour on the whole strip; `splitProgram` gives each roll LED a colour in turn.
-- **Rule.** Count bytes before adding a pass. A third agent would not fit as passes on the whole strip either (three passes are over 700 bytes): it would alternate by LED everywhere.
+- **Rule.** Count bytes before adding a pass. Three or four agents do not fit as passes on the whole strip either (three passes are 741 bytes): their roll is one pass, each LED in one agent's colour in turn (`LedProgram.rollPasses`), and on the Dot's two LEDs only the first two agents' colours show.
 
 ### A tail of the shared roll ends at the pass, not the loop, when the bridge would not fit
 - **Symptom.** After a brightness press during Claude's pass of the shared roll, Claude's colour twice in a row, once.
@@ -551,5 +551,5 @@ Known, bounded, and left alone.
 - **A Codex run under a `CODEX_HOME` other than `~/.codex`** has its rollout refused, since only `~/.codex/sessions/` is trusted, so its quiet turns decide nothing and a lost end costs the 2 h backstop.
 - **A Codex turn that wrote more than 64 KB since its `task_started`** has no marker in the tail the app reads (53 of 744 gaps between markers on 2026-09-25), so a quiet check decides nothing for it until its end marker is written; its 2 h backstop counts from its last hook event meanwhile.
 - **Whether Codex fires `PreToolUse` for `request_user_input` is unobserved**, so a Codex question may show nothing until the turn ends. A permission request has its own event and shows amber.
-- **The shared roll's programs and tails have not been seen on the strip**: the two-pass loop, the by-LED split, the pass-end handover and the recolour tail are pinned by text and by the sweeps, and judged by nobody's eye yet.
+- **The shared roll's programs and tails have not been seen on the strip**: the two-pass loop, the one-pass roll of three or four agents, the by-LED split, the pass-end handover and the recolour tail are pinned by text and by the sweeps, and judged by nobody's eye yet. Neither have Copilot's `#0e5cff` and OpenCode's `#ff0043`: whether they read apart from Codex's `#0a00ff` and Claude's `#ff374a` on the strip is unseen.
 - **Codex sessions hosted by the ChatGPT app** are acknowledged at app level: the app is their host and they hold no tab. The app-server daemon's sessions have no host at all and acknowledge on any input.

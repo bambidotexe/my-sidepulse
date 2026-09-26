@@ -127,6 +127,40 @@ final class CodexPlatformTests: XCTestCase {
         XCTAssertNil(none.agent)
     }
 
+    /// Copilot and OpenCode are known by their process names: `copilot`,
+    /// and `opencode`, `opencode-cli` or `.opencode`.
+    func testTheWalkKnowsCopilotAndOpenCodeByName() {
+        let copilot = [
+            proc(600, 500, "mysidepulse", nil),
+            proc(500, 400, "copilot", "/Users/u/Library/Caches/github-copilot-sdk/cli/1.0.88/copilot"),
+            proc(400, 1, "github", "/Applications/GitHub Copilot.app/Contents/MacOS/github"),
+        ]
+        XCTAssertEqual(ProcWalk.classify(copilot).agent, .copilot)
+        XCTAssertEqual(ProcWalk.classify(copilot).agentPid, 500)
+        for name in ["opencode", "opencode-cli", ".opencode"] {
+            let server = [proc(700, 650, "mysidepulse", nil), proc(650, 1, name, nil)]
+            XCTAssertEqual(ProcWalk.classify(server).agent, .opencode, name)
+            XCTAssertEqual(ProcWalk.classify(server).agentPid, 650, name)
+        }
+        let claudeUnderCopilot = [
+            proc(600, 500, "claude", "/Users/u/.local/bin/claude"),
+            proc(500, 1, "copilot", "/Users/u/.local/bin/copilot"),
+        ]
+        XCTAssertEqual(ProcWalk.classify(claudeUnderCopilot).agent, .claude, "the nearest agent wins")
+        XCTAssertNil(ProcWalk.classify([proc(600, 1, "opencodex", nil)]).agent, "a name, not a prefix")
+    }
+
+    /// Copilot's and OpenCode's hooks are set up nowhere yet: counting them
+    /// reads no file and finds none, and removing them touches nothing.
+    func testNoFileIsReadOrWrittenForCopilotOrOpenCode() {
+        for agent in [AgentKind.copilot, .opencode] {
+            XCTAssertNil(HookInstaller.files(for: agent), "\(agent)")
+            XCTAssertEqual(HookInstaller.hooksInstalled(for: agent, cliPath: cli), 0, "\(agent)")
+            XCTAssertTrue(HookInstaller.removeHooks(for: agent).ok, "\(agent)")
+            XCTAssertFalse(HookInstaller.installHooks(for: agent, cliPath: cli).ok, "\(agent)")
+        }
+    }
+
     // MARK: the hook
 
     func tempJournal() -> URL {

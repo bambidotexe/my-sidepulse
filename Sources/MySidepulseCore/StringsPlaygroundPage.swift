@@ -1,7 +1,7 @@
 import Foundation
 
-/// The Playground page: the strip replica, the nine state cards, the six
-/// effect tiles.
+/// The Playground page: the strip replica, the state cards, the six effect
+/// tiles.
 ///
 /// Every number in these sentences is a parameter, never a literal, so the
 /// sentence cannot drift from the constant that owns it.
@@ -149,18 +149,47 @@ public struct PlaygroundPageStrings {
         }
     }
 
-    public var titleBothWorking: String {
+    public var titleCopilotWorking: String {
         switch language {
-        case .en: "Claude and Codex working"
-        case .fr: "Claude et Codex au travail"
+        case .en: "Copilot working"
+        case .fr: "Copilot au travail"
         }
     }
 
-    public var subtitleBothWorking: String {
+    public var subtitleCopilotWorking: String {
         switch language {
-        case .en: "One pass in Claude's colour, the next in Codex's, while both work."
-        case .fr: "Un passage dans la couleur de Claude, le suivant dans celle de Codex, "
-            + "pendant que les deux travaillent."
+        case .en: "Rolls in Copilot's colour while a Copilot turn runs."
+        case .fr: "Défile dans la couleur de Copilot pendant qu'un tour de Copilot s'exécute."
+        }
+    }
+
+    public var titleOpenCodeWorking: String {
+        switch language {
+        case .en: "OpenCode working"
+        case .fr: "OpenCode au travail"
+        }
+    }
+
+    public var subtitleOpenCodeWorking: String {
+        switch language {
+        case .en: "Rolls in OpenCode's colour while an OpenCode turn runs."
+        case .fr: "Défile dans la couleur d'OpenCode pendant qu'un tour d'OpenCode s'exécute."
+        }
+    }
+
+    public var titleAllWorking: String {
+        switch language {
+        case .en: "All agents working"
+        case .fr: "Tous les agents au travail"
+        }
+    }
+
+    public var subtitleAllWorking: String {
+        switch language {
+        case .en: "While all four work, the LEDs take the colours of Claude, Codex, "
+            + "Copilot and OpenCode in turn."
+        case .fr: "Pendant que les quatre travaillent, les LED prennent tour à tour les "
+            + "couleurs de Claude, Codex, Copilot et OpenCode."
         }
     }
 

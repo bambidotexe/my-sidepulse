@@ -27,7 +27,7 @@ final class CodexTests: XCTestCase {
     /// opening with the roll's own fade so the rhythm never changes. Two
     /// passes of eight LEDs are 496 bytes, inside the strip's 512.
     func testASharedRollAlternatesItsColourAtEveryPass() {
-        let program = p(.working(.both))
+        let program = p(.working(.claudeAndCodex))
         XCTAssertEqual(program, """
         off 160ms cosine
         0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 95ms; 2:#ff374a 760ms pulse 190ms; 3:#ff374a 760ms pulse 285ms; 4:#ff374a 760ms pulse 380ms; 5:#ff374a 760ms pulse 475ms; 6:#ff374a 760ms pulse 570ms; 7:#ff374a 760ms pulse 665ms
@@ -36,7 +36,7 @@ final class CodexTests: XCTestCase {
         repeat
         """)
         XCTAssertEqual(program.utf8.count, 496)
-        XCTAssertEqual(p(.working(.both), leds: 2), """
+        XCTAssertEqual(p(.working(.claudeAndCodex), leds: 2), """
         off 160ms cosine
         0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 260ms
         off 160ms cosine
@@ -50,13 +50,13 @@ final class CodexTests: XCTestCase {
     /// and roll lines are over 700 bytes), so the shared roll alternates its
     /// colour by LED instead, Claude's first.
     func testASharedRollUnderAZoneAlternatesByLed() {
-        XCTAssertEqual(p(.split(alert: .waiting(.claude), work: .working(.both))), """
+        XCTAssertEqual(p(.split(alert: .waiting(.claude), work: .working(.claudeAndCodex))), """
         0:#000000 160ms; 1:#000000 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
         0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
         0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#0a00ff 760ms pulse 95ms; 5:#ff374a 760ms pulse 190ms; 6:#0a00ff 760ms pulse 285ms; 7:#ff374a 760ms pulse 380ms
         repeat
         """)
-        XCTAssertEqual(p(.split(alert: .done(.codex), work: .working(.both))), """
+        XCTAssertEqual(p(.split(alert: .done(.codex), work: .working(.claudeAndCodex))), """
         0:#00ff37 160ms; 1:#00ff37 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
         2:#ff374a 760ms pulse 0ms; 3:#0a00ff 760ms pulse 95ms; 4:#ff374a 760ms pulse 190ms; 5:#0a00ff 760ms pulse 285ms; 6:#ff374a 760ms pulse 380ms; 7:#0a00ff 760ms pulse 475ms
         repeat
@@ -69,16 +69,16 @@ final class CodexTests: XCTestCase {
     func testAlertsLookTheSameWhoeverRaisedThem() {
         XCTAssertEqual(p(.waiting(.codex)), p(.waiting(.claude)))
         XCTAssertEqual(p(.done(.codex)), p(.done(.claude)))
-        XCTAssertEqual(p(.waiting(.both)), p(.waiting(.claude)))
+        XCTAssertEqual(p(.waiting(.claudeAndCodex)), p(.waiting(.claude)))
         XCTAssertEqual(p(.split(alert: .done(.codex), work: .working(.claude))),
                        p(.split(alert: .done(.claude), work: .working(.claude))))
     }
 
     func testTheSharedRollIsInsideTheDeviceLimitsAndReadsBack() {
-        let states: [DisplayState] = [.working(.codex), .working(.both),
-                                      .split(alert: .waiting(.both), work: .working(.both)),
-                                      .split(alert: .done(.both), work: .working(.both)),
-                                      .split(alert: .jobFailed, work: .working(.both))]
+        let states: [DisplayState] = [.working(.codex), .working(.claudeAndCodex),
+                                      .split(alert: .waiting(.claudeAndCodex), work: .working(.claudeAndCodex)),
+                                      .split(alert: .done(.claudeAndCodex), work: .working(.claudeAndCodex)),
+                                      .split(alert: .jobFailed, work: .working(.claudeAndCodex))]
         for state in states {
             for leds in [2, 8] {
                 let program = p(state, leds: leds, brightness: 200)
@@ -95,16 +95,16 @@ final class CodexTests: XCTestCase {
     /// The full-strip roll changing colour carries on; anything else is a
     /// new animation.
     func testWhichChangesRecolourTheRoll() {
-        XCTAssertTrue(LedProgram.rollRecolour(from: .working(.claude), to: .working(.both)))
-        XCTAssertTrue(LedProgram.rollRecolour(from: .working(.both), to: .working(.codex)))
+        XCTAssertTrue(LedProgram.rollRecolour(from: .working(.claude), to: .working(.claudeAndCodex)))
+        XCTAssertTrue(LedProgram.rollRecolour(from: .working(.claudeAndCodex), to: .working(.codex)))
         XCTAssertFalse(LedProgram.rollRecolour(from: .working(.claude), to: .working(.claude)))
         XCTAssertFalse(LedProgram.rollRecolour(from: .working(.claude), to: .jobRunning))
         XCTAssertFalse(LedProgram.rollRecolour(from: .split(alert: .done(.claude), work: .working(.claude)),
-                                               to: .split(alert: .done(.claude), work: .working(.both))))
-        XCTAssertNil(LedProgram.rollHandover(from: .working(.claude), to: .working(.both), ledCount: 8),
+                                               to: .split(alert: .done(.claude), work: .working(.claudeAndCodex))))
+        XCTAssertNil(LedProgram.rollHandover(from: .working(.claude), to: .working(.claudeAndCodex), ledCount: 8),
                      "a recolour is not a zone change")
-        XCTAssertNotNil(LedProgram.rollHandover(from: .working(.both),
-                                                to: .split(alert: .waiting(.codex), work: .working(.both)),
+        XCTAssertNotNil(LedProgram.rollHandover(from: .working(.claudeAndCodex),
+                                                to: .split(alert: .waiting(.codex), work: .working(.claudeAndCodex)),
                                                 ledCount: 8), "the shared roll carries on under a zone")
     }
 
@@ -114,7 +114,7 @@ final class CodexTests: XCTestCase {
     /// the pass boundary instead, where every LED is dark, and the loop
     /// starts there.
     func testASharedRollTailKeepsItsBridgeByEndingAtThePass() {
-        let loop = p(.working(.both))
+        let loop = p(.working(.claudeAndCodex))
         let whole = LedContinuation.tail(of: loop, elapsedMs: 500, brightness: 128)!
         XCTAssertTrue(whole.unscaled.hasPrefix("0:#ff374a 60ms; 1:#ff374a 60ms; 2:#000000 60ms; 3:#000000 60ms\n"),
                       "the bridge is kept: \(whole.unscaled)")
@@ -135,9 +135,9 @@ final class CodexTests: XCTestCase {
     /// roll finishes its pass, and the split's own program takes over at
     /// the pass boundary. Inside 512 bytes at every phase.
     func testAZoneOverTheSharedRollHandsOverAtThePass() {
-        let from = DisplayState.working(.both)
-        for to in [DisplayState.split(alert: .waiting(.claude), work: .working(.both)),
-                   .split(alert: .done(.codex), work: .working(.both))] {
+        let from = DisplayState.working(.claudeAndCodex)
+        for to in [DisplayState.split(alert: .waiting(.claude), work: .working(.claudeAndCodex)),
+                   .split(alert: .done(.codex), work: .working(.claudeAndCodex))] {
             let roll = LedProgram.rollHandover(from: from, to: to, ledCount: 8)!
             let loopMs = LedContinuation.loopMs(of: p(from))!
             for phase in stride(from: 0, to: loopMs, by: 5) {
@@ -154,7 +154,7 @@ final class CodexTests: XCTestCase {
             }
         }
         let midRed = LedContinuation.transition(
-            from: p(from), to: p(.split(alert: .done(.claude), work: .working(.both))), elapsedMs: 500,
+            from: p(from), to: p(.split(alert: .done(.claude), work: .working(.claudeAndCodex))), elapsedMs: 500,
             ledCount: 8, zoneBefore: 0, zoneAfter: 2, opening: .steady(K.doneGreen), brightness: 255)!
         XCTAssertEqual(midRed.lengthMs, 1585 - 500, "ends where the red pass ends")
         XCTAssertFalse(midRed.program.contains("#0a00ff"))
@@ -165,7 +165,7 @@ final class CodexTests: XCTestCase {
     func testCodexHasItsOwnSlotAndTheAlertsStaySharedColours() {
         XCTAssertEqual(LedPalette.standard.rollColors(.claude), [K.claudeWorking])
         XCTAssertEqual(LedPalette.standard.rollColors(.codex), [K.codexWorking])
-        XCTAssertEqual(LedPalette.standard.rollColors(.both), [K.claudeWorking, K.codexWorking])
+        XCTAssertEqual(LedPalette.standard.rollColors(.claudeAndCodex), [K.claudeWorking, K.codexWorking])
         XCTAssertEqual(LedPalette.standard.rollColors([]), [K.claudeWorking], "never empty")
         let palette = LedPalette.standard.applying(overrides: ["codexWorking": "#123456"])
         XCTAssertTrue(p(.working(.codex)).contains(K.codexWorking))
@@ -189,10 +189,10 @@ final class CodexTests: XCTestCase {
 
     func testTheArbiterNamesTheAgentsBehindEveryState() {
         XCTAssertEqual(decide([session("c", .codex, .working)]), .working(.codex))
-        XCTAssertEqual(decide([session("a", .claude, .working), session("c", .codex, .working)]), .working(.both))
+        XCTAssertEqual(decide([session("a", .claude, .working), session("c", .codex, .working)]), .working(.claudeAndCodex))
         XCTAssertEqual(decide([session("c", .codex, .waiting(.permission))]), .waiting(.codex))
         XCTAssertEqual(decide([session("c", .codex, .done)]), .done(.codex))
-        XCTAssertEqual(decide([session("a", .claude, .done), session("c", .codex, .done)]), .done(.both))
+        XCTAssertEqual(decide([session("a", .claude, .done), session("c", .codex, .done)]), .done(.claudeAndCodex))
         XCTAssertEqual(decide([session("a", .claude, .waiting(.question)), session("c", .codex, .working)]),
                        .split(alert: .waiting(.claude), work: .working(.codex)),
                        "Claude needs you while Codex works: the owner's example")
@@ -200,7 +200,7 @@ final class CodexTests: XCTestCase {
                        .split(alert: .done(.codex), work: .working(.claude)))
         XCTAssertEqual(decide([session("a", .claude, .working), session("b", .claude, .done),
                                session("c", .codex, .working)]),
-                       .split(alert: .done(.claude), work: .working(.both)))
+                       .split(alert: .done(.claude), work: .working(.claudeAndCodex)))
         XCTAssertEqual(decide([session("c", .codex, .done, acked: true)]), .off)
         XCTAssertEqual(decide([session("c", .codex, .working)], jobs: [failedJob()]),
                        .split(alert: .jobFailed, work: .working(.codex)))
@@ -496,14 +496,14 @@ final class CodexTests: XCTestCase {
     func testTheSentencesNameTheAgents() {
         withLanguage(.en) {
             XCTAssertEqual(StatusCopy.line(for: .working(.codex)).text, "Codex is working")
-            XCTAssertEqual(StatusCopy.line(for: .working(.both)).text, "Claude and Codex are working")
+            XCTAssertEqual(StatusCopy.line(for: .working(.claudeAndCodex)).text, "Claude and Codex are working")
             XCTAssertEqual(StatusCopy.line(for: .waiting(.codex)).text,
                            "Codex needs you: a question, a permission or a plan")
-            XCTAssertEqual(StatusCopy.line(for: .waiting(.both)).text,
+            XCTAssertEqual(StatusCopy.line(for: .waiting(.claudeAndCodex)).text,
                            "Claude and Codex need you: a question, a permission or a plan")
             XCTAssertEqual(StatusCopy.line(for: .done(.codex)).text,
                            "Codex has finished. Clears when you look at the terminal")
-            XCTAssertEqual(StatusCopy.line(for: .done(.both)).text,
+            XCTAssertEqual(StatusCopy.line(for: .done(.claudeAndCodex)).text,
                            "Claude and Codex have finished. Clears when you look at the terminal")
             XCTAssertEqual(StatusCopy.line(for: .split(alert: .waiting(.claude), work: .working(.codex))).text,
                            "Claude needs you, and other work is still running")
@@ -512,15 +512,15 @@ final class CodexTests: XCTestCase {
         }
         withLanguage(.fr) {
             XCTAssertEqual(StatusCopy.line(for: .working(.codex)).text, "Codex travaille")
-            XCTAssertEqual(StatusCopy.line(for: .working(.both)).text, "Claude et Codex travaillent")
-            XCTAssertEqual(StatusCopy.line(for: .waiting(.both)).text,
+            XCTAssertEqual(StatusCopy.line(for: .working(.claudeAndCodex)).text, "Claude et Codex travaillent")
+            XCTAssertEqual(StatusCopy.line(for: .waiting(.claudeAndCodex)).text,
                            "Claude et Codex ont besoin de vous : une question, une permission ou un plan")
             XCTAssertEqual(StatusCopy.line(for: .done(.codex)).text,
                            "Codex a terminé. S'efface quand vous regardez le terminal")
-            XCTAssertEqual(StatusCopy.line(for: .done(.both)).text,
+            XCTAssertEqual(StatusCopy.line(for: .done(.claudeAndCodex)).text,
                            "Claude et Codex ont terminé. S'efface quand vous regardez le terminal")
         }
-        XCTAssertEqual(StatusCopy.line(for: .working(.both)).tone, .info)
+        XCTAssertEqual(StatusCopy.line(for: .working(.claudeAndCodex)).tone, .info)
         XCTAssertEqual(StatusCopy.line(for: .waiting(.codex)).tone, .warning)
     }
 
@@ -602,7 +602,45 @@ final class CodexTests: XCTestCase {
         withLanguage(.fr) {
             XCTAssertEqual(AlertCopy.title(for: .codex), "Codex", "a product name is not translated")
         }
-        XCTAssertEqual(Agents.both.kinds, [.claude, .codex])
+        XCTAssertEqual(Agents.claudeAndCodex.kinds, [.claude, .codex])
         XCTAssertEqual(Agents(.codex).kinds, [.codex])
+    }
+
+    // MARK: every agent
+
+    /// Four agents, in one order everywhere: Claude, Codex, Copilot,
+    /// OpenCode. The raw values are what the journal records and what
+    /// `hook --agent` takes.
+    func testTheFourAgentsInTheirOrder() {
+        XCTAssertEqual(AgentKind.allCases, [.claude, .codex, .copilot, .opencode])
+        XCTAssertEqual(AgentKind.allCases.map(\.rawValue), ["claude", "codex", "copilot", "opencode"])
+        XCTAssertEqual(AgentKind.allCases.map(\.productName), ["Claude Code", "Codex", "GitHub Copilot", "OpenCode"])
+        XCTAssertEqual(AgentKind.allCases.map(\.shortName), ["Claude", "Codex", "Copilot", "OpenCode"])
+        XCTAssertEqual(Agents.all.kinds, AgentKind.allCases, "every agent, in order")
+        XCTAssertEqual(Agents([.opencode, .claude, .copilot]).kinds, [.claude, .copilot, .opencode],
+                       "a set lists its agents in the fixed order, whatever order it was built in")
+        for kind in AgentKind.allCases {
+            XCTAssertEqual(Agents(kind).kinds, [kind])
+        }
+        XCTAssertEqual(Set(AgentKind.allCases.map { Agents($0).rawValue }).count, 4, "one bit each")
+    }
+
+    /// Copilot subscribes seven camelCase events, never the two whose failure
+    /// denies a tool; its command names the event, since its payloads do not.
+    /// OpenCode subscribes none: it runs a plugin, which runs the command.
+    func testCopilotsEventsAndEachAgentsCommand() {
+        XCTAssertEqual(HookConfig.events(for: .copilot), [
+            "sessionStart", "userPromptSubmitted", "postToolUse", "postToolUseFailure",
+            "notification", "agentStop", "sessionEnd",
+        ])
+        XCTAssertFalse(HookConfig.copilotEvents.contains("preToolUse"))
+        XCTAssertFalse(HookConfig.copilotEvents.contains("permissionRequest"))
+        XCTAssertEqual(HookConfig.events(for: .opencode), [])
+        let cli = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse"
+        XCTAssertEqual(HookConfig.command(cliPath: cli, agent: .copilot, event: "agentStop"),
+                       "\(cli) hook --agent copilot --event agentStop")
+        XCTAssertEqual(HookConfig.command(cliPath: cli, agent: .opencode), "\(cli) hook --agent opencode")
+        XCTAssertEqual(HookConfig.command(cliPath: cli, agent: .codex, event: "Stop"), "\(cli) hook --agent codex",
+                       "only Copilot's command names the event")
     }
 }

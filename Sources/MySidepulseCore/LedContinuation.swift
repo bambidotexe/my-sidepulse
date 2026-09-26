@@ -306,7 +306,7 @@ public enum LedContinuation {
         if !fromDark, let bridge = bridgeLine(parsed, at: phase), parsed.loopMs - phase > bridge.ms {
             let whole = rest(of: parsed, from: phase + bridge.ms, reset: bridge.reset).lines
             // The whole rest of the loop; or, on a loop of several passes
-            // (the roll both agents share) when that does not fit, the
+            // (the roll two agents share) when that does not fit, the
             // current pass alone: a pass ends dark, so the loop can start
             // there, and the bridge is worth more than the pass order.
             for after in [whole, currentPass(whole)] where !after.isEmpty {
@@ -539,7 +539,7 @@ public enum LedContinuation {
         var lines: [Line]
         var lengths: [Int]
         var openMs = K.rollingFadeMs
-        // A roll of several passes (the one both agents share) carries on to
+        // A roll of several passes (the one two agents share) carries on to
         // the end of the pass under way, where every LED is dark, and the
         // split's own program takes over there: with its zone lines, the
         // whole rest would not fit in the strip's 512 bytes.

@@ -27,6 +27,107 @@ final class ProgramTests: XCTestCase {
         """)
     }
 
+    /// Three agents at work: one pass, each LED in one agent's colour in
+    /// turn, Claude's first. Three passes of eight LEDs would be about 740
+    /// bytes, and the strip takes 512; one pass is the single roll's size.
+    func testThreeAgentsRollOnePassByLed() {
+        let program = p(.working(.claudeCodexCopilot))
+        XCTAssertEqual(program, """
+        off 160ms cosine
+        0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 95ms; 2:#0e5cff 760ms pulse 190ms; 3:#ff374a 760ms pulse 285ms; 4:#0a00ff 760ms pulse 380ms; 5:#0e5cff 760ms pulse 475ms; 6:#ff374a 760ms pulse 570ms; 7:#0a00ff 760ms pulse 665ms
+        repeat
+        """)
+        XCTAssertEqual(program.utf8.count, p(.working).utf8.count, "the single roll's size: 251 bytes")
+        XCTAssertEqual(program.utf8.count, 251)
+        XCTAssertEqual(program.split(separator: "\n").count, 3)
+        XCTAssertEqual(LedContinuation.loopMs(of: program), 160 + 665 + 760, "the single roll's loop")
+        XCTAssertEqual(p(.working(.claudeCodexCopilot), leds: 2), """
+        off 160ms cosine
+        0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+        repeat
+        """, "on the Dot's two LEDs, the first two agents' colours")
+        XCTAssertEqual(p(.working([.codex, .copilot, .opencode])), """
+        off 160ms cosine
+        0:#0a00ff 760ms pulse 0ms; 1:#0e5cff 760ms pulse 95ms; 2:#ff0043 760ms pulse 190ms; 3:#0a00ff 760ms pulse 285ms; 4:#0e5cff 760ms pulse 380ms; 5:#ff0043 760ms pulse 475ms; 6:#0a00ff 760ms pulse 570ms; 7:#0e5cff 760ms pulse 665ms
+        repeat
+        """, "whichever three, in the agents' order")
+    }
+
+    /// Four agents at work: the same one pass, LED i in agent i mod 4's
+    /// colour.
+    func testFourAgentsRollOnePassByLed() {
+        let program = p(.working(.all))
+        XCTAssertEqual(program, """
+        off 160ms cosine
+        0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 95ms; 2:#0e5cff 760ms pulse 190ms; 3:#ff0043 760ms pulse 285ms; 4:#ff374a 760ms pulse 380ms; 5:#0a00ff 760ms pulse 475ms; 6:#0e5cff 760ms pulse 570ms; 7:#ff0043 760ms pulse 665ms
+        repeat
+        """)
+        XCTAssertEqual(program.utf8.count, 251)
+        XCTAssertEqual(program.split(separator: "\n").count, 3)
+        XCTAssertEqual(p(.working(.all), leds: 2), """
+        off 160ms cosine
+        0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+        repeat
+        """)
+        XCTAssertEqual(p(.working(.all), brightness: 128), """
+        off 160ms cosine
+        0:#801c25 760ms pulse 0ms; 1:#050080 760ms pulse 95ms; 2:#072e80 760ms pulse 190ms; 3:#800022 760ms pulse 285ms; 4:#801c25 760ms pulse 380ms; 5:#050080 760ms pulse 475ms; 6:#072e80 760ms pulse 570ms; 7:#800022 760ms pulse 665ms
+        repeat
+        """, "each colour scaled on the way out, like every program")
+    }
+
+    /// Copilot and OpenCode alone roll in their own colours, the single
+    /// roll's shape; with one other agent they share the two-pass roll.
+    func testCopilotAndOpenCodeRollInTheirOwnColours() {
+        XCTAssertEqual(p(.working(.copilot)), p(.working).replacingOccurrences(of: K.claudeWorking, with: "#0e5cff"))
+        XCTAssertEqual(p(.working(.opencode), leds: 2), """
+        off 160ms cosine
+        0:#ff0043 760ms pulse 0ms; 1:#ff0043 760ms pulse 260ms
+        repeat
+        """)
+        XCTAssertEqual(p(.working([.copilot, .opencode])), """
+        off 160ms cosine
+        0:#0e5cff 760ms pulse 0ms; 1:#0e5cff 760ms pulse 95ms; 2:#0e5cff 760ms pulse 190ms; 3:#0e5cff 760ms pulse 285ms; 4:#0e5cff 760ms pulse 380ms; 5:#0e5cff 760ms pulse 475ms; 6:#0e5cff 760ms pulse 570ms; 7:#0e5cff 760ms pulse 665ms
+        off 160ms cosine
+        0:#ff0043 760ms pulse 0ms; 1:#ff0043 760ms pulse 95ms; 2:#ff0043 760ms pulse 190ms; 3:#ff0043 760ms pulse 285ms; 4:#ff0043 760ms pulse 380ms; 5:#ff0043 760ms pulse 475ms; 6:#ff0043 760ms pulse 570ms; 7:#ff0043 760ms pulse 665ms
+        repeat
+        """)
+    }
+
+    /// The passes a roll plays, as the preview draws them: one per colour for
+    /// one or two colours, one by LED for three or more.
+    func testRollPassesAreTheProgramsOwn() {
+        XCTAssertEqual(LedProgram.rollPasses(["#aaaaaa"], ledCount: 2), [["#aaaaaa", "#aaaaaa"]])
+        XCTAssertEqual(LedProgram.rollPasses(["#aaaaaa", "#bbbbbb"], ledCount: 2),
+                       [["#aaaaaa", "#aaaaaa"], ["#bbbbbb", "#bbbbbb"]])
+        XCTAssertEqual(LedProgram.rollPasses(["#aaaaaa", "#bbbbbb", "#cccccc"], ledCount: 4),
+                       [["#aaaaaa", "#bbbbbb", "#cccccc", "#aaaaaa"]])
+        XCTAssertEqual(LedProgram.rollPasses(["#1", "#2", "#3", "#4"], ledCount: 8),
+                       [["#1", "#2", "#3", "#4", "#1", "#2", "#3", "#4"]])
+    }
+
+    /// Under a zone a roll of any number of agents alternates by LED, the
+    /// same text shape as the two-agent roll's.
+    func testFourAgentsUnderAZoneAlternateByLed() {
+        XCTAssertEqual(p(.split(alert: .waiting(.opencode), work: .working(.all))), """
+        0:#000000 160ms; 1:#000000 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
+        0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
+        0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#0a00ff 760ms pulse 95ms; 5:#0e5cff 760ms pulse 190ms; 6:#ff0043 760ms pulse 285ms; 7:#ff374a 760ms pulse 380ms
+        repeat
+        """)
+        XCTAssertEqual(p(.split(alert: .done(.copilot), work: .working(.all))), """
+        0:#00ff37 160ms; 1:#00ff37 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
+        2:#ff374a 760ms pulse 0ms; 3:#0a00ff 760ms pulse 95ms; 4:#0e5cff 760ms pulse 190ms; 5:#ff0043 760ms pulse 285ms; 6:#ff374a 760ms pulse 380ms; 7:#0a00ff 760ms pulse 475ms
+        repeat
+        """)
+        XCTAssertEqual(p(.split(alert: .waiting(.claude), work: .working(.all)), leds: 2), """
+        0:#000000 160ms; 1:#000000 160ms
+        0:#ff7000 200ms pulse 0ms
+        0:#ff7000 200ms pulse 70ms; 1:#ff374a 760ms pulse 0ms
+        repeat
+        """, "on the Dot the roll is one LED, in Claude's colour")
+    }
+
     /// The device contract, byte for byte. Every token here is a shape the
     /// device is already known to take: the whole-strip pulse this state has
     /// always used, and `off <dur>`, which the vendor's own INIT.LED ends
@@ -120,6 +221,7 @@ final class ProgramTests: XCTestCase {
     func testEveryColourConstantIsAValidProgramColour() {
         let palette: [(String, String)] = [
             ("claudeWorking", K.claudeWorking), ("codexWorking", K.codexWorking),
+            ("copilotWorking", K.copilotWorking), ("opencodeWorking", K.opencodeWorking),
             ("jobRunning", K.jobRunning), ("askAmber", K.askAmber), ("doneGreen", K.doneGreen),
             ("batteryCriticalRed", K.batteryCriticalRed), ("batteryLowRed", K.batteryLowRed),
             ("batteryMidAmber", K.batteryMidAmber), ("batteryHighGreen", K.batteryHighGreen),
@@ -278,19 +380,42 @@ final class ProgramTests: XCTestCase {
         var states: [DisplayState] = [.off, .working, .waiting, .done, .batteryCritical,
                                       .batteryGlance, .manualColor("#123456"),
                                       .jobRunning, .jobSucceeded, .jobFailed,
-                                      .working(.codex), .working(.both),
+                                      .working(.codex), .working(.claudeAndCodex),
                                       .split(alert: .waiting, work: .working),
                                       .split(alert: .done, work: .working),
                                       .split(alert: .jobFailed, work: .jobRunning),
                                       .split(alert: .jobSucceeded, work: .jobRunning),
-                                      .split(alert: .waiting(.both), work: .working(.both)),
-                                      .split(alert: .done(.both), work: .working(.both)),
-                                      .split(alert: .jobFailed, work: .working(.codex))]
+                                      .split(alert: .waiting(.claudeAndCodex), work: .working(.claudeAndCodex)),
+                                      .split(alert: .done(.claudeAndCodex), work: .working(.claudeAndCodex)),
+                                      .split(alert: .jobFailed, work: .working(.codex)),
+                                      .working(.copilot), .working(.opencode), .working([.copilot, .opencode]),
+                                      .working(.claudeCodexCopilot), .working(.all),
+                                      .split(alert: .waiting(.all), work: .working(.all)),
+                                      .split(alert: .done(.all), work: .working(.all)),
+                                      .split(alert: .jobFailed, work: .working(.claudeCodexCopilot))]
         states += LedEffects.names.map { .effect($0) }
         for state in states {
-            let program = p(state, power: PowerState(percent: 42), brightness: 200)
-            XCTAssertLessThanOrEqual(program.utf8.count, 512, "\(state) exceeds 512 bytes")
-            XCTAssertLessThanOrEqual(program.split(separator: "\n").count, 20, "\(state) exceeds 20 lines")
+            for leds in [2, 8] {
+                let program = p(state, power: PowerState(percent: 42), leds: leds, brightness: 200)
+                XCTAssertLessThanOrEqual(program.utf8.count, 512, "\(state) on \(leds) exceeds 512 bytes")
+                XCTAssertLessThanOrEqual(program.split(separator: "\n").count, 20,
+                                         "\(state) on \(leds) exceeds 20 lines")
+            }
+        }
+        // Every set of agents, on either strip, at full brightness: the roll
+        // and the roll under each zone.
+        for raw in 1...Agents.all.rawValue where Agents(rawValue: raw).isSubset(of: .all) {
+            let agents = Agents(rawValue: raw)
+            for state: DisplayState in [.working(agents), .split(alert: .waiting(agents), work: .working(agents)),
+                                        .split(alert: .done(agents), work: .working(agents))] {
+                for leds in [2, 8] {
+                    let program = p(state, leds: leds)
+                    XCTAssertLessThanOrEqual(program.utf8.count, 512, "\(state) on \(leds)")
+                    XCTAssertLessThanOrEqual(program.split(separator: "\n").count, 20, "\(state) on \(leds)")
+                    XCTAssertEqual(LedContinuation.parse(program).map(LedContinuation.text), program,
+                                   "\(state) on \(leds) reads back")
+                }
+            }
         }
     }
 

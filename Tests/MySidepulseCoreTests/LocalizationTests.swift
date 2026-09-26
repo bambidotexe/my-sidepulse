@@ -77,6 +77,8 @@ final class LocalizationTests: XCTestCase {
         withLanguage(.fr) {
             XCTAssertEqual(AlertCopy.title(for: .claude), "Claude Code")
             XCTAssertEqual(AlertCopy.title(for: .codex), "Codex")
+            XCTAssertEqual(AlertCopy.title(for: .copilot), "GitHub Copilot")
+            XCTAssertEqual(AlertCopy.title(for: .opencode), "OpenCode")
             XCTAssertEqual(AlertCopy.tag(for: .finished), "white_check_mark")
             XCTAssertEqual(AlertCopy.tag(for: .needsYou(.question)), "speech_balloon")
             XCTAssertEqual(AlertCopy.tag(for: .needsYou(.permission)), "lock")
@@ -108,6 +110,34 @@ final class LocalizationTests: XCTestCase {
             XCTAssertEqual(language.leds(1), "1 LED")
             XCTAssertEqual(language.leds(0), "0 LEDs")
             XCTAssertEqual(language.leds(8), "8 LEDs")
+        }
+    }
+
+    /// Every agent's colour row and Playground card, in both languages, names
+    /// the agent by its product name, which is never translated.
+    func testEveryAgentHasItsColourRowAndItsCardInBothLanguages() {
+        let slots: [(LedPalette.Slot, AgentKind)] = [(.working, .claude), (.codexWorking, .codex),
+                                                     (.copilotWorking, .copilot), (.opencodeWorking, .opencode)]
+        for language in Language.allCases {
+            withLanguage(language) {
+                for (slot, agent) in slots {
+                    XCTAssertTrue(Loc.settings.colors.label(slot).hasPrefix(agent.shortName), "\(language) \(slot)")
+                }
+                let t = Loc.settings.playground
+                for (title, subtitle, agent) in [(t.titleCopilotWorking, t.subtitleCopilotWorking, AgentKind.copilot),
+                                                 (t.titleOpenCodeWorking, t.subtitleOpenCodeWorking, .opencode)] {
+                    XCTAssertTrue(title.hasPrefix(agent.shortName), "\(language): \(title)")
+                    XCTAssertTrue(subtitle.contains(agent.shortName), "\(language): \(subtitle)")
+                    XCTAssertTrue(subtitle.hasSuffix("."), "\(language): a card's sentence ends with a full stop")
+                }
+                for agent in AgentKind.allCases {
+                    XCTAssertTrue(t.subtitleAllWorking.contains(agent.shortName),
+                                  "\(language): the shared card names \(agent.shortName)")
+                }
+                XCTAssertFalse(t.titleAllWorking.isEmpty)
+                XCTAssertFalse(Loc.settings.colors.coloursHint.contains("Codex"),
+                               "\(language): the hint speaks of every agent, not of two")
+            }
         }
     }
 

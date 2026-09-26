@@ -89,8 +89,9 @@ final class TransitionTests: XCTestCase {
         }
         pairs.append((splits[0], splits[1]))
         pairs.append((splits[1], splits[0]))
-        // The roll both agents share, and Codex's alone, under the same zones.
-        for work in [Agents.both, .codex] {
+        // The roll two agents share, Codex's alone, and the one-pass roll of
+        // three and of four agents, under the same zones.
+        for work in [Agents.claudeAndCodex, .codex, .claudeCodexCopilot, .all] {
             let shared: [DisplayState] = [.split(alert: .waiting(.codex), work: .working(work)),
                                           .split(alert: .done(.claude), work: .working(work))]
             for split in shared {
@@ -122,6 +123,108 @@ final class TransitionTests: XCTestCase {
                         XCTAssertEqual(tail.program.utf8.count, tail.unscaled.utf8.count, label)
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: the roll changing agents
+
+    /// The colours a program paints, `#000000` aside.
+    private func colours(_ program: String) -> Set<String> {
+        var found: Set<String> = []
+        var rest = Substring(program)
+        while let hash = rest.firstIndex(of: "#") {
+            let end = rest.index(hash, offsetBy: 7, limitedBy: rest.endIndex) ?? rest.endIndex
+            found.insert(String(rest[hash..<end]))
+            rest = rest[end...]
+        }
+        found.remove("#000000")
+        return found
+    }
+
+    /// The full-strip roll changing its agents across the one-pass and the
+    /// two-pass shapes: one agent to three, three to four, four to two,
+    /// three to one. Each is a recolour, never a zone change; at every phase
+    /// the tail cut from the roll that plays is inside the device's limits,
+    /// reads back, paints none of the colours only the new roll has (its
+    /// bridge holds levels of the old roll's own), and ends where its loop
+    /// or its pass ends, every LED dark, which is where the new roll is
+    /// written.
+    func testTheRollRecolouredAcrossAgentCounts() {
+        let pairs: [(Agents, Agents)] = [(.claude, .claudeCodexCopilot), (.claudeCodexCopilot, .all),
+                                         (.all, .claudeAndCodex), (.claudeCodexCopilot, .claude),
+                                         (.claudeAndCodex, .all), (.all, .opencode)]
+        for (from, to) in pairs {
+            XCTAssertTrue(LedProgram.rollRecolour(from: .working(from), to: .working(to)), "\(from) → \(to)")
+            XCTAssertNil(LedProgram.rollHandover(from: .working(from), to: .working(to), ledCount: 8),
+                         "\(from) → \(to): a recolour is not a zone change")
+            for leds in [2, 8] {
+                let loop = p(.working(from), leds: leds)
+                let loopMs = LedContinuation.loopMs(of: loop)!
+                XCTAssertLessThanOrEqual(p(.working(to), leds: leds).utf8.count, 512)
+                let arriving = colours(p(.working(to), leds: leds)).subtracting(colours(loop))
+                for brightness in [255, 128] {
+                    for phase in stride(from: 0, to: loopMs, by: 5) {
+                        let label = "\(from) → \(to) on \(leds) LEDs at \(phase) ms, brightness \(brightness)"
+                        guard let tail = LedContinuation.tail(of: loop, elapsedMs: phase, brightness: brightness)
+                        else { XCTFail("\(label): no tail"); continue }
+                        XCTAssertLessThanOrEqual(tail.program.utf8.count, 512, label)
+                        XCTAssertLessThanOrEqual(tail.program.split(separator: "\n").count, 20, label)
+                        XCTAssertFalse(tail.program.contains("repeat"), label)
+                        XCTAssertTrue(colours(tail.unscaled).isDisjoint(with: arriving),
+                                      "\(label): the new colours wait for the new loop: \(tail.unscaled)")
+                        let passEnd = ContinuationTests.passEnd(of: loop, at: phase)
+                        XCTAssertTrue(tail.lengthMs == loopMs - phase || tail.lengthMs == passEnd - phase,
+                                      "\(label): ends at neither the loop's end nor the pass's")
+                        guard let parsed = LedContinuation.parse(tail.program) else {
+                            XCTFail("\(label): the tail does not read back"); continue
+                        }
+                        XCTAssertEqual(Double(parsed.loopMs), Double(tail.lengthMs),
+                                       accuracy: Double(LedContinuation.frameMs), label)
+                    }
+                }
+            }
+        }
+    }
+
+    /// A finish landing over the four-agent roll mid-wave: the zone goes
+    /// green over the bridge exactly as over Claude's roll, and the roll's
+    /// LEDs 2…7 carry on in their own agents' colours.
+    func testAFinishJoinsTheFourAgentRollAsASteadyZone() {
+        let tail = carried(.working(.all), .split(alert: .done(.codex), work: .working(.all)), at: 500)
+        XCTAssertEqual(tail?.program, """
+        2:#000000 60ms; 3:#000000 60ms; 0:#00ff37 60ms; 1:#00ff37 60ms
+        2:#0e5cff 550ms pulse 0ms; 3:#ff0043 645ms pulse 0ms; 4:#ff374a 740ms pulse 0ms; 5:#0a00ff 760ms pulse 75ms; 6:#0e5cff 760ms pulse 170ms; 7:#ff0043 760ms pulse 265ms
+        """)
+        XCTAssertEqual(tail?.lengthMs, 1085)
+    }
+
+    /// A zone landing over the four-agent roll, at every phase, on both
+    /// strips, opens exactly as it does over Claude's own roll: the same
+    /// lines for the same length, the roll's LEDs in their agents' colours.
+    /// The one-pass roll has no pass boundary to stop at before its loop's
+    /// end.
+    func testAZoneOpensOverTheFourAgentRollAsOverOneAgentsRoll() {
+        for leds in [2, 8] {
+            for alert: SplitAlert in [.waiting(.opencode), .done(.copilot)] {
+                let loopMs = LedContinuation.loopMs(of: p(.working(.all), leds: leds))!
+                XCTAssertEqual(loopMs, LedContinuation.loopMs(of: p(.working, leds: leds)))
+                var carriedAtAll = false
+                for phase in stride(from: 0, to: loopMs, by: 5) {
+                    let label = "\(alert) on \(leds) LEDs at \(phase) ms"
+                    let four = carried(.working(.all), .split(alert: alert, work: .working(.all)), at: phase, leds: leds)
+                    let one = carried(.working, .split(alert: alert, work: .working), at: phase, leds: leds)
+                    XCTAssertEqual(four == nil, one == nil, label)
+                    guard let four, let one else { continue }
+                    carriedAtAll = true
+                    XCTAssertLessThanOrEqual(four.program.utf8.count, 512, label)
+                    XCTAssertLessThanOrEqual(four.program.split(separator: "\n").count, 20, label)
+                    XCTAssertEqual(four.lengthMs, one.lengthMs, label)
+                    XCTAssertEqual(four.program.split(separator: "\n").count, one.program.split(separator: "\n").count,
+                                   label)
+                    XCTAssertEqual(LedContinuation.parse(four.program)?.loopMs, four.lengthMs, label)
+                }
+                XCTAssertTrue(carriedAtAll, "\(alert) on \(leds) LEDs: the roll carries on under the zone")
             }
         }
     }

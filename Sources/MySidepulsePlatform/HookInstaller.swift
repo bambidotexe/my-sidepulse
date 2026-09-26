@@ -34,10 +34,13 @@ public enum HookInstaller {
     // MARK: an agent's hook file
 
     /// Where an agent keeps its hooks, and the copy taken before it is touched.
-    static func files(for agent: AgentKind) -> (file: URL, backup: URL, name: String) {
+    /// Nil for Copilot and OpenCode, which have no hook file here: nothing
+    /// reads or writes a file of theirs.
+    static func files(for agent: AgentKind) -> (file: URL, backup: URL, name: String)? {
         switch agent {
         case .claude: return (Paths.claudeSettings, Paths.claudeSettingsBackup, "~/.claude/settings.json")
         case .codex: return (Paths.codexHooks, Paths.codexHooksBackup, "~/.codex/hooks.json")
+        case .copilot, .opencode: return nil
         }
     }
 
@@ -53,8 +56,9 @@ public enum HookInstaller {
                                     file: URL? = nil, backup: URL? = nil) -> Outcome {
         let t = Loc.hookInstall
         let defaults = files(for: agent)
-        let file = file ?? defaults.file
-        let backup = backup ?? defaults.backup
+        guard let file = file ?? defaults?.file, let backup = backup ?? defaults?.backup else {
+            return Outcome(ok: false, lines: [t.notModified])
+        }
         let command = HookConfig.command(cliPath: cliPath, agent: agent)
         let events = HookConfig.events(for: agent)
         // A hook command pointing at a missing binary fails silently — the
@@ -79,7 +83,7 @@ public enum HookInstaller {
                 ? [t.installed(total: total, agent: agent, command: command)]
                 : [t.installedPartial(installed: total - missing.count, total: total, command: command),
                    t.declinedToTouch(missing.joined(separator: ", ")),
-                   t.declinedShapeNote(file: defaults.name)]
+                   t.declinedShapeNote(file: defaults?.name ?? file.path)]
             if FileManager.default.fileExists(atPath: backup.path) {
                 lines.append(t.backupWritten(path: backup.path))
             }
@@ -92,8 +96,9 @@ public enum HookInstaller {
     public static func removeHooks(for agent: AgentKind, file: URL? = nil, backup: URL? = nil) -> Outcome {
         let t = Loc.hookInstall
         let defaults = files(for: agent)
-        let file = file ?? defaults.file
-        let backup = backup ?? defaults.backup
+        guard let file = file ?? defaults?.file, let backup = backup ?? defaults?.backup else {
+            return Outcome(ok: true, lines: [t.noSettingsFileNothingToRemove])
+        }
         do {
             guard let root = try SettingsFile.load(at: file) else {
                 return Outcome(ok: true, lines: [t.noSettingsFileNothingToRemove])
@@ -106,11 +111,12 @@ public enum HookInstaller {
         }
     }
 
-    /// How many of the agent's events run this bundle's CLI. An absent file
-    /// counts as none; nil when the file exists and cannot be read.
+    /// How many of the agent's events run this bundle's CLI. An absent file,
+    /// or an agent with none, counts as none; nil when the file exists and
+    /// cannot be read.
     public static func hooksInstalled(for agent: AgentKind, cliPath: String = cliPath(),
                                       file: URL? = nil) -> Int? {
-        let file = file ?? files(for: agent).file
+        guard let file = file ?? files(for: agent)?.file else { return 0 }
         guard let root = try? SettingsFile.load(at: file) ?? [:] else { return nil }
         let command = HookConfig.command(cliPath: cliPath, agent: agent)
         return HookConfig.events(for: agent).filter {

@@ -14,15 +14,19 @@ anything is changed. The workflow is in `CLAUDE.md`.
 MySidepulse is a macOS menu-bar app that drives a SidePulse LED strip — an
 LED bar in SD-card form factor sitting in the Mac's card slot — so that three
 things are visible at a glance: an agent is **working**, an agent has
-**finished**, an agent **needs you**. The agents are Claude Code and Codex.
-Each works in a colour of its own (Claude red, Codex blue, and a wave that
-takes one colour per pass when both work); finished and needs you are one
-colour whoever raised them, because they say that the Mac wants the user, not
-which agent does. When nobody is at the machine, the same finished / needs-you
-alerts go to a phone through ntfy, titled with the agent's name. Around that
-core it also shows terminal jobs, the battery, and a few decorative effects. It
-reads both agents through hooks; it never talks to either and sends nothing
-but the ntfy pushes off the machine. Everything it shows, and everything it
+**finished**, an agent **needs you**. The agents are Claude Code, Codex,
+GitHub Copilot and OpenCode, in that order everywhere they are listed. Each
+works in a colour of its own (Claude red, Codex blue, Copilot another blue,
+OpenCode another red): a wave two agents share takes one colour per pass, and
+one three or four share gives each LED one agent's colour in turn. Finished
+and needs you are one colour whoever raised them, because they say that the
+Mac wants the user, not which agent does. When nobody is at the machine, the
+same finished / needs-you alerts go to a phone through ntfy, titled with the
+agent's name. Around that core it also shows terminal jobs, the battery, and a
+few decorative effects. It reads the agents through hooks, Claude Code's and
+Codex's (§4); nothing sets up Copilot's or OpenCode's, so their sessions do not
+reach the strip. It never talks to any agent and sends nothing but the ntfy
+pushes off the machine. Everything it shows, and everything it
 pushes, is in English or French, chosen from the system language (§15).
 
 ## 2. The strip: insert, remove, missing
@@ -65,7 +69,7 @@ pushes, is in English or French, chosen from the system language (§15).
 
 **Alert** is the first of these that exists and has not been acknowledged:
 
-1. an agent session, Claude's or Codex's, waiting for you → amber double blink;
+1. an agent session, whichever agent's, waiting for you → amber double blink;
 2. a terminal job that failed → amber double blink;
 3. an agent session that finished → green breath, 4.5 s;
 4. a terminal job that succeeded → green breath.
@@ -74,20 +78,25 @@ pushes, is in English or French, chosen from the system language (§15).
 
 1. an agent session working — or an *acknowledged* open wait that still has
    subagents or background shells running behind it → the rolling wave, in
-   Claude's red when Claude works, in Codex's blue when Codex works, and when
-   **both work at once, one pass in Claude's colour and the next in Codex's**,
-   the rhythm unchanged;
+   the working agent's colour: Claude's red, Codex's blue, Copilot's blue,
+   OpenCode's red. When **two agents work at once, one pass in
+   the first one's colour and the next in the other's**; when **three or four
+   work at once, one pass whose LEDs take their colours in turn**, LED *i* in
+   the colour of agent *i* mod *n*. The agents go in their order, Claude's
+   first, and the rhythm is unchanged. Three passes would not fit in the
+   strip's program ([device.md](device.md)), and on the Dot's two LEDs a roll
+   of three or four shows the first two agents' colours;
 2. a terminal job running → rolling violet wave.
 
-Claude and Codex share every rung: the strip says that an agent wants the user,
+Every agent shares every rung: the strip says that an agent wants the user,
 not which one. The Showing sentence (§10) and the push (§6) name the agent.
 
 In a split, a needs-you alert takes `K.alertZoneLedsNeedsYou` (3) LEDs and a
 finished alert `K.alertZoneLedsFinished` (2); at least one LED always stays
 with the work. The amber zone blinks in the same 1.5 s rhythm as the full-strip
-blink; the green zone holds steady. A roll shared by both agents under a zone
-alternates its colour **by LED** rather than by pass, Claude's first: two passes
-of blink lines and roll lines would not fit in the strip's program
+blink; the green zone holds steady. A roll shared by several agents under a
+zone alternates its colour **by LED**, whatever their number, Claude's first:
+two passes of blink lines and roll lines would not fit in the strip's program
 ([device.md](device.md)).
 
 With several sessions the strip does not say which one: the most urgent alert
@@ -99,11 +108,12 @@ that is gone within that second is never seen. Going to `working` has no
 settle: it shows on the event that caused it.
 
 **Colours.** Every colour named in this section is a default. The Colours page
-(§10) sets nine of them, and the strip paints what is set: Claude working (red
-by default), Codex working (blue, `#0a00ff`), needs you (amber), done (green),
-command running (violet), battery critical (red), and the battery bar's three
-bands (red, amber, green). Needs you and done are the same colours for both
-agents. A failed
+(§10) sets eleven of them, and the strip paints what is set: Claude working
+(red by default), Codex working (blue, `#0a00ff`), Copilot working (another
+blue, `#0e5cff`), OpenCode working (another red, `#ff0043`), needs you
+(amber), done (green), command running (violet), battery critical (red), and
+the battery bar's three bands (red, amber, green). Needs you and done are the
+same colours for every agent. A failed
 command takes the needs-you colour and a succeeded one the done colour. Every
 colour is a true colour, the same hex on the strip and in the window; a strip's
 brightness (§10, Strip) is what dims it, never a darker hex. The six effects
@@ -131,16 +141,19 @@ the loop's end:
    dark, its lit LEDs fading in from black. Later than that, or another
    animation, starts from scratch.
 
-4. **The full-strip roll changing colour**: Claude's roll becoming the shared
-   one when Codex starts, the shared one becoming Codex's when Claude
-   finishes, and every other change of agents. The wave carries on from where
-   it is and takes the new colours at its next pass. Under a zone the roll's
-   agents changing starts the split anew.
+4. **The full-strip roll changing colour**: Claude's roll becoming a shared
+   one when another agent starts, a shared one becoming one agent's when the
+   others finish, and every other change of agents, between the two-pass roll
+   and the one-pass roll of three or four as well. The wave carries on from
+   where it is and takes the new colours at its next pass. Under a zone the
+   roll's agents changing starts the split anew.
 
-On the shared roll a tail ends at the loop's end when it fits in the strip's
-program, and otherwise at the end of the pass under way, where every LED is
-dark; the loop then starts with Claude's pass, so a brightness change during
-Claude's pass can show that colour twice in a row, once.
+On the roll two agents share a tail ends at the loop's end when it fits in the
+strip's program, and otherwise at the end of the pass under way, where every
+LED is dark; the loop then starts with the first agent's pass, so a brightness
+change during that pass can show its colour twice in a row, once. The roll of
+three or four agents is one pass, and its tail ends at the loop's end like
+one agent's.
 
 A change of animation (working → done alone, a different roll) starts the
 new one from its first line: there is nothing to carry on. The exact cut, and
@@ -402,13 +415,13 @@ Publish only. One HTTP `POST` per alert to `<server>/<topic>`:
 
 | Part | Value |
 |---|---|
-| `Title` header | `Claude Code` for a Claude session, `Codex` for a Codex session |
+| `Title` header | the agent's product name: `Claude Code`, `Codex`, `GitHub Copilot` or `OpenCode` |
 | `Tags` header | `white_check_mark` (finished), `speech_balloon` (question), `lock` (permission), `clipboard` (plan), `rotating_light` (turn failed) |
-| `Click` header | `https://claude.ai/code/<bridgeSessionId>` when Claude's session record has one, else `https://claude.ai/code`; `https://chatgpt.com/codex` for a Codex session |
+| `Click` header | `https://claude.ai/code/<bridgeSessionId>` when Claude's session record has one, else `https://claude.ai/code`; `https://chatgpt.com/codex` for a Codex session, `https://github.com/copilot` for a Copilot one, `https://opencode.ai` for an OpenCode one |
 | Body | English: `Finished`, `Asking you something`, `Needs permission`, `Plan ready`, `Turn failed`. French: `Terminé`, `Vous pose une question`, `Demande une permission`, `Plan prêt`, `Échec du tour` |
 
 The title and the tags are protocol values and are never translated; only the
-body is (§15). The bodies are the same words for either agent: the title says
+body is (§15). The bodies are the same words for every agent: the title says
 who. No priority, actions or authorization header. The topic is the only secret: a
 generated `cc-` plus 32 hex characters, stored in `config.json` (mode `0600`),
 masked to its first six characters everywhere except `mysidepulse notify` and the
@@ -506,7 +519,7 @@ after `K.jobStaleSeconds` (2 h). If the app is not running, the command runs
 all the same.
 
 An agent outranks a job at every rung, so a running job's colour is hidden
-while Claude or Codex works; a job *outcome* takes the alert zone over the
+while an agent works; a job *outcome* takes the alert zone over the
 agents' roll.
 
 ## 8. Battery
@@ -657,13 +670,13 @@ opens on General, already at that page's height and centred.
 | Strip | Strip | one row per attached strip, `Available` or `Stalled`, each with a brightness slider in perceived percent, 5 % to 100 % in steps of 5 % (`K.brightnessSliderStepPercent`, each a change the eye can see; 5 % is the strip's lowest) (§11 *Brightness is perceived*; applied on release; 100 % stores nothing; `brightness cycle` sets the same value) | 100 % |
 | Strip | Remembered brightness | the overrides of strips not plugged in, each with `Forget` | |
 | Colours | Preview | the live strip playing the picked colour's state, what is playing, and `Stop` while it plays | |
-| Colours | Colours | one row per colour, nine (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
+| Colours | Colours | one row per colour, eleven (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
 | Notifications | Phone | Notify my phone when Claude or Codex finishes or needs you | off |
 | Notifications | Server | the ntfy server, applied on Return | `https://ntfy.sh` |
 | Notifications | Topic | the masked topic; `Reveal Topic and QR Code`; `New Topic…` | |
 | Notifications | Test | `Send a Test Notification`, and its result | |
 | Playground | On the strip | the live strip, what is playing, `Keep It` and `Stop` | |
-| Playground | States, Effects | eleven state tiles and six effect tiles | |
+| Playground | States, Effects | thirteen state tiles and six effect tiles | |
 | System | Claude Code | `Claude Code hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*) | |
 | System | Codex | `Codex hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*); the group is there only while Codex is on this Mac or its hooks are set up | |
 | System | Terminal | `Terminal hook`, `Set Up Terminal Hook` or `Remove Terminal Hook` (§7) | |
@@ -744,8 +757,8 @@ plugged in stays as `<name>` and its value, with **Forget**.
 **Colours** plays what it recolours. Clicking a row's name or its small strip,
 or changing its colour, selects the row and plays its state on the real strip
 for 30 s through the Playground's preview, restarted at every change: Claude
-working the working roll, Codex working Codex's roll, needs you the double
-blink, done the breath, command running the violet roll, battery critical its
+working the working roll, Codex working, Copilot working and OpenCode working
+their agent's roll, needs you the double blink, done the breath, command running the violet roll, battery critical its
 breath, and the three battery bars the glance at 15 %, 50 % and 100 %, the top
 of each band. `Stop`, leaving
 the page or closing the window ends it. The large strip in Preview plays the
@@ -756,9 +769,9 @@ field takes `#` and six hex digits, applied on Return or when the field is left;
 anything else is put back. The colour well applies once it has paused for
 0.3 s; the pictures follow it at once. `Reset` puts one colour back to its
 default and is disabled at the default; `Reset All Colours` puts back all
-nine. A colour at its default stores nothing, so it follows the default. The
-hint under the colours says that needs you and done are one colour for both
-agents and which colour a failed and a succeeded command take; the note says
+eleven. A colour at its default stores nothing, so it follows the default. The
+hint under the colours says that needs you and done are one colour for every
+agent and which colour a failed and a succeeded command take; the note says
 brightness is set on Strip. With no strip mounted, a note under
 Preview says the colour plays on screen only. Every picture in the window, on
 Strip and Playground too, draws each colour exactly as its hex, at full
@@ -1279,9 +1292,9 @@ window shows them, and the phone push bodies (§6).
 |---|---|
 | Every word `mysidepulse` prints in a terminal (§11) | The CLI is English by rule, not by omission. The same code produces the doctor's details for both, and the language is read where the sentence is built, so the window is French while the terminal stays English. |
 | The doctor's nine check names (`app`, `hooks installed`, `device`, …) | Identifiers the CLI prints and the Health page matches on, not prose. |
-| The push `Title` header (`Claude Code` or `Codex`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
+| The push `Title` header (`Claude Code`, `Codex`, `GitHub Copilot` or `OpenCode`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
 | The block in `~/.zshrc` and the shell snippet | Shell code, read by zsh. |
-| `MySidepulse`, `SidePulse`, `Claude Code`, `Claude`, `Codex`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |
+| `MySidepulse`, `SidePulse`, `Claude Code`, `Claude`, `Codex`, `GitHub Copilot`, `Copilot`, `OpenCode`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |
 | The log | Written for a bug report, in one language so it can be searched. |
 
 **Where the words live.** `Sources/MySidepulseCore/Strings*.swift`, one table per

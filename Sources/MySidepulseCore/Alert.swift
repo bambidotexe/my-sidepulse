@@ -27,7 +27,7 @@ public enum AlertCopy {
     /// The push's title: which agent is talking.
     public static func title(for agent: AgentKind) -> String { agent.productName }
 
-    /// The bodies are the same words for either agent: the title already
+    /// The bodies are the same words for every agent: the title already
     /// says who.
     public static func message(for kind: AlertKind) -> String {
         let t = Loc.alerts

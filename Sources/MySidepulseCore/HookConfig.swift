@@ -23,10 +23,23 @@ public enum HookConfig {
         "PreCompact", "PostCompact", "Interrupt",
     ]
 
+    /// The GitHub Copilot CLI events subscribed, in camelCase as Copilot
+    /// names them. Never `preToolUse` or `permissionRequest`: Copilot denies
+    /// the tool when either hook fails or is missing, so a hook file that
+    /// outlived the app would block every Copilot tool call.
+    public static let copilotEvents = [
+        "sessionStart", "userPromptSubmitted", "postToolUse", "postToolUseFailure",
+        "notification", "agentStop", "sessionEnd",
+    ]
+
+    /// OpenCode runs no command hooks: it loads a plugin, which calls the hook
+    /// command itself, so it subscribes none of these.
     public static func events(for agent: AgentKind) -> [String] {
         switch agent {
         case .claude: return events
         case .codex: return codexEvents
+        case .copilot: return copilotEvents
+        case .opencode: return []
         }
     }
 
@@ -35,12 +48,16 @@ public enum HookConfig {
     public static let ourMarker = "/Contents/MacOS/mysidepulse hook"
 
     /// The command an agent's hooks run. Claude Code's is the bare `hook`,
-    /// the shape every install has written; Codex's names itself, so the
-    /// journal line carries the agent whatever process fired the hook.
-    public static func command(cliPath: String, agent: AgentKind) -> String {
+    /// the shape every install has written; every other agent's names itself,
+    /// so the journal line carries the agent whatever process fired the hook.
+    /// Copilot's payloads carry no event name, so its command names the event
+    /// too, when one is given.
+    public static func command(cliPath: String, agent: AgentKind, event: String? = nil) -> String {
         switch agent {
         case .claude: return "\(cliPath) hook"
         case .codex: return "\(cliPath) hook --agent codex"
+        case .copilot: return "\(cliPath) hook --agent copilot" + (event.map { " --event \($0)" } ?? "")
+        case .opencode: return "\(cliPath) hook --agent opencode"
         }
     }
 

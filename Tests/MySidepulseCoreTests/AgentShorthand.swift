@@ -18,3 +18,10 @@ extension SplitAlert {
 extension SplitWork {
     static let working: SplitWork = .working(.claude)
 }
+
+/// Exactly Claude and Codex: the two-agent roll, one pass per colour. A test
+/// about every agent says `.all`.
+extension Agents {
+    static let claudeAndCodex: Agents = [.claude, .codex]
+    static let claudeCodexCopilot: Agents = [.claude, .codex, .copilot]
+}

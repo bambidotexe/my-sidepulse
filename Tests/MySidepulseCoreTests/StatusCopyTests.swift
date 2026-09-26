@@ -6,12 +6,51 @@ import XCTest
 final class StatusCopyTests: XCTestCase {
     static let everyState: [DisplayState] = [
         .off, .working, .waiting, .done, .jobRunning, .jobFailed, .jobSucceeded,
-        .working(.codex), .working(.both), .waiting(.codex), .waiting(.both), .done(.codex), .done(.both),
+        .working(.codex), .working(.claudeAndCodex), .waiting(.codex), .waiting(.claudeAndCodex), .done(.codex), .done(.claudeAndCodex),
         .split(alert: .waiting, work: .working), .split(alert: .jobFailed, work: .working),
-        .split(alert: .waiting(.both), work: .working(.codex)), .split(alert: .done(.codex), work: .working(.both)),
+        .split(alert: .waiting(.claudeAndCodex), work: .working(.codex)), .split(alert: .done(.codex), work: .working(.claudeAndCodex)),
         .split(alert: .done, work: .jobRunning), .split(alert: .jobSucceeded, work: .jobRunning),
+        .working(.copilot), .working(.opencode), .working(.claudeCodexCopilot), .working(.all),
+        .waiting(.copilot), .waiting(.all), .done(.opencode), .done([.copilot, .opencode]),
+        .split(alert: .waiting(.all), work: .working(.all)), .split(alert: .done(.copilot), work: .working(.opencode)),
         .batteryCritical, .batteryGlance, .manualColor("#ff9900"), .effect("rainbow"),
     ]
+
+    /// Two or more agents are listed in their order, the last one joined by
+    /// "and", and the verb agrees with the plural, in both languages.
+    func testASentenceListsEveryAgentItIsAbout() {
+        withLanguage(.en) {
+            XCTAssertEqual(StatusCopy.line(for: .working(.copilot)).text, "Copilot is working")
+            XCTAssertEqual(StatusCopy.line(for: .working(.opencode)).text, "OpenCode is working")
+            XCTAssertEqual(StatusCopy.line(for: .working(.claudeCodexCopilot)).text,
+                           "Claude, Codex and Copilot are working")
+            XCTAssertEqual(StatusCopy.line(for: .working(.all)).text,
+                           "Claude, Codex, Copilot and OpenCode are working")
+            XCTAssertEqual(StatusCopy.line(for: .waiting([.copilot, .opencode])).text,
+                           "Copilot and OpenCode need you: a question, a permission or a plan")
+            XCTAssertEqual(StatusCopy.line(for: .done([.claude, .codex, .opencode])).text,
+                           "Claude, Codex and OpenCode have finished. Clears when you look at the terminal")
+            XCTAssertEqual(StatusCopy.line(for: .done(.copilot)).text,
+                           "Copilot has finished. Clears when you look at the terminal")
+            XCTAssertEqual(StatusCopy.line(for: .split(alert: .waiting(.all), work: .working(.claude))).text,
+                           "Claude, Codex, Copilot and OpenCode need you, and other work is still running")
+            XCTAssertEqual(StatusCopy.line(for: .split(alert: .done(.opencode), work: .working(.all))).text,
+                           "OpenCode has finished, and other work is still running")
+        }
+        withLanguage(.fr) {
+            XCTAssertEqual(StatusCopy.line(for: .working(.copilot)).text, "Copilot travaille")
+            XCTAssertEqual(StatusCopy.line(for: .working(.claudeCodexCopilot)).text,
+                           "Claude, Codex et Copilot travaillent")
+            XCTAssertEqual(StatusCopy.line(for: .working(.all)).text,
+                           "Claude, Codex, Copilot et OpenCode travaillent")
+            XCTAssertEqual(StatusCopy.line(for: .waiting([.copilot, .opencode])).text,
+                           "Copilot et OpenCode ont besoin de vous : une question, une permission ou un plan")
+            XCTAssertEqual(StatusCopy.line(for: .done(.opencode)).text,
+                           "OpenCode a terminé. S'efface quand vous regardez le terminal")
+            XCTAssertEqual(StatusCopy.line(for: .split(alert: .done(.all), work: .jobRunning)).text,
+                           "Claude, Codex, Copilot et OpenCode ont terminé, et d'autres tâches sont en cours")
+        }
+    }
 
     /// The window's rule for every sentence it shows: no long dash, and a mark's
     /// sentence ends without a full stop.

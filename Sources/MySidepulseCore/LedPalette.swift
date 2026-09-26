@@ -6,6 +6,8 @@ import Foundation
 public struct LedPalette: Equatable {
     public var working: String
     public var codexWorking: String
+    public var copilotWorking: String
+    public var opencodeWorking: String
     public var needsYou: String
     public var done: String
     public var jobRunning: String
@@ -15,7 +17,8 @@ public struct LedPalette: Equatable {
     public var batteryHigh: String
 
     public static let standard = LedPalette(
-        working: K.claudeWorking, codexWorking: K.codexWorking, needsYou: K.askAmber,
+        working: K.claudeWorking, codexWorking: K.codexWorking, copilotWorking: K.copilotWorking,
+        opencodeWorking: K.opencodeWorking, needsYou: K.askAmber,
         done: K.doneGreen, jobRunning: K.jobRunning, batteryCritical: K.batteryCriticalRed,
         batteryLow: K.batteryLowRed, batteryMid: K.batteryMidAmber,
         batteryHigh: K.batteryHighGreen)
@@ -23,13 +26,14 @@ public struct LedPalette: Equatable {
     /// One recolourable colour. The raw value is its key in `config.json`,
     /// so renaming a case is a migration. Declared in the page's order.
     ///
-    /// Needs you and done are one colour for Claude and for Codex: the strip
-    /// says that the Mac wants the user, not which agent does. A failed
-    /// command shares `needsYou` and a succeeded one shares `done` for the
-    /// same reason: they are the same alert on the strip, and the ladder
-    /// already tells them apart by precedence, not by colour.
+    /// Each agent works in a colour of its own; needs you and done are one
+    /// colour for every agent: the strip says that the Mac wants the user,
+    /// not which agent does. A failed command shares `needsYou` and a
+    /// succeeded one shares `done` for the same reason: they are the same
+    /// alert on the strip, and the ladder already tells them apart by
+    /// precedence, not by colour.
     public enum Slot: String, CaseIterable, Sendable {
-        case working, codexWorking, needsYou, done, jobRunning
+        case working, codexWorking, copilotWorking, opencodeWorking, needsYou, done, jobRunning
         case batteryCritical, batteryLow, batteryMid, batteryHigh
 
         /// What the Colours page plays for this slot: the state the colour
@@ -39,6 +43,8 @@ public struct LedPalette: Equatable {
             switch self {
             case .working: return (.working(.claude), nil)
             case .codexWorking: return (.working(.codex), nil)
+            case .copilotWorking: return (.working(.copilot), nil)
+            case .opencodeWorking: return (.working(.opencode), nil)
             case .needsYou: return (.waiting(.claude), nil)
             case .done: return (.done(.claude), nil)
             case .jobRunning: return (.jobRunning, nil)
@@ -55,6 +61,8 @@ public struct LedPalette: Equatable {
             switch slot {
             case .working: return working
             case .codexWorking: return codexWorking
+            case .copilotWorking: return copilotWorking
+            case .opencodeWorking: return opencodeWorking
             case .needsYou: return needsYou
             case .done: return done
             case .jobRunning: return jobRunning
@@ -68,6 +76,8 @@ public struct LedPalette: Equatable {
             switch slot {
             case .working: working = newValue
             case .codexWorking: codexWorking = newValue
+            case .copilotWorking: copilotWorking = newValue
+            case .opencodeWorking: opencodeWorking = newValue
             case .needsYou: needsYou = newValue
             case .done: done = newValue
             case .jobRunning: jobRunning = newValue
@@ -84,11 +94,15 @@ public struct LedPalette: Equatable {
         switch kind {
         case .claude: return working
         case .codex: return codexWorking
+        case .copilot: return copilotWorking
+        case .opencode: return opencodeWorking
         }
     }
 
-    /// The colours a roll shared by `agents` cycles through, Claude's first.
-    /// Never empty: a roll with no agent named takes Claude's colour.
+    /// The colours of a roll shared by `agents`, in the agents' order, Claude's
+    /// first: one per pass for two, one per LED for three or more
+    /// (`LedProgram.rollPasses`). Never empty: a roll with no agent named
+    /// takes Claude's colour.
     public func rollColors(_ agents: Agents) -> [String] {
         let colors = agents.kinds.map(working)
         return colors.isEmpty ? [working] : colors

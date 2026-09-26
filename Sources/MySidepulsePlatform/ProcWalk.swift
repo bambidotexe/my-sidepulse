@@ -42,8 +42,8 @@ public enum ProcWalk {
     static let shellNames: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh"]
 
     public struct Origin: Equatable {
-        /// The agent's own process: the nearest Claude Code or Codex
-        /// ancestor, and which of the two it is.
+        /// The agent's own process: the nearest ancestor that is an agent,
+        /// and which one it is.
         public var agentPid: Int32?
         public var agent: AgentKind?
         public var hostAppPid: Int32?
@@ -243,10 +243,13 @@ public enum ProcWalk {
     /// Which agent a process is, if it is one. The name is tried first, then
     /// the resolved path, then the exec path: a Claude launched by its
     /// versioned installer is named by its version, and a symlinked launcher
-    /// resolves elsewhere.
+    /// resolves elsewhere. Copilot and OpenCode are known by their names:
+    /// `copilot`, and `opencode`, `opencode-cli` or `.opencode`.
     static func agent(of info: ProcInfo) -> AgentKind? {
         if info.name == "claude" { return .claude }
         if info.name == "codex" { return .codex }
+        if info.name == "copilot" { return .copilot }
+        if ["opencode", "opencode-cli", ".opencode"].contains(info.name) { return .opencode }
         if let path = info.path {
             if isClaudePath(path) { return .claude }
             if isCodexPath(path) { return .codex }
@@ -310,12 +313,12 @@ public enum ProcWalk {
         return tty
     }
 
-    /// The agent = the nearest ancestor that is one, Claude Code or Codex
-    /// (`agent` names which one to look for, when the hook was told); host =
-    /// first ancestor living inside a .app bundle (outermost bundle wins for
-    /// nested helpers). Nearest, because one agent can run the other: a
-    /// Codex started by Claude's shell tool fires Codex's hooks, and it is
-    /// Codex's process that hosts them.
+    /// The agent = the nearest ancestor that is one (`agent` names which one
+    /// to look for, when the hook was told); host = first ancestor living
+    /// inside a .app bundle (outermost bundle wins for nested helpers).
+    /// Nearest, because one agent can run the other: a Codex started by
+    /// Claude's shell tool fires Codex's hooks, and it is Codex's process that
+    /// hosts them.
     public static func classify(_ chain: [ProcInfo], agent wanted: AgentKind? = nil) -> Origin {
         var origin = Origin()
         for info in chain {

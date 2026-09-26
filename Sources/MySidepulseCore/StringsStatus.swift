@@ -6,23 +6,27 @@ import Foundation
 /// the command rather than a colour, carries no long dash and ends without a
 /// full stop. `StatusCopyTests` pins both languages.
 ///
-/// A sentence about an agent takes the agents it is about: Claude, Codex, or
-/// both, in which case the verb agrees with the pair.
+/// A sentence about an agent takes the agents it is about: one, or several,
+/// in which case the verb agrees with the plural.
 public struct StatusStrings {
     private let language: Language
     init(_ language: Language) { self.language = language }
 
-    /// "Claude", "Codex" or "Claude and Codex": product names, the same in
-    /// both languages but for the conjunction.
+    /// "Claude", "Claude and Codex", "Claude, Codex and Copilot": product
+    /// names in the agents' order, the same in both languages but for the
+    /// conjunction, which joins the last two.
     private func names(_ agents: Agents) -> String {
-        let kinds = agents.kinds.isEmpty ? [AgentKind.claude] : agents.kinds
+        let names = (agents.kinds.isEmpty ? [AgentKind.claude] : agents.kinds).map(\.shortName)
+        guard let last = names.last, names.count > 1 else { return names.joined() }
+        let and: String
         switch language {
-        case .en: return kinds.map(\.shortName).joined(separator: " and ")
-        case .fr: return kinds.map(\.shortName).joined(separator: " et ")
+        case .en: and = " and "
+        case .fr: and = " et "
         }
+        return names.dropLast().joined(separator: ", ") + and + last
     }
 
-    private func isPair(_ agents: Agents) -> Bool { agents.kinds.count > 1 }
+    private func isPlural(_ agents: Agents) -> Bool { agents.kinds.count > 1 }
 
     public var off: String {
         switch language {
@@ -33,22 +37,22 @@ public struct StatusStrings {
 
     public func working(_ agents: Agents) -> String {
         switch language {
-        case .en: "\(names(agents)) \(isPair(agents) ? "are" : "is") working"
-        case .fr: "\(names(agents)) \(isPair(agents) ? "travaillent" : "travaille")"
+        case .en: "\(names(agents)) \(isPlural(agents) ? "are" : "is") working"
+        case .fr: "\(names(agents)) \(isPlural(agents) ? "travaillent" : "travaille")"
         }
     }
 
     public func waiting(_ agents: Agents) -> String {
         switch language {
-        case .en: "\(names(agents)) \(isPair(agents) ? "need" : "needs") you: a question, a permission or a plan"
-        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") besoin de vous : une question, une permission ou un plan"
+        case .en: "\(names(agents)) \(isPlural(agents) ? "need" : "needs") you: a question, a permission or a plan"
+        case .fr: "\(names(agents)) \(isPlural(agents) ? "ont" : "a") besoin de vous : une question, une permission ou un plan"
         }
     }
 
     public func done(_ agents: Agents) -> String {
         switch language {
-        case .en: "\(names(agents)) \(isPair(agents) ? "have" : "has") finished. Clears when you look at the terminal"
-        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") terminé. S'efface quand vous regardez le terminal"
+        case .en: "\(names(agents)) \(isPlural(agents) ? "have" : "has") finished. Clears when you look at the terminal"
+        case .fr: "\(names(agents)) \(isPlural(agents) ? "ont" : "a") terminé. S'efface quand vous regardez le terminal"
         }
     }
 
@@ -75,8 +79,8 @@ public struct StatusStrings {
 
     public func splitWaiting(_ agents: Agents) -> String {
         switch language {
-        case .en: "\(names(agents)) \(isPair(agents) ? "need" : "needs") you, and other work is still running"
-        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") besoin de vous, et d'autres tâches sont en cours"
+        case .en: "\(names(agents)) \(isPlural(agents) ? "need" : "needs") you, and other work is still running"
+        case .fr: "\(names(agents)) \(isPlural(agents) ? "ont" : "a") besoin de vous, et d'autres tâches sont en cours"
         }
     }
 
@@ -89,8 +93,8 @@ public struct StatusStrings {
 
     public func splitDone(_ agents: Agents) -> String {
         switch language {
-        case .en: "\(names(agents)) \(isPair(agents) ? "have" : "has") finished, and other work is still running"
-        case .fr: "\(names(agents)) \(isPair(agents) ? "ont" : "a") terminé, et d'autres tâches sont en cours"
+        case .en: "\(names(agents)) \(isPlural(agents) ? "have" : "has") finished, and other work is still running"
+        case .fr: "\(names(agents)) \(isPlural(agents) ? "ont" : "a") terminé, et d'autres tâches sont en cours"
         }
     }
 

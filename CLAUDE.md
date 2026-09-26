@@ -7,11 +7,14 @@ first edit.
 
 MySidepulse is a macOS menu-bar app that drives a **SidePulse** LED strip — an
 LED bar in SD-card form factor that sits in the Mac's card slot — so that three
-things are visible at a glance: an agent is **working** (a rolling wave: red for
-Claude Code, blue for Codex, one colour per pass when both work), an agent has
-**finished** (a green breath), an agent **needs you** (an amber double blink).
-The agents are **Claude Code and Codex**; finished and needs you are one colour
-for both, because they say the Mac wants the user, not which agent does. When
+things are visible at a glance: an agent is **working** (a rolling wave in the
+agent's colour: red for Claude Code, blue for Codex, another blue for GitHub
+Copilot, another red for OpenCode; one colour per pass when two work, one per
+LED when three or four do), an agent has **finished** (a green breath), an
+agent **needs you** (an amber double blink). The agents with hooks are
+**Claude Code and Codex**; Copilot and OpenCode have their colours and their
+place in the roll, and nothing sets up their hooks. Finished and needs you are one colour for
+every agent, because they say the Mac wants the user, not which agent does. When
 nobody is at the machine the same finished / needs-you alerts go to a phone
 through **ntfy**, titled with the agent's name. Around that core it shows
 terminal jobs (`mysidepulse run`, zsh hooks), the battery for a few seconds when
@@ -227,8 +230,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (493, one opt-in skip) runs in about twenty-two seconds;
-  `MySidepulsePlatformTests` (163) takes about 30 s, because it spawns real
+  `MySidepulseCoreTests` (508, one opt-in skip) runs in about thirty seconds;
+  `MySidepulsePlatformTests` (165) takes about 30 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -300,8 +303,8 @@ Full version in `docs/architecture.md`.
 - **`Sources/MySidepulseCore`** — pure rules, **Foundation only** (`PurityTests`
   fails the build otherwise). Never reads a clock: `now` is always passed in,
   which is what lets tests and the journal replay drive it.
-  `Agent` (`AgentKind`: Claude Code or Codex; `Agents`: which of them a
-  display state is about) ·
+  `Agent` (`AgentKind`: Claude Code, Codex, GitHub Copilot or OpenCode;
+  `Agents`: which of them a display state is about) ·
   `SessionStore` (the per-session state machine: `apply` folds an event, `tick`
   applies every time-based rule and returns the pushes that are due,
   `nextDeadline` says when to tick next) · `Event` + `JournalCodec` + `Trim`
@@ -311,7 +314,7 @@ Full version in `docs/architecture.md`.
   four messages and the answers of Codex's daemon) · `TurnVerdict` (the outcome of a
   rescue, journaled so a relaunch applies it again) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
-  program text) · `LedPalette` (the nine colours the owner can change, which
+  program text) · `LedPalette` (the eleven colours the owner can change, which
   saved colour is trusted, and the colours a roll cycles through) ·
   `BrightnessCurve` (brightness as the eye
   sees it, to the strip's 1…255) · `BrightnessCycle` (the steps of
@@ -467,7 +470,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (493 + 163, one opt-in skip) at
+`swift build` is clean and `swift test` is green (508 + 165, one opt-in skip) at
 this commit. The live journal replays.
 
 Checked on the strip by the owner: the brightness key over the roll carries the
@@ -499,10 +502,16 @@ Known limitations, in plain words — the authority is *Open issues* in
   rollout marker: a TUI session goes dark when the daemon says its thread is
   idle, and any other rolls until 2 h after the rollout's last line. Whether Codex
   fires `PreToolUse` for `request_user_input` is unobserved.
-- The shared roll (both agents working: one colour per pass on the whole
-  strip, one per LED under a zone), its recolour tail and its pass-end
-  handover are pinned by exact text and the phase sweeps, and have not been
-  seen on the strip. Judge them there before trusting them.
+- The shared roll (two agents working: one colour per pass on the whole
+  strip; three or four: one pass, one colour per LED; one per LED under a
+  zone), its recolour tail and its pass-end handover are pinned by exact text
+  and the phase sweeps, and have not been seen on the strip, nor have
+  Copilot's `#0e5cff` and OpenCode's `#ff0043`. Judge them there before
+  trusting them. On the Dot a roll of three or four shows the first two
+  agents' colours only.
+- Copilot and OpenCode have their colours, their Colours rows, their
+  Playground cards and their push titles and links, and nothing sets up their
+  hooks, so no Copilot or OpenCode session reaches the strip.
 - Jobs are not journaled: a restart forgets them.
 - One write queue serves every strip: a card whose write never returns freezes
   all of them until the app restarts.

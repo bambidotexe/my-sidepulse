@@ -3,13 +3,17 @@ import XCTest
 
 final class ContinuationTests: XCTestCase {
     static let looping: [DisplayState] = [.working, .waiting, .done, .jobRunning, .batteryCritical,
-                                          .working(.codex), .working(.both),
+                                          .working(.codex), .working(.claudeAndCodex),
                                           .split(alert: .waiting, work: .working),
                                           .split(alert: .done, work: .working),
                                           .split(alert: .jobFailed, work: .jobRunning),
                                           .split(alert: .jobSucceeded, work: .jobRunning),
-                                          .split(alert: .waiting(.codex), work: .working(.both)),
-                                          .split(alert: .done(.claude), work: .working(.both))]
+                                          .split(alert: .waiting(.codex), work: .working(.claudeAndCodex)),
+                                          .split(alert: .done(.claude), work: .working(.claudeAndCodex)),
+                                          .working(.copilot), .working(.opencode),
+                                          .working(.claudeCodexCopilot), .working(.all),
+                                          .split(alert: .waiting(.copilot), work: .working(.all)),
+                                          .split(alert: .done(.opencode), work: .working(.claudeCodexCopilot))]
         + LedEffects.names.map { .effect($0) }
 
     /// Where the pass under way at `phase` ends: the loop's end, or on a loop

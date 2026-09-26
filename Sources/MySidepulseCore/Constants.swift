@@ -8,10 +8,17 @@ import Foundation
 /// the strip and on screen; the strip's brightness setting is what dims it,
 /// never a darker hex.
 public enum K {
+    /// Each agent at work, in the owner's colours. A roll two agents share
+    /// takes one agent's colour on one pass and the other's on the next; a
+    /// roll three or four share is one pass, each LED in one agent's colour
+    /// in turn (`LedProgram.rolling`).
     public static let claudeWorking = "#ff374a"
-    /// Codex at work: the owner's blue. A roll shared by both agents takes
-    /// this colour on one pass and `claudeWorking` on the next.
+    /// Codex at work: the owner's blue.
     public static let codexWorking = "#0a00ff"
+    /// GitHub Copilot at work: the owner's colour for it, a blue.
+    public static let copilotWorking = "#0e5cff"
+    /// OpenCode at work: the owner's colour for it, a red.
+    public static let opencodeWorking = "#ff0043"
     /// A terminal job in flight.
     public static let jobRunning = "#ba5eff"
     public static let askAmber = "#ff7000"

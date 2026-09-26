@@ -66,7 +66,7 @@ public enum Arbiter {
         // takes the whole strip.
         //
         // Within each, an agent outranks a job at every matching rung, and
-        // needs-you outranks finished. Claude and Codex share every rung: the
+        // needs-you outranks finished. Every agent shares every rung: the
         // strip says that an agent wants the user, not which one.
         // Callers pass JobStore.displayable, which has already dropped jobs
         // still inside their show-after — that gate needs a clock. So does
@@ -80,7 +80,7 @@ public enum Arbiter {
         // will stick still shows as whatever it is replacing.
         // Which agents are asking, which have finished and which are working,
         // each answered as a set: an alert names the agents behind it and a
-        // roll shared by both agents takes both colours.
+        // roll shared by several agents takes each one's colour.
         var waiting = Agents(), finished = Agents(), working = Agents()
         for s in sessions {
             let agent = Agents(s.agent)

@@ -12,7 +12,7 @@ third-party dependency, no firmware in this repository.
 
 | Target | Kind | Imports | Role |
 |---|---|---|---|
-| `MySidepulseCore` | library | Foundation only | Every rule: the two agents (`AgentKind`, `Agents`), session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits for both agents, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
+| `MySidepulseCore` | library | Foundation only | Every rule: the four agents (`AgentKind`, `Agents`), session state machine, job store, arbiter, LED program text, constants, every user-facing string in both languages, hook config edits for Claude Code and Codex, the zsh snippet, the update's rules (what a reply means, when an unasked check is due, the Updates group, the update window's phases, what an unpacked copy must say about itself, the install helper's text). Pure values and functions; no clock, no I/O, and it never asks the system what the language is. |
 | `MySidepulsePlatform` | library | Foundation, Darwin, MachO | Headless, testable I/O: journal append and tail, process inspection, LED file writer, keepalive, ntfy client, control socket, doctor, the hook installer, and the update's I/O: the GitHub check, the download held against GitHub's digest, the stager (disk image, copy, signature), the installer and the detached helper process. |
 | `MySidepulseApp` | executable | AppKit, SwiftUI, IOKit, DiskArbitration, ServiceManagement, UserNotifications | The menu-bar app: `Engine`, device/power/attention monitors, launch agent, the settings window and the onboarding wizard. |
 | `MySidepulseCLI` | executable `mysidepulse` | Foundation | The CLI, including the hook entry point Claude Code and Codex run. |
@@ -247,7 +247,7 @@ Everything lives in `~/Library/Application Support/MySidepulse/` (`Paths`).
 | `notifyServer` | string? | absent → `https://ntfy.sh` | The ntfy server. |
 | `onboardingDone` | bool? | absent | `true` once the wizard's last button has been pressed. Absent and `false` both open it at the next launch (functional.md §10). |
 | `ledModeBeforeOff` | string? | absent | The mode `brightness cycle`'s off step replaced, which its next press brings back; cleared by any other change of mode (functional.md §11). |
-| `colors` | `{slot: "#rrggbb"}`? | absent | The Colours page's overrides, keyed by `LedPalette.Slot` raw value (`working`, `codexWorking`, `needsYou`, `done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`). A slot at its default is absent; a value that is not `#rrggbb` is ignored. `Engine.palette` applies them on every paint. |
+| `colors` | `{slot: "#rrggbb"}`? | absent | The Colours page's overrides, keyed by `LedPalette.Slot` raw value (`working`, `codexWorking`, `copilotWorking`, `opencodeWorking`, `needsYou`, `done`, `jobRunning`, `batteryCritical`, `batteryLow`, `batteryMid`, `batteryHigh`). A slot at its default is absent; a value that is not `#rrggbb` is ignored. `Engine.palette` applies them on every paint. |
 
 Loading falls back to defaults when the file is missing or does not decode.
 Because `Decodable` is synthesised, a non-optional key that is missing fails the

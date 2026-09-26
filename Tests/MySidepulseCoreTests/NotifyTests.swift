@@ -233,6 +233,8 @@ final class NotifyTests: XCTestCase {
     func testAlertCopyIsExact() {
         XCTAssertEqual(AlertCopy.title(for: .claude), "Claude Code")
         XCTAssertEqual(AlertCopy.title(for: .codex), "Codex")
+        XCTAssertEqual(AlertCopy.title(for: .copilot), "GitHub Copilot")
+        XCTAssertEqual(AlertCopy.title(for: .opencode), "OpenCode")
         let expected: [(AlertKind, String, String, String)] = [
             (.finished, "Finished", "Terminé", "white_check_mark"),
             (.needsYou(.question), "Asking you something", "Vous pose une question", "speech_balloon"),
@@ -247,6 +249,23 @@ final class NotifyTests: XCTestCase {
             for language in Language.allCases {
                 withLanguage(language) { XCTAssertEqual(AlertCopy.tag(for: kind), tag) }
             }
+        }
+    }
+
+    /// A push names the agent whose session it is, and its click lands on
+    /// that agent's own page: Copilot's on GitHub, OpenCode's on its site.
+    func testEveryAgentsPushIsTitledWithItsNameAndLandsOnItsPage() {
+        XCTAssertEqual(AgentKind.copilot.homeLink, "https://github.com/copilot")
+        XCTAssertEqual(AgentKind.opencode.homeLink, "https://opencode.ai")
+        for agent in [AgentKind.copilot, .opencode] {
+            var s = SessionStore()
+            var prompt = ev(.userPromptSubmit, 0)
+            prompt.agent = agent
+            s.apply(prompt)
+            s.apply(ev(.stop, 10, tail: "Done."))
+            let fired = s.tick(now: at(10 + K.notifyDebounceSeconds))
+            XCTAssertEqual(fired.map(\.agent), [agent], "\(agent)")
+            XCTAssertEqual(fired.map(\.kind), [.finished], "\(agent)")
         }
     }
 
