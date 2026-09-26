@@ -74,6 +74,77 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(check("claude code hooks", facts)?.fix, Loc.settings.health.journalFix)
     }
 
+    // MARK: Copilot
+
+    func testCopilotHooksAreALineOnlyWhileCopilotIsOnThisMacOrSetUp() {
+        var facts = healthy()
+        XCTAssertNil(check("copilot hooks", facts), "not on this Mac, nothing set up: no line")
+        facts.copilotInstalled = false
+        facts.copilotHooks = .setUp
+        XCTAssertNotNil(check("copilot hooks", facts), "set up keeps the line even once Copilot is gone")
+        facts.copilotHooks = .missing
+        facts.copilotInstalled = true
+        XCTAssertNotNil(check("copilot hooks", facts))
+    }
+
+    func testMissingCopilotHooksAreOrangeAndSayWhichButton() {
+        withLanguage(.en) {
+            var facts = healthy()
+            facts.copilotInstalled = true
+            facts.copilotHooks = .missing
+            XCTAssertEqual(check("copilot hooks", facts)?.level, .warning)
+            XCTAssertEqual(check("copilot hooks", facts)?.word, "Disabled")
+            XCTAssertEqual(check("copilot hooks", facts)?.fix, Loc.settings.system.withoutCopilotHooksWarning)
+        }
+    }
+
+    func testAStaleOrUnreadableCopilotFileIsInvalidAndOrange() {
+        var facts = healthy()
+        facts.copilotInstalled = true
+        facts.copilotHooks = .unreadable
+        XCTAssertEqual(check("copilot hooks", facts)?.level, .warning)
+        XCTAssertEqual(check("copilot hooks", facts)?.fix, Loc.settings.system.copilotHooksInvalidWarning)
+    }
+
+    func testDisableAllHooksTurnsTheSetUpLineOrangeWithItsOwnFix() {
+        var facts = healthy()
+        facts.copilotInstalled = true
+        facts.copilotHooks = .setUp
+        facts.copilotHooksDisabled = true
+        XCTAssertEqual(check("copilot hooks", facts)?.level, .warning)
+        XCTAssertEqual(check("copilot hooks", facts)?.fix, Loc.settings.system.copilotHooksDisabledWarning)
+        facts.copilotHooksDisabled = false
+        XCTAssertEqual(check("copilot hooks", facts)?.level, .good)
+    }
+
+    // MARK: OpenCode
+
+    func testOpencodePluginIsALineOnlyWhileOpenCodeIsOnThisMacOrSetUp() {
+        var facts = healthy()
+        XCTAssertNil(check("opencode plugin", facts))
+        facts.opencodeInstalled = true
+        facts.opencodeHooks = .missing
+        XCTAssertNotNil(check("opencode plugin", facts))
+    }
+
+    func testAPluginOfAnotherCopyIsInvalidNotMissing() {
+        withLanguage(.en) {
+            var facts = healthy()
+            facts.opencodeInstalled = true
+            facts.opencodeHooks = .unreadable
+            XCTAssertEqual(check("opencode plugin", facts)?.level, .warning)
+            XCTAssertEqual(check("opencode plugin", facts)?.word, "Invalid")
+            XCTAssertEqual(check("opencode plugin", facts)?.fix, Loc.settings.system.opencodePluginInvalidWarning)
+        }
+    }
+
+    func testAWorkingOpenCodePluginIsGreen() {
+        var facts = healthy()
+        facts.opencodeInstalled = true
+        facts.opencodeHooks = .setUp
+        XCTAssertEqual(check("opencode plugin", facts)?.level, .good)
+    }
+
     func testTheOptionalGrantsAreOrange() {
         var facts = healthy()
         facts.terminalHookSetUp = false
@@ -177,6 +248,12 @@ final class HealthTests: XCTestCase {
     func testTheTablesStayShortInTheWorstCase() {
         var facts = healthy()
         facts.claudeHooks = .missing
+        facts.codexInstalled = true
+        facts.codexHooks = .missing
+        facts.copilotInstalled = true
+        facts.copilotHooks = .missing
+        facts.opencodeInstalled = true
+        facts.opencodeHooks = .missing
         facts.terminalHookSetUp = false
         facts.notificationsGranted = false
         facts.devices = [.init(name: "SidePulseDot", leds: 8, path: "/Volumes/SidePulseDot", stalled: true)]
@@ -184,6 +261,9 @@ final class HealthTests: XCTestCase {
         facts.phone = .unusable(detail: "no topic")
         facts.control = .init(ok: false, detail: "control socket unreachable")
         facts.recentCrashes = [Date(), Date()]
+        XCTAssertEqual(HealthReport.checks(for: facts).count, HealthLimits.checks,
+                       "the worst case is exactly the limit: every agent installed and missing, both " +
+                       "only-while-wrong lines, and a crash")
         XCTAssertLessThanOrEqual(HealthReport.checks(for: facts).count, HealthLimits.checks)
 
         var busy = healthy()

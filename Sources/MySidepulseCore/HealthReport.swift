@@ -13,8 +13,8 @@ public struct HealthFacts: Equatable {
         public init(ok: Bool, detail: String) { self.ok = ok; self.detail = detail }
     }
 
-    /// What an agent's hook file says about the hooks: `~/.claude/settings.json`, or
-    /// `~/.codex/hooks.json`.
+    /// What an agent's hook file says about the hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`,
+    /// `~/.copilot/hooks/mysidepulse.json`, or `~/.config/opencode/plugins/mysidepulse.js`.
     public enum HookFile: Equatable {
         /// Every event is subscribed.
         case setUp
@@ -126,6 +126,28 @@ public struct HealthFacts: Equatable {
     /// The command this bundle's Codex hooks run, which is what `hooks.json` holds while the line is green.
     public var codexHookCommand: String?
 
+    // GitHub Copilot
+    /// Whether Copilot is on this Mac (`~/.copilot` exists). Nil until read. Its hooks are a line only
+    /// while it is, or while they are set up.
+    public var copilotInstalled: Bool?
+    public var copilotHooks: HookFile?
+    /// The doctor's "copilot hooks".
+    public var copilotHooksCheck: Check?
+    /// The command this bundle's Copilot hooks run.
+    public var copilotHookCommand: String?
+    /// Whether `disableAllHooks` turns every one of Copilot's user hooks off, whatever the file says.
+    public var copilotHooksDisabled: Bool?
+
+    // OpenCode
+    /// Whether OpenCode is on this Mac. Nil until read. Its line is there only while it is, or while the
+    /// plugin is set up.
+    public var opencodeInstalled: Bool?
+    public var opencodeHooks: HookFile?
+    /// The doctor's "opencode plugin".
+    public var opencodeHooksCheck: Check?
+    /// The command this bundle's OpenCode plugin runs.
+    public var opencodeHookCommand: String?
+
     // Terminal
     public var terminalHookSetUp: Bool?
     public var jobs: [Job] = []
@@ -159,15 +181,17 @@ public enum HealthReport {
     /// The Health table, in page order. A fact nobody has read yet leaves its line out rather than showing
     /// it unknown.
     public static func checks(for facts: HealthFacts) -> [HealthRow] {
-        [claudeHooks(facts), codexHooks(facts), terminalHook(facts), notifications(facts), strip(facts),
-         launchAgent(facts), phone(facts), commandLine(facts), crashes(facts.recentCrashes)].compactMap { $0 }
+        [claudeHooks(facts), codexHooks(facts), copilotHooks(facts), opencodeHooks(facts), terminalHook(facts),
+         notifications(facts), strip(facts), launchAgent(facts), phone(facts), commandLine(facts),
+         crashes(facts.recentCrashes)].compactMap { $0 }
     }
 
     /// The Information table, in page order, each line only once it has something to say.
     public static func readings(for facts: HealthFacts) -> [InfoRow] {
         let t = Loc.settings.health
         var rows: [InfoRow] = []
-        let agentSetUp = facts.claudeHooks == .setUp || facts.codexHooks == .setUp
+        let agentSetUp = [facts.claudeHooks, facts.codexHooks, facts.copilotHooks, facts.opencodeHooks]
+            .contains(.setUp)
         let terminalSetUp = facts.terminalHookSetUp == true
 
         if agentSetUp || terminalSetUp {
@@ -252,6 +276,67 @@ public enum HealthReport {
             }
             return HealthRow(id: "codex hooks", label: label, level: .good, word: words.enabled,
                              detail: facts.codexHookCommand)
+        }
+    }
+
+    /// Optional, like Codex's: a Mac without Copilot has nothing to set up. `disableAllHooks` turns every
+    /// user hook off without touching the file, so it is checked even while every event is subscribed.
+    static func copilotHooks(_ facts: HealthFacts) -> HealthRow? {
+        guard let hooks = facts.copilotHooks, facts.copilotInstalled == true || hooks == .setUp else { return nil }
+        let t = Loc.settings.health
+        let system = Loc.settings.system
+        let words = Loc.settings.words
+        let label = system.copilotHooksLabel
+        switch hooks {
+        case .missing:
+            return HealthRow(id: "copilot hooks", label: label, level: HealthRules.grant(held: false, required: false),
+                             word: words.disabled, detail: facts.copilotHooksCheck?.detail,
+                             fix: system.withoutCopilotHooksWarning)
+        case .unreadable:
+            return HealthRow(id: "copilot hooks", label: label, level: .warning, word: words.invalid,
+                             detail: facts.copilotHooksCheck?.detail, fix: system.copilotHooksInvalidWarning)
+        case .setUp:
+            if facts.copilotHooksDisabled == true {
+                return HealthRow(id: "copilot hooks", label: label, level: .warning, word: words.disabled,
+                                 detail: facts.copilotHooksCheck?.detail, fix: system.copilotHooksDisabledWarning)
+            }
+            if let check = facts.copilotHooksCheck, !check.ok {
+                return HealthRow(id: "copilot hooks", label: label, level: .warning, word: words.invalid,
+                                 detail: facts.copilotHookCommand ?? check.detail, fix: t.copilotHookCommandFix)
+            }
+            if let journal = facts.journal, !journal.ok {
+                return HealthRow(id: "copilot hooks", label: label, level: .warning, word: words.failed,
+                                 detail: journal.detail, fix: t.journalFix)
+            }
+            return HealthRow(id: "copilot hooks", label: label, level: .good, word: words.enabled,
+                             detail: facts.copilotHookCommand)
+        }
+    }
+
+    /// Optional, like Copilot's: a Mac without OpenCode has no plugin to set up. A plugin that is there but
+    /// belongs to another copy of MySidepulse reads Invalid, the same fix as a missing one: Set Up
+    /// overwrites it.
+    static func opencodeHooks(_ facts: HealthFacts) -> HealthRow? {
+        guard let hooks = facts.opencodeHooks, facts.opencodeInstalled == true || hooks == .setUp else { return nil }
+        let t = Loc.settings.health
+        let system = Loc.settings.system
+        let words = Loc.settings.words
+        let label = system.opencodePluginLabel
+        switch hooks {
+        case .missing:
+            return HealthRow(id: "opencode plugin", label: label, level: HealthRules.grant(held: false, required: false),
+                             word: words.disabled, detail: facts.opencodeHooksCheck?.detail,
+                             fix: system.withoutOpencodePluginWarning)
+        case .unreadable:
+            return HealthRow(id: "opencode plugin", label: label, level: .warning, word: words.invalid,
+                             detail: facts.opencodeHooksCheck?.detail, fix: system.opencodePluginInvalidWarning)
+        case .setUp:
+            if let journal = facts.journal, !journal.ok {
+                return HealthRow(id: "opencode plugin", label: label, level: .warning, word: words.failed,
+                                 detail: journal.detail, fix: t.journalFix)
+            }
+            return HealthRow(id: "opencode plugin", label: label, level: .good, word: words.enabled,
+                             detail: facts.opencodeHookCommand)
         }
     }
 

@@ -3,10 +3,10 @@ import MySidepulseCore
 import MySidepulsePlatform
 
 /// What MySidepulse needs from outside itself, each beside the button that gives it: Claude Code's
-/// hooks, Codex's hooks (a group shown only while Codex is on this Mac or its hooks are set up), the
-/// terminal hook in ~/.zshrc, and the notification permission. The hooks are read back from disk and the
-/// permission from macOS, so what a row says is what is actually there. Each row's colour is
-/// `HealthRules.grant`'s, as on the Health page.
+/// hooks, then Codex's, Copilot's and OpenCode's, each in its own group shown only while that agent is on
+/// this Mac or its hooks are set up, then the terminal hook in ~/.zshrc, and the notification permission.
+/// The hooks are read back from disk and the permission from macOS, so what a row says is what is actually
+/// there. Each row's colour is `HealthRules.grant`'s, as on the Health page.
 struct SystemPage: View {
     @ObservedObject var model: SettingsModel
 
@@ -38,6 +38,38 @@ struct SystemPage: View {
                             Button(t.removeHooksButton) { model.removeCodexHooks() }
                         } else {
                             Button(t.setUpHooksButton) { model.setUpCodexHooks() }
+                        }
+                    }
+                }
+            }
+
+            if model.showsCopilot {
+                SettingsGroup(title: t.copilotTitle,
+                              hint: t.copilotHint(events: HookConfig.copilotEvents.count),
+                              warnings: copilotWarnings,
+                              notes: [t.copilotNote]) {
+                    StatusRow(t.copilotHooksLabel, mark: copilotMark)
+                    ButtonRow {
+                        if model.copilotHooksSetUp == true {
+                            Button(t.removeHooksButton) { model.removeCopilotHooks() }
+                        } else {
+                            Button(t.setUpHooksButton) { model.setUpCopilotHooks() }
+                        }
+                    }
+                }
+            }
+
+            if model.showsOpenCode {
+                SettingsGroup(title: t.opencodeTitle,
+                              hint: t.opencodeHint,
+                              warnings: opencodeWarnings,
+                              notes: [t.opencodeNote]) {
+                    StatusRow(t.opencodePluginLabel, mark: opencodeMark)
+                    ButtonRow {
+                        if model.opencodeHooksSetUp == true {
+                            Button(t.removePluginButton) { model.removeOpencodePlugin() }
+                        } else {
+                            Button(t.setUpPluginButton) { model.setUpOpencodePlugin() }
                         }
                     }
                 }
@@ -113,6 +145,61 @@ struct SystemPage: View {
             warnings.append(t.codexHooksUnreadableWarning)
         }
         if let error = model.codexHooksError { warnings.append(error) }
+        return warnings
+    }
+
+    /// Copilot is optional, so missing is orange, and so is a stale file or the hooks turned off by
+    /// disableAllHooks.
+    private var copilotMark: StatusMark {
+        let words = Loc.settings.words
+        switch model.copilotHooksSetUp {
+        case true?:
+            return model.copilotHooksDisabled
+                ? StatusMark(HealthRules.grant(held: false, required: false), words.disabled)
+                : .good(words.enabled)
+        case false?: return StatusMark(HealthRules.grant(held: false, required: false), words.disabled)
+        case nil: return .warning(words.invalid)
+        }
+    }
+
+    private var copilotWarnings: [String] {
+        let t = Loc.settings.system
+        var warnings: [String] = []
+        switch model.copilotHooksSetUp {
+        case true?:
+            if model.copilotHooksDisabled { warnings.append(t.copilotHooksDisabledWarning) }
+        case false?:
+            warnings.append(t.withoutCopilotHooksWarning)
+        case nil:
+            warnings.append(t.copilotHooksInvalidWarning)
+        }
+        if let error = model.copilotHooksError { warnings.append(error) }
+        return warnings
+    }
+
+    /// OpenCode is optional, so an absent plugin is orange; a plugin of another copy of MySidepulse
+    /// (`opencodeHooksSetUp == nil`) is Invalid, the same fix as absent: Set Up overwrites it.
+    private var opencodeMark: StatusMark {
+        let words = Loc.settings.words
+        switch model.opencodeHooksSetUp {
+        case true?: return .good(words.enabled)
+        case false?: return StatusMark(HealthRules.grant(held: false, required: false), words.disabled)
+        case nil: return .warning(words.invalid)
+        }
+    }
+
+    private var opencodeWarnings: [String] {
+        let t = Loc.settings.system
+        var warnings: [String] = []
+        switch model.opencodeHooksSetUp {
+        case true?:
+            break
+        case false?:
+            warnings.append(t.withoutOpencodePluginWarning)
+        case nil:
+            warnings.append(t.opencodePluginInvalidWarning)
+        }
+        if let error = model.opencodeHooksError { warnings.append(error) }
         return warnings
     }
 

@@ -200,6 +200,21 @@ public enum HookInstaller {
         hooksInstalled(for: agent, cliPath: cliPath, file: file).map { $0 == HookConfig.setUpCount(for: agent) }
     }
 
+    /// Whether OpenCode's plugin is absent, holds exactly what this bundle would write, or holds something
+    /// else: another copy's plugin (ours, but not this cliPath) or a file MySidepulse did not write.
+    /// `hooksSetUp` alone reads false for both "nothing there" and "someone's stale copy", which the System
+    /// and Health pages tell apart: absent reads Disabled with a Set Up warning, stale reads Invalid with
+    /// the same button as its fix.
+    public enum OpenCodePluginState: Equatable { case absent, current, stale }
+
+    public static func opencodePluginState(cliPath: String = cliPath(), file: URL = Paths.opencodePlugin) -> OpenCodePluginState {
+        switch ownership(of: .opencode, at: file) {
+        case .absent: return .absent
+        case .notOurs: return .stale
+        case .ours: return hooksSetUp(for: .opencode, cliPath: cliPath, file: file) == true ? .current : .stale
+        }
+    }
+
     // MARK: a file MySidepulse owns whole: Copilot's hooks, OpenCode's plugin
 
     /// What is at an owned file's path: nothing, a file of ours, or one that

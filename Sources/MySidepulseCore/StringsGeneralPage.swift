@@ -147,15 +147,15 @@ public struct GeneralPageStrings {
         switch language {
         case .en: "Removes everything MySidepulse set up outside its own folder: "
             + "what starts it at login and reopens it after a crash, what it added "
-            + "to Claude Code, to Codex and to the shell, and its settings, its journal "
-            + "and your notification topic. The strip goes dark, MySidepulse moves "
-            + "itself to the Trash and quits."
+            + "to Claude Code, Codex, Copilot, OpenCode and the shell, and its "
+            + "settings, its journal and your notification topic. The strip goes "
+            + "dark, MySidepulse moves itself to the Trash and quits."
         case .fr: "Retire tout ce que MySidepulse a installé hors de son propre "
             + "dossier : ce qui le lance à l'ouverture de session et le rouvre "
-            + "après un plantage, ce qu'il a ajouté à Claude Code, à Codex et au "
-            + "shell, ainsi que ses réglages, son journal et votre sujet de "
-            + "notification. Le ruban s'éteint, MySidepulse se met à la corbeille "
-            + "et quitte."
+            + "après un plantage, ce qu'il a ajouté à Claude Code, Codex, Copilot, "
+            + "OpenCode et au shell, ainsi que ses réglages, son journal et votre "
+            + "sujet de notification. Le ruban s'éteint, MySidepulse se met à la "
+            + "corbeille et quitte."
         }
     }
 
@@ -163,11 +163,13 @@ public struct GeneralPageStrings {
         switch language {
         case .en: "Do not drag MySidepulse to the Trash. All of that stays behind: "
             + "macOS goes on trying to start an app that is gone at every login, "
-            + "and the Claude Code and Codex hooks fire at a missing command on every event."
+            + "and the Claude Code, Codex, Copilot and OpenCode hooks fire at a "
+            + "missing command on every event."
         case .fr: "Ne mettez pas MySidepulse à la corbeille vous-même. Tout cela "
             + "resterait en place : macOS essaierait de lancer une app disparue à "
-            + "chaque ouverture de session, et les hooks Claude Code et Codex appelleraient "
-            + "une commande absente à chaque événement."
+            + "chaque ouverture de session, et les hooks Claude Code, Codex, "
+            + "Copilot et OpenCode appelleraient une commande absente à chaque "
+            + "événement."
         }
     }
 

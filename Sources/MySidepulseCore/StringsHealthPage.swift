@@ -149,6 +149,15 @@ public struct HealthPageStrings {
         }
     }
 
+    public var copilotHookCommandFix: String {
+        switch language {
+        case .en: "The Copilot hooks run a copy of MySidepulse that is not there any more. On the "
+            + "System page, remove the Copilot hooks and set them up again."
+        case .fr: "Les hooks Copilot lancent une copie de MySidepulse qui n'existe plus. Sur la page "
+            + "Système, retirez les hooks Copilot puis réinstallez-les."
+        }
+    }
+
     // MARK: Phone
 
     public var phoneNotificationsLabel: String {

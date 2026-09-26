@@ -9,6 +9,16 @@ public enum Doctor {
         /// whether Codex is on this Mac at all.
         public var codexHooksRoot: () -> [String: Any]?
         public var codexInstalled: () -> Bool
+        /// Copilot's `hooks/mysidepulse.json`, nil when missing or unreadable; whether Copilot is on this
+        /// Mac; whether `disableAllHooks` turns its user hooks off.
+        public var copilotHooksRoot: () -> [String: Any]?
+        public var copilotInstalled: () -> Bool
+        public var copilotHooksDisabled: () -> Bool
+        /// Whether OpenCode is on this Mac; whether its plugin file exists; whether it is exactly what
+        /// this bundle would write.
+        public var opencodeInstalled: () -> Bool
+        public var opencodePluginPresent: () -> Bool
+        public var opencodePluginCurrent: () -> Bool
         public var binaryExists: (String) -> Bool
         public var journalWritable: () -> Bool
         public var lastEventAge: () -> TimeInterval?
@@ -16,11 +26,21 @@ public enum Doctor {
                     settingsRoot: @escaping () -> [String: Any]?,
                     codexHooksRoot: @escaping () -> [String: Any]? = { nil },
                     codexInstalled: @escaping () -> Bool = { false },
+                    copilotHooksRoot: @escaping () -> [String: Any]? = { nil },
+                    copilotInstalled: @escaping () -> Bool = { false },
+                    copilotHooksDisabled: @escaping () -> Bool = { false },
+                    opencodeInstalled: @escaping () -> Bool = { false },
+                    opencodePluginPresent: @escaping () -> Bool = { false },
+                    opencodePluginCurrent: @escaping () -> Bool = { false },
                     binaryExists: @escaping (String) -> Bool,
                     journalWritable: @escaping () -> Bool,
                     lastEventAge: @escaping () -> TimeInterval?) {
             self.appResponse = appResponse; self.settingsRoot = settingsRoot
             self.codexHooksRoot = codexHooksRoot; self.codexInstalled = codexInstalled
+            self.copilotHooksRoot = copilotHooksRoot; self.copilotInstalled = copilotInstalled
+            self.copilotHooksDisabled = copilotHooksDisabled
+            self.opencodeInstalled = opencodeInstalled; self.opencodePluginPresent = opencodePluginPresent
+            self.opencodePluginCurrent = opencodePluginCurrent
             self.binaryExists = binaryExists; self.journalWritable = journalWritable
             self.lastEventAge = lastEventAge
         }
@@ -115,6 +135,41 @@ public enum Doctor {
         } else {
             r.check(false, "codex hooks", t.codexHooksMissingOrUnparseable)
         }
+        // Copilot is optional too, and never denies a tool because of a hook: the same per-event bar as
+        // Claude Code's and Codex's, plus disableAllHooks, which turns every event off without touching
+        // the file.
+        if !p.copilotInstalled() {
+            r.check(true, "copilot hooks", t.copilotNotInstalled)
+        } else if let root = p.copilotHooksRoot() {
+            var missing: [String] = []
+            var staleBinary = false
+            for event in HookConfig.copilotEvents {
+                guard let exec = HookConfig.copilotEntryExec(in: root, event: event) else {
+                    missing.append(event)
+                    continue
+                }
+                if !p.binaryExists(exec) { staleBinary = true }
+            }
+            let disabled = p.copilotHooksDisabled()
+            let detail = !missing.isEmpty ? t.missingEvents(missing.joined(separator: ", "))
+                : staleBinary ? t.hookPointsAtMissingBinary
+                : disabled ? t.copilotHooksDisabledDetail
+                : t.allEventsSubscribed(HookConfig.copilotEvents.count)
+            r.check(missing.isEmpty && !staleBinary && !disabled, "copilot hooks", detail)
+        } else {
+            r.check(false, "copilot hooks", t.copilotHooksMissingOrUnparseable)
+        }
+        // OpenCode has no per-event shape to check: one plugin file, either exactly what this bundle
+        // writes or not.
+        if !p.opencodeInstalled() {
+            r.check(true, "opencode plugin", t.opencodeNotInstalled)
+        } else if !p.opencodePluginPresent() {
+            r.check(false, "opencode plugin", t.opencodePluginMissing)
+        } else if p.opencodePluginCurrent() {
+            r.check(true, "opencode plugin", t.opencodePluginCurrentDetail)
+        } else {
+            r.check(false, "opencode plugin", t.opencodePluginStale)
+        }
 
         r.check(p.journalWritable(), "journal", t.journalAppend)
         if let age = p.lastEventAge() {
@@ -173,6 +228,15 @@ public enum Doctor {
                 return loaded
             },
             codexInstalled: { HookInstaller.codexInstalled() },
+            copilotHooksRoot: {
+                guard let loaded = try? SettingsFile.load(at: Paths.copilotHooks) else { return nil }
+                return loaded
+            },
+            copilotInstalled: { HookInstaller.copilotInstalled() },
+            copilotHooksDisabled: { HookInstaller.copilotHooksDisabled() },
+            opencodeInstalled: { HookInstaller.opencodeInstalled() },
+            opencodePluginPresent: { FileManager.default.fileExists(atPath: Paths.opencodePlugin.path) },
+            opencodePluginCurrent: { HookInstaller.hooksSetUp(for: .opencode) == true },
             binaryExists: { FileManager.default.isExecutableFile(atPath: $0) },
             journalWritable: {
                 // Probe the directory with a scratch file — never the real

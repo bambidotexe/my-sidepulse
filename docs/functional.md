@@ -763,7 +763,7 @@ opens on General, already at that page's height and centred.
 | Strip | Remembered brightness | the overrides of strips not plugged in, each with `Forget` | |
 | Colours | Preview | the live strip playing the picked colour's state, what is playing, and `Stop` while it plays | |
 | Colours | Colours | one row per colour, eleven (§3 *Colours*): its small strip, its hex, a colour well, `Reset`; then `Reset All Colours` | the defaults of §3 *Colours* |
-| Notifications | Phone | Notify my phone when Claude or Codex finishes or needs you | off |
+| Notifications | Phone | Notify my phone when an agent finishes or needs you | off |
 | Notifications | Server | the ntfy server, applied on Return | `https://ntfy.sh` |
 | Notifications | Topic | the masked topic; `Reveal Topic and QR Code`; `New Topic…` | |
 | Notifications | Test | `Send a Test Notification`, and its result | |
@@ -771,6 +771,8 @@ opens on General, already at that page's height and centred.
 | Playground | States, Effects | thirteen state tiles and six effect tiles | |
 | System | Claude Code | `Claude Code hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*) | |
 | System | Codex | `Codex hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*); the group is there only while Codex is on this Mac or its hooks are set up | |
+| System | Copilot | `Copilot hooks`, `Set Up Hooks` or `Remove Hooks` (§4 *Source*); the group is there only while Copilot is on this Mac or its hooks are set up | |
+| System | OpenCode | `OpenCode plugin`, `Set Up Plugin` or `Remove Plugin` (§4 *Source*); the group is there only while OpenCode is on this Mac or the plugin is set up | |
 | System | Terminal | `Terminal hook`, `Set Up Terminal Hook` or `Remove Terminal Hook` (§7) | |
 | System | Notifications | `Notifications permission`, and `Allow Notifications` while it is not granted | |
 | System | Welcome | `Show Onboarding Again`, which opens the wizard at page one (above) | |
@@ -905,6 +907,8 @@ where it is installed.
 |---|---|---|
 | Claude Code hooks | always, once the hook files are read | Enabled; Disabled in red; Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
 | Codex hooks | once the hook files are read, while Codex is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional); Invalid in orange when `~/.codex/hooks.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
+| Copilot hooks | once the hook files are read, while Copilot is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional) when an event is missing, or when `disableAllHooks` turns them off; Invalid in orange when the hook file cannot be read or belongs to another copy of MySidepulse; Failed in orange when the hooks cannot append to the journal |
+| OpenCode plugin | once the hook files are read, while OpenCode is on this Mac or the plugin is set up | Enabled; Disabled in orange (optional) with no plugin file; Invalid in orange when the plugin belongs to another copy of MySidepulse; Failed in orange when the plugin cannot append to the journal |
 | Terminal hook | always, once read | Enabled, or Disabled in orange |
 | Notifications permission | always, once read | Granted, or Denied in orange |
 | SidePulse strip | always, once the engine has answered | Available (each strip's name, LEDs and mount path as the tooltip); Missing in orange with none plugged in; Stalled in orange |
@@ -913,13 +917,13 @@ where it is installed.
 | The mysidepulse command | only while a command cannot reach the app over its socket | Failed in orange |
 | Crashes in the last 7 days | only while there is one (`K.healthCrashWindow`, read from `~/Library/Logs/DiagnosticReports`) | the count in orange, the last one's date as the tooltip |
 
-Five lines on a Mac where everything works, six with Codex, nine at most
-(`HealthLimits`).
+Five lines on a Mac where everything works, up to eight with every agent on
+it, eleven at most (`HealthLimits`).
 
 | Information line | When | Reads |
 |---|---|---|
 | Last hook event | while any hook is set up | `12 s ago`, `5 min ago`, or `None yet` |
-| Agent sessions | while the Claude Code or the Codex hooks are set up | how many, or **None**; each session's agent, its state in the user's words and since when as the tooltip |
+| Agent sessions | while any agent's hooks or plugin are set up | how many, or **None**; each session's agent, its state in the user's words and since when as the tooltip |
 | Terminal commands | while the terminal hook is set up | how many, or **None**; each command's state as the tooltip |
 | Showing | while a strip is plugged in | the `StatusCopy` sentence |
 
@@ -936,7 +940,19 @@ hooks up on their own. `Codex hooks`, in its own group while Codex is on this
 Mac or its hooks are set up, is **Enabled** in green, **Disabled** in orange
 with a warning to press Set Up Hooks, or **Invalid** in orange when
 `~/.codex/hooks.json` cannot be read; the note says Codex runs new hooks only
-once they have been trusted in Codex. `Terminal hook` is **Enabled** in green or **Disabled**
+once they have been trusted in Codex. `Copilot hooks`, in its own group while
+Copilot is on this Mac or its hooks are set up, is **Enabled** in green,
+**Disabled** in orange with a warning to press Set Up Hooks (also the reading
+while `disableAllHooks` turns every hook off, with a warning naming the exact
+line to remove from `~/.copilot/settings.json`), or **Invalid** in orange when
+the hook file cannot be read or belongs to another copy of MySidepulse; the
+note says Copilot picks new hooks up at its next start, with no trust step of
+its own. `OpenCode plugin`, in its own group while OpenCode is on this Mac or
+the plugin is set up, is **Enabled** in green, **Disabled** in orange with a
+warning to press Set Up Plugin, or **Invalid** in orange when the plugin
+belongs to another copy of MySidepulse (the same fix: Set Up overwrites it);
+the note says a running server picks the plugin up within a second, with no
+restart. `Terminal hook` is **Enabled** in green or **Disabled**
 in orange with a warning to press Set Up Terminal Hook; the note says to open a
 new terminal window after setting it up. A set-up or removal that fails shows
 the installer's message as a warning under its group. `Notifications
@@ -1163,7 +1179,7 @@ rule rather than a gap (§15).
 | `led auto\|off\|toggle\|#RRGGBB\|<effect>` | sets the mode; `toggle` flips off ↔ auto | 0; 1 app down; 2 bad argument |
 | `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
 | `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
-| `doctor` | ten health checks | number of failures |
+| `doctor` | twelve health checks | number of failures |
 | `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists; writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours, or on error |
 | `run …`, `job begin\|end …` | terminal jobs | the command's status; 2 bad usage |
 | `notify [on\|off\|topic new\|topic T\|server URL\|test]` | notification settings; bare `notify` prints them, **including the full topic** | 0; 1; 2 |
@@ -1212,7 +1228,11 @@ the off step lights nothing.
 `doctor` checks: app reachable; auto-start & restart (this process is the one
 launchd supervises); hooks installed (all 15); hook binary exists; hook command
 (informational); codex hooks (a word when Codex is not installed; with it, all
-12 subscribed to a binary that exists); journal writable; last event age
+12 subscribed to a binary that exists); copilot hooks (a word when Copilot is
+not installed; with it, all 7 subscribed to a binary that exists, and
+`disableAllHooks` fails the check even then); opencode plugin (a word when
+OpenCode is not installed; with it, present and written by this copy of
+MySidepulse); journal writable; last event age
 (informational); strips (informational, shows `STALLED`); notifications (fails
 only on an unusable server or topic).
 

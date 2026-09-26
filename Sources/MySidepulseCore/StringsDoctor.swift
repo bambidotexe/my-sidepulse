@@ -135,6 +135,55 @@ public struct DoctorStrings {
         }
     }
 
+    public var copilotNotInstalled: String {
+        switch language {
+        case .en: "GitHub Copilot not installed (no ~/.copilot), nothing to subscribe"
+        case .fr: "GitHub Copilot non installé (pas de ~/.copilot), rien à abonner"
+        }
+    }
+
+    public var copilotHooksMissingOrUnparseable: String {
+        switch language {
+        case .en: "~/.copilot/hooks/mysidepulse.json missing or unparseable. Run mysidepulse install-hooks"
+        case .fr: "~/.copilot/hooks/mysidepulse.json manquant ou illisible. Lancez mysidepulse install-hooks"
+        }
+    }
+
+    public var copilotHooksDisabledDetail: String {
+        switch language {
+        case .en: "disableAllHooks turns every Copilot hook off. Remove it from ~/.copilot/settings.json"
+        case .fr: "disableAllHooks désactive tous les hooks Copilot. Retirez-le de ~/.copilot/settings.json"
+        }
+    }
+
+    public var opencodeNotInstalled: String {
+        switch language {
+        case .en: "OpenCode not installed (no ~/.config/opencode, ~/.opencode or OpenCode.app), nothing to load"
+        case .fr: "OpenCode non installé (pas de ~/.config/opencode, ~/.opencode ni OpenCode.app), rien à charger"
+        }
+    }
+
+    public var opencodePluginMissing: String {
+        switch language {
+        case .en: "~/.config/opencode/plugins/mysidepulse.js missing. Run mysidepulse install-hooks"
+        case .fr: "~/.config/opencode/plugins/mysidepulse.js manquant. Lancez mysidepulse install-hooks"
+        }
+    }
+
+    public var opencodePluginCurrentDetail: String {
+        switch language {
+        case .en: "plugin written by this copy of MySidepulse"
+        case .fr: "plugin écrit par cette copie de MySidepulse"
+        }
+    }
+
+    public var opencodePluginStale: String {
+        switch language {
+        case .en: "plugin belongs to another copy of MySidepulse. Run mysidepulse install-hooks"
+        case .fr: "le plugin appartient à une autre copie de MySidepulse. Lancez mysidepulse install-hooks"
+        }
+    }
+
     public var noVolumeMounted: String {
         switch language {
         case .en: "no SidePulse volume mounted (plug it in to verify)"

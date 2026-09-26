@@ -119,6 +119,15 @@ final class SettingsModel: ObservableObject {
     /// Whether Codex is on this Mac (`~/.codex` exists), read with the hook files: its group and its
     /// Health line are shown only while it is, or while its hooks are set up.
     @Published private(set) var codexInstalled = false
+    /// The same as Codex's, for Copilot's owned hooks file.
+    @Published private(set) var copilotHooksSetUp: Bool?
+    @Published private(set) var copilotInstalled = false
+    /// Whether `disableAllHooks` turns every one of Copilot's user hooks off, read with the hook files.
+    @Published private(set) var copilotHooksDisabled = false
+    /// Absent, exactly what this bundle would write, or someone else's copy: `hooksSetUp` alone cannot
+    /// tell the last two apart, and they read differently (Disabled vs. Invalid).
+    @Published private(set) var opencodeState: HookInstaller.OpenCodePluginState = .absent
+    @Published private(set) var opencodeInstalled = false
     /// Whether the hook files have been read once, which tells "cannot be read" from "not read yet".
     @Published private(set) var hooksRead = false
     @Published private(set) var zshHookSetUp = false
@@ -126,8 +135,21 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var claudeHooksError: String?
     /// The same, for the Codex hooks.
     @Published private(set) var codexHooksError: String?
+    /// The same, for the Copilot hooks and the OpenCode plugin.
+    @Published private(set) var copilotHooksError: String?
+    @Published private(set) var opencodeHooksError: String?
     /// The same, for the terminal hook.
     @Published private(set) var zshHookError: String?
+
+    /// `opencodeState` in the shape every other agent's row reads: true set up, false absent, nil a copy
+    /// of MySidepulse that is not this one, which reads the same as an unreadable settings file elsewhere.
+    var opencodeHooksSetUp: Bool? {
+        switch opencodeState {
+        case .current: true
+        case .absent: false
+        case .stale: nil
+        }
+    }
 
     /// Read when the window opens, when the System page appears and after each
     /// of its buttons, not on the 2 s tick: these are the user's files, and
@@ -136,6 +158,11 @@ final class SettingsModel: ObservableObject {
         claudeHooksSetUp = HookInstaller.hooksSetUp(for: .claude)
         codexHooksSetUp = HookInstaller.hooksSetUp(for: .codex)
         codexInstalled = HookInstaller.codexInstalled()
+        copilotHooksSetUp = HookInstaller.hooksSetUp(for: .copilot)
+        copilotInstalled = HookInstaller.copilotInstalled()
+        copilotHooksDisabled = HookInstaller.copilotHooksDisabled()
+        opencodeState = HookInstaller.opencodePluginState()
+        opencodeInstalled = HookInstaller.opencodeInstalled()
         zshHookSetUp = HookInstaller.zshrcHasSnippet()
         hooksRead = true
     }
@@ -143,8 +170,13 @@ final class SettingsModel: ObservableObject {
     /// Whether the window shows Codex at all: on a Mac without it there is nothing to set up, and a
     /// group offering to would be noise. Set-up hooks keep the group, so Remove stays reachable.
     var showsCodex: Bool { codexInstalled || codexHooksSetUp == true }
+    /// The same, for Copilot's group and Health line.
+    var showsCopilot: Bool { copilotInstalled || copilotHooksSetUp == true }
+    /// The same, for OpenCode's: a stale plugin from another copy keeps the group too, so Set Up stays
+    /// reachable to replace it.
+    var showsOpenCode: Bool { opencodeInstalled || opencodeState != .absent }
 
-    private enum HookTarget { case claude, codex, zsh }
+    private enum HookTarget { case claude, codex, copilot, opencode, zsh }
 
     func setUpClaudeHooks() {
         hookAction("install-hooks", HookInstaller.installClaudeHooks(), target: .claude)
@@ -160,6 +192,22 @@ final class SettingsModel: ObservableObject {
 
     func removeCodexHooks() {
         hookAction("uninstall-codex-hooks", HookInstaller.removeCodexHooks(), target: .codex)
+    }
+
+    func setUpCopilotHooks() {
+        hookAction("install-copilot-hooks", HookInstaller.installHooks(for: .copilot), target: .copilot)
+    }
+
+    func removeCopilotHooks() {
+        hookAction("uninstall-copilot-hooks", HookInstaller.removeHooks(for: .copilot), target: .copilot)
+    }
+
+    func setUpOpencodePlugin() {
+        hookAction("install-opencode-plugin", HookInstaller.installHooks(for: .opencode), target: .opencode)
+    }
+
+    func removeOpencodePlugin() {
+        hookAction("uninstall-opencode-plugin", HookInstaller.removeHooks(for: .opencode), target: .opencode)
     }
 
     func setUpZshHook() {
@@ -178,6 +226,8 @@ final class SettingsModel: ObservableObject {
         switch target {
         case .claude: claudeHooksError = error
         case .codex: codexHooksError = error
+        case .copilot: copilotHooksError = error
+        case .opencode: opencodeHooksError = error
         case .zsh: zshHookError = error
         }
         refreshHooks()
@@ -358,6 +408,11 @@ final class SettingsModel: ObservableObject {
             facts.claudeHooks = state(claudeHooksSetUp)
             facts.codexHooks = state(codexHooksSetUp)
             facts.codexInstalled = codexInstalled
+            facts.copilotHooks = state(copilotHooksSetUp)
+            facts.copilotInstalled = copilotInstalled
+            facts.copilotHooksDisabled = copilotHooksDisabled
+            facts.opencodeHooks = state(opencodeHooksSetUp)
+            facts.opencodeInstalled = opencodeInstalled
             facts.terminalHookSetUp = zshHookSetUp
         }
         let checks = doctor?.checks ?? []
@@ -369,6 +424,10 @@ final class SettingsModel: ObservableObject {
         facts.hookCommand = check("hook command")?.detail
         facts.codexHooksCheck = check("codex hooks")
         facts.codexHookCommand = HookConfig.command(cliPath: HookInstaller.cliPath(), agent: .codex)
+        facts.copilotHooksCheck = check("copilot hooks")
+        facts.copilotHookCommand = HookConfig.command(cliPath: HookInstaller.cliPath(), agent: .copilot)
+        facts.opencodeHooksCheck = check("opencode plugin")
+        facts.opencodeHookCommand = HookConfig.command(cliPath: HookInstaller.cliPath(), agent: .opencode)
         facts.journal = check("journal")
         facts.control = check("app")
 

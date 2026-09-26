@@ -111,6 +111,135 @@ public struct SystemPageStrings {
         }
     }
 
+    // MARK: GitHub Copilot
+
+    public var copilotTitle: String {
+        switch language {
+        case .en: "Copilot"
+        case .fr: "Copilot"
+        }
+    }
+
+    public func copilotHint(events: Int) -> String {
+        switch language {
+        case .en: "The hooks tell MySidepulse when Copilot works, finishes or needs you. Set Up writes "
+            + "\(events) of them to ~/.copilot/hooks/mysidepulse.json, a file MySidepulse owns whole. "
+            + "Remove deletes it."
+        case .fr: "Les hooks indiquent à MySidepulse quand Copilot travaille, termine ou a besoin de "
+            + "vous. Configurer en écrit \(events) dans ~/.copilot/hooks/mysidepulse.json, un fichier "
+            + "propre à MySidepulse. Retirer le supprime."
+        }
+    }
+
+    /// Copilot needs no trust step, unlike Codex: it reads every file under hooks/ at each start.
+    public var copilotNote: String {
+        switch language {
+        case .en: "Copilot reads the hooks at its next start, with no trust step of its own."
+        case .fr: "Copilot lit les hooks à son prochain démarrage, sans étape d'approbation."
+        }
+    }
+
+    public var copilotHooksLabel: String {
+        switch language {
+        case .en: "Copilot hooks"
+        case .fr: "Hooks Copilot"
+        }
+    }
+
+    /// Names the button the user must press, so it has to read exactly as the
+    /// button does in the same language.
+    public var withoutCopilotHooksWarning: String {
+        switch language {
+        case .en: "Without the hooks the strip never shows Copilot. Press \(setUpHooksButton)."
+        case .fr: "Sans les hooks, le ruban ne montre jamais Copilot. Cliquez sur \(setUpHooksButton)."
+        }
+    }
+
+    public var copilotHooksInvalidWarning: String {
+        switch language {
+        case .en: "Copilot's hook file could not be read, or belongs to another copy of MySidepulse. "
+            + "Press \(setUpHooksButton) to replace it."
+        case .fr: "Le fichier de hooks de Copilot n'a pas pu être lu, ou appartient à une autre copie "
+            + "de MySidepulse. Cliquez sur \(setUpHooksButton) pour le remplacer."
+        }
+    }
+
+    public var copilotHooksDisabledWarning: String {
+        switch language {
+        case .en: "Copilot's hooks are turned off. Remove \u{201c}disableAllHooks\u{201d} from "
+            + "~/.copilot/settings.json."
+        case .fr: "Les hooks de Copilot sont désactivés. Retirez \u{ab} disableAllHooks \u{bb} de "
+            + "~/.copilot/settings.json."
+        }
+    }
+
+    // MARK: OpenCode
+
+    public var opencodeTitle: String {
+        switch language {
+        case .en: "OpenCode"
+        case .fr: "OpenCode"
+        }
+    }
+
+    public var opencodeHint: String {
+        switch language {
+        case .en: "The plugin tells MySidepulse when OpenCode works, finishes or needs you. Set Up "
+            + "writes it to ~/.config/opencode/plugins/mysidepulse.js, a file MySidepulse owns whole. "
+            + "Remove deletes it."
+        case .fr: "Le plugin indique à MySidepulse quand OpenCode travaille, termine ou a besoin de "
+            + "vous. Configurer l'écrit dans ~/.config/opencode/plugins/mysidepulse.js, un fichier "
+            + "propre à MySidepulse. Retirer le supprime."
+        }
+    }
+
+    public var opencodeNote: String {
+        switch language {
+        case .en: "A running OpenCode server picks up the plugin within a second, with no restart."
+        case .fr: "Un serveur OpenCode en cours d'exécution prend le plugin en compte en moins d'une "
+            + "seconde, sans redémarrage."
+        }
+    }
+
+    public var opencodePluginLabel: String {
+        switch language {
+        case .en: "OpenCode plugin"
+        case .fr: "Plugin OpenCode"
+        }
+    }
+
+    public var setUpPluginButton: String {
+        switch language {
+        case .en: "Set Up Plugin"
+        case .fr: "Configurer le plugin"
+        }
+    }
+
+    public var removePluginButton: String {
+        switch language {
+        case .en: "Remove Plugin"
+        case .fr: "Retirer le plugin"
+        }
+    }
+
+    /// Names the button the user must press, so it has to read exactly as the
+    /// button does in the same language.
+    public var withoutOpencodePluginWarning: String {
+        switch language {
+        case .en: "Without the plugin the strip never shows OpenCode. Press \(setUpPluginButton)."
+        case .fr: "Sans le plugin, le ruban ne montre jamais OpenCode. Cliquez sur \(setUpPluginButton)."
+        }
+    }
+
+    public var opencodePluginInvalidWarning: String {
+        switch language {
+        case .en: "OpenCode's plugin belongs to another copy of MySidepulse. Press "
+            + "\(setUpPluginButton) to replace it."
+        case .fr: "Le plugin OpenCode appartient à une autre copie de MySidepulse. Cliquez sur "
+            + "\(setUpPluginButton) pour le remplacer."
+        }
+    }
+
     public var terminalTitle: String {
         switch language {
         case .en: "Terminal"

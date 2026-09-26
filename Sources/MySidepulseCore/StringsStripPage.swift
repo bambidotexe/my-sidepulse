@@ -29,13 +29,13 @@ public struct StripPageStrings {
 
     public var whatShowsHint: String {
         switch language {
-        case .en: "Auto follows Claude Code and Codex: red while Claude works, blue "
-            + "while Codex works, amber when one needs you, green when one has "
+        case .en: "Auto follows Claude Code, Codex, Copilot and OpenCode, each in its own "
+            + "colour while it works, amber when one needs you, green when one has "
             + "finished. A colour or an effect holds until you come back to Auto, "
             + "through restarts too."
-        case .fr: "Auto suit Claude Code et Codex : rouge pendant que Claude "
-            + "travaille, bleu pendant que Codex travaille, ambre quand l'un a besoin "
-            + "de vous, vert quand l'un a terminé. Une couleur ou un effet reste actif "
+        case .fr: "Auto suit Claude Code, Codex, Copilot et OpenCode, chacun dans sa "
+            + "propre couleur pendant qu'il travaille, ambre quand l'un a besoin de "
+            + "vous, vert quand l'un a terminé. Une couleur ou un effet reste actif "
             + "jusqu'au retour à Auto, même après un redémarrage."
         }
     }

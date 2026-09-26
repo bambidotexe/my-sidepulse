@@ -66,7 +66,7 @@ public struct InfoRow: Equatable, Identifiable, Sendable {
 /// `HealthTests` builds the worst case the app can report and holds it to these.
 public enum HealthLimits {
     /// Lines of the Health table with everything that can go wrong gone wrong at once. Five is usual.
-    public static let checks = 10
+    public static let checks = 11
     /// Lines of the Information table with every reading there.
     public static let readings = 5
 }

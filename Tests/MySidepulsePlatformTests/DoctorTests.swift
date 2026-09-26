@@ -65,11 +65,26 @@ final class DoctorTests: XCTestCase {
         unusable.appResponse = { ControlResponse(ok: true, mode: "auto", loginItem: "enabled",
                                                  notify: NotifyStatus(enabled: true, server: "https://ntfy.sh",
                                                                       topicMasked: "not a…", topicUsable: false)) }
+        var copilotOn = probes()
+        copilotOn.copilotInstalled = { true }
+        copilotOn.copilotHooksRoot = { HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse") }
+        var copilotDisabled = copilotOn
+        copilotDisabled.copilotHooksDisabled = { true }
+        var copilotUnreadable = probes()
+        copilotUnreadable.copilotInstalled = { true }
+        copilotUnreadable.copilotHooksRoot = { nil }
+        var opencodeOn = probes()
+        opencodeOn.opencodeInstalled = { true }
+        opencodeOn.opencodePluginPresent = { true }
+        opencodeOn.opencodePluginCurrent = { true }
+        var opencodeStale = opencodeOn
+        opencodeStale.opencodePluginCurrent = { false }
         for language in Language.allCases {
             let saved = Loc.language
             Loc.language = language
             defer { Loc.language = saved }
-            for p in [probes(), down, unreadable, stale, off, unusable] {
+            for p in [probes(), down, unreadable, stale, off, unusable, copilotOn, copilotDisabled,
+                      copilotUnreadable, opencodeOn, opencodeStale] {
                 for check in Doctor.run(p).checks {
                     XCTAssertFalse(check.detail.contains { longDashes.contains($0) },
                                    "\(language) \(check.name): \(check.detail)")
@@ -123,6 +138,88 @@ final class DoctorTests: XCTestCase {
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("notifications") },
                       report.lines.joined(separator: "\n"))
+    }
+
+    // MARK: Copilot
+
+    func testCopilotNotInstalledPassesWithAWord() {
+        let report = Doctor.run(probes())
+        XCTAssertEqual(report.failures, 0)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("copilot hooks") })
+    }
+
+    func testCopilotWithEveryEventSubscribedPasses() {
+        var p = probes()
+        p.copilotInstalled = { true }
+        p.copilotHooksRoot = { HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse") }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("copilot hooks") },
+                      report.lines.joined(separator: "\n"))
+    }
+
+    func testCopilotMissingAnEventIsAFailure() {
+        var p = probes()
+        p.copilotInstalled = { true }
+        p.copilotHooksRoot = {
+            var root = HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse")
+            var hooks = root["hooks"] as! [String: Any]
+            hooks.removeValue(forKey: "sessionEnd")
+            root["hooks"] = hooks
+            return root
+        }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("sessionEnd") })
+    }
+
+    func testCopilotDisableAllHooksIsAFailureEvenWithEveryEventSubscribed() {
+        var p = probes()
+        p.copilotInstalled = { true }
+        p.copilotHooksRoot = { HookConfig.copilotFile(cliPath: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse") }
+        p.copilotHooksDisabled = { true }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("copilot hooks") },
+                      report.lines.joined(separator: "\n"))
+    }
+
+    func testCopilotUnparseableFileIsAFailure() {
+        var p = probes()
+        p.copilotInstalled = { true }
+        p.copilotHooksRoot = { nil }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("copilot hooks") })
+    }
+
+    // MARK: OpenCode
+
+    func testOpenCodeNotInstalledPassesWithAWord() {
+        let report = Doctor.run(probes())
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("opencode plugin") })
+    }
+
+    func testOpenCodeCurrentPluginPasses() {
+        var p = probes()
+        p.opencodeInstalled = { true }
+        p.opencodePluginPresent = { true }
+        p.opencodePluginCurrent = { true }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("opencode plugin") })
+    }
+
+    func testOpenCodeMissingPluginIsAFailure() {
+        var p = probes()
+        p.opencodeInstalled = { true }
+        p.opencodePluginPresent = { false }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("opencode plugin") })
+    }
+
+    func testOpenCodeStalePluginIsAFailure() {
+        var p = probes()
+        p.opencodeInstalled = { true }
+        p.opencodePluginPresent = { true }
+        p.opencodePluginCurrent = { false }
+        let report = Doctor.run(p)
+        XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("opencode plugin") })
     }
 
     func testMissingHookEventIsAFailure() {

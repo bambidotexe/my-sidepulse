@@ -227,6 +227,8 @@ final class CodexPlatformTests: XCTestCase {
                                        events: HookConfig.codexEvents)
         let staleReport = Doctor.run(probes(codexInstalled: true, codexRoot: stale))
         XCTAssertTrue(codexLine(staleReport).hasPrefix("[FAIL]") && codexLine(staleReport).contains("missing binary"))
-        XCTAssertEqual(Doctor.run(probes(codexInstalled: true, codexRoot: full)).checks.count, 10)
+        XCTAssertEqual(Doctor.run(probes(codexInstalled: true, codexRoot: full)).checks.count, 12,
+                       "app, auto-start, hooks installed, hook binary, hook command, codex hooks, " +
+                       "copilot hooks, opencode plugin, journal, last event, device, notifications")
     }
 }

@@ -199,6 +199,16 @@ public enum HookConfig {
         return args.starts(with: ["hook", "--agent", "copilot"])
     }
 
+    /// The `exec` path of our entry for one Copilot event, or nil when none of ours is there. The doctor
+    /// checks it still exists on disk, the same bar as Claude Code's and Codex's hook binary.
+    public static func copilotEntryExec(in root: [String: Any], event: String) -> String? {
+        guard let hooks = root["hooks"] as? [String: Any], let entries = hooks[event] as? [Any] else { return nil }
+        for entry in entries where isOurCopilotEntry(entry) {
+            return (entry as? [String: Any])?["exec"] as? String
+        }
+        return nil
+    }
+
     /// Whether a parsed Copilot hook file is MySidepulse's alone, and so may
     /// be rewritten or deleted: nothing but `version` and `hooks`, and every
     /// entry in `hooks` ours. A key or an entry anyone else put there makes it
