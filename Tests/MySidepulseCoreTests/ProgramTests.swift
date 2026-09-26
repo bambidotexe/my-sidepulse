@@ -27,10 +27,11 @@ final class ProgramTests: XCTestCase {
         """)
     }
 
-    /// Three agents at work: one pass, each LED in one agent's colour in
-    /// turn, Claude's first. Three passes of eight LEDs would be about 740
-    /// bytes, and the strip takes 512; one pass is the single roll's size.
-    func testThreeAgentsRollOnePassByLed() {
+    /// Three agents at work on eight LEDs: one pass, each LED in one agent's
+    /// colour in turn, Claude's first. Three passes of eight LEDs would be 741
+    /// bytes, and the strip takes 512; one pass is the single roll's size. On
+    /// the Dot three passes fit, so it keeps one pass per colour.
+    func testThreeAgentsRollOnePassByLedWherePassesDoNotFit() {
         let program = p(.working(.claudeCodexCopilot))
         XCTAssertEqual(program, """
         off 160ms cosine
@@ -43,9 +44,15 @@ final class ProgramTests: XCTestCase {
         XCTAssertEqual(LedContinuation.loopMs(of: program), 160 + 665 + 760, "the single roll's loop")
         XCTAssertEqual(p(.working(.claudeCodexCopilot), leds: 2), """
         off 160ms cosine
-        0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+        0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 260ms
+        off 160ms cosine
+        0:#0a00ff 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+        off 160ms cosine
+        0:#0e5cff 760ms pulse 0ms; 1:#0e5cff 760ms pulse 260ms
         repeat
-        """, "on the Dot's two LEDs, the first two agents' colours")
+        """, "on the Dot's two LEDs three passes fit: one per colour")
+        XCTAssertEqual(p(.working(.claudeCodexCopilot), leds: 2).utf8.count, 222)
+        XCTAssertEqual(LedContinuation.loopMs(of: p(.working(.claudeCodexCopilot), leds: 2)), 3 * (160 + 260 + 760))
         XCTAssertEqual(p(.working([.codex, .copilot, .opencode])), """
         off 160ms cosine
         0:#0a00ff 760ms pulse 0ms; 1:#0e5cff 760ms pulse 95ms; 2:#ff0043 760ms pulse 190ms; 3:#0a00ff 760ms pulse 285ms; 4:#0e5cff 760ms pulse 380ms; 5:#ff0043 760ms pulse 475ms; 6:#0a00ff 760ms pulse 570ms; 7:#0e5cff 760ms pulse 665ms
@@ -53,9 +60,9 @@ final class ProgramTests: XCTestCase {
         """, "whichever three, in the agents' order")
     }
 
-    /// Four agents at work: the same one pass, LED i in agent i mod 4's
-    /// colour.
-    func testFourAgentsRollOnePassByLed() {
+    /// Four agents at work: on eight LEDs the same one pass, LED i in agent
+    /// i mod 4's colour; on the Dot four passes, one per colour, 294 bytes.
+    func testFourAgentsRollOnePassByLedWherePassesDoNotFit() {
         let program = p(.working(.all))
         XCTAssertEqual(program, """
         off 160ms cosine
@@ -66,9 +73,17 @@ final class ProgramTests: XCTestCase {
         XCTAssertEqual(program.split(separator: "\n").count, 3)
         XCTAssertEqual(p(.working(.all), leds: 2), """
         off 160ms cosine
-        0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+        0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 260ms
+        off 160ms cosine
+        0:#0a00ff 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+        off 160ms cosine
+        0:#0e5cff 760ms pulse 0ms; 1:#0e5cff 760ms pulse 260ms
+        off 160ms cosine
+        0:#ff0043 760ms pulse 0ms; 1:#ff0043 760ms pulse 260ms
         repeat
         """)
+        XCTAssertEqual(p(.working(.all), leds: 2).utf8.count, 294)
+        XCTAssertEqual(p(.working(.all), leds: 2).split(separator: "\n").count, 9)
         XCTAssertEqual(p(.working(.all), brightness: 128), """
         off 160ms cosine
         0:#801c25 760ms pulse 0ms; 1:#050080 760ms pulse 95ms; 2:#072e80 760ms pulse 190ms; 3:#800022 760ms pulse 285ms; 4:#801c25 760ms pulse 380ms; 5:#050080 760ms pulse 475ms; 6:#072e80 760ms pulse 570ms; 7:#800022 760ms pulse 665ms
@@ -94,38 +109,83 @@ final class ProgramTests: XCTestCase {
         """)
     }
 
-    /// The passes a roll plays, as the preview draws them: one per colour for
-    /// one or two colours, one by LED for three or more.
-    func testRollPassesAreTheProgramsOwn() {
-        XCTAssertEqual(LedProgram.rollPasses(["#aaaaaa"], ledCount: 2), [["#aaaaaa", "#aaaaaa"]])
-        XCTAssertEqual(LedProgram.rollPasses(["#aaaaaa", "#bbbbbb"], ledCount: 2),
-                       [["#aaaaaa", "#aaaaaa"], ["#bbbbbb", "#bbbbbb"]])
-        XCTAssertEqual(LedProgram.rollPasses(["#aaaaaa", "#bbbbbb", "#cccccc"], ledCount: 4),
-                       [["#aaaaaa", "#bbbbbb", "#cccccc", "#aaaaaa"]])
-        XCTAssertEqual(LedProgram.rollPasses(["#1", "#2", "#3", "#4"], ledCount: 8),
-                       [["#1", "#2", "#3", "#4", "#1", "#2", "#3", "#4"]])
+    /// The passes a roll plays, as the preview draws them: one per colour
+    /// whenever that whole program fits the strip's 512 bytes and 20 lines,
+    /// one pass by LED only when it does not. Decided on the rendered text,
+    /// so the LED count and the number of colours decide together.
+    func testRollPassesKeepOnePassPerColourWhereverTheyFit() {
+        let a = "#aaaaaa", b = "#bbbbbb", c = "#cccccc", d = "#dddddd"
+        XCTAssertEqual(LedProgram.rollPasses([a], ledCount: 2), [[a, a]])
+        XCTAssertEqual(LedProgram.rollPasses([a, b], ledCount: 8), [[a, a, a, a, a, a, a, a], [b, b, b, b, b, b, b, b]])
+        XCTAssertEqual(LedProgram.rollPasses([a, b, c, d], ledCount: 2), [[a, a], [b, b], [c, c], [d, d]])
+        XCTAssertEqual(LedProgram.rollPasses([a, b, c], ledCount: 4), [[a, a, a, a], [b, b, b, b], [c, c, c, c]],
+                       "three passes of four LEDs are 393 bytes: they fit")
+        XCTAssertEqual(LedProgram.rollPasses([a, b, c], ledCount: 8), [[a, b, c, a, b, c, a, b]])
+        XCTAssertEqual(LedProgram.rollPasses([a, b, c, d], ledCount: 8), [[a, b, c, d, a, b, c, d]])
+        // Every LED count and every number of colours: the program fits, and
+        // it keeps its passes exactly when they fit.
+        let colours = [a, b, c, d]
+        for leds in 2...8 {
+            for n in 1...4 {
+                let wanted = Array(colours.prefix(n))
+                let text = LedProgram.rolling(colors: wanted, ledCount: leds)
+                XCTAssertLessThanOrEqual(text.utf8.count, 512, "\(n) colours on \(leds) LEDs")
+                XCTAssertLessThanOrEqual(text.split(separator: "\n").count, 20, "\(n) colours on \(leds) LEDs")
+                let passes = LedProgram.rollPasses(wanted, ledCount: leds)
+                let perColour = wanted.map { Array(repeating: $0, count: leds) }
+                if passes != perColour {
+                    XCTAssertEqual(passes.count, 1, "\(n) colours on \(leds) LEDs")
+                    let stagger = leds == 2 ? K.rollingStaggerDotMs : K.rollingStaggerMs
+                    let whole = perColour.map { pass in
+                        "off 160ms cosine\n" + pass.indices.map { "\($0):\(pass[$0]) 760ms pulse \($0 * stagger)ms" }
+                            .joined(separator: "; ")
+                    }.joined(separator: "\n") + "\nrepeat"
+                    XCTAssertGreaterThan(whole.utf8.count, 512, "\(n) colours on \(leds) LEDs: passes would have fit")
+                }
+            }
+        }
+        for n in 1...4 {
+            XCTAssertEqual(LedProgram.rollPasses(Array(colours.prefix(n)), ledCount: 2).count, n,
+                           "the Dot keeps one pass per colour for every number of agents")
+        }
+        XCTAssertEqual(LedProgram.rollPasses([a, b, c], ledCount: 8).count, 1)
     }
 
-    /// Under a zone a roll of any number of agents alternates by LED, the
-    /// same text shape as the two-agent roll's.
-    func testFourAgentsUnderAZoneAlternateByLed() {
+    /// Under a zone a roll of three or four agents alternates by LED, each
+    /// LED in the colour it has on the whole strip (LED i in agent i mod n),
+    /// so a zone opening or closing over the one-pass roll leaves every LED
+    /// with its agent. Two agents keep the roll's own first LED as Claude's.
+    func testThreeOrFourAgentsUnderAZoneKeepEachLedsAgent() {
         XCTAssertEqual(p(.split(alert: .waiting(.opencode), work: .working(.all))), """
         0:#000000 160ms; 1:#000000 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
         0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
-        0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#0a00ff 760ms pulse 95ms; 5:#0e5cff 760ms pulse 190ms; 6:#ff0043 760ms pulse 285ms; 7:#ff374a 760ms pulse 380ms
+        0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff0043 760ms pulse 0ms; 4:#ff374a 760ms pulse 95ms; 5:#0a00ff 760ms pulse 190ms; 6:#0e5cff 760ms pulse 285ms; 7:#ff0043 760ms pulse 380ms
         repeat
         """)
         XCTAssertEqual(p(.split(alert: .done(.copilot), work: .working(.all))), """
         0:#00ff37 160ms; 1:#00ff37 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
-        2:#ff374a 760ms pulse 0ms; 3:#0a00ff 760ms pulse 95ms; 4:#0e5cff 760ms pulse 190ms; 5:#ff0043 760ms pulse 285ms; 6:#ff374a 760ms pulse 380ms; 7:#0a00ff 760ms pulse 475ms
+        2:#0e5cff 760ms pulse 0ms; 3:#ff0043 760ms pulse 95ms; 4:#ff374a 760ms pulse 190ms; 5:#0a00ff 760ms pulse 285ms; 6:#0e5cff 760ms pulse 380ms; 7:#ff0043 760ms pulse 475ms
+        repeat
+        """)
+        // Each roll LED under the zone has the colour it has on the whole strip.
+        let whole = p(.working(.all))
+        for led in 3...7 {
+            let colour = [K.claudeWorking, K.codexWorking, K.copilotWorking, K.opencodeWorking][led % 4]
+            XCTAssertTrue(whole.contains("\(led):\(colour) "), "LED \(led) on the whole strip")
+            XCTAssertTrue(p(.split(alert: .waiting(.claude), work: .working(.all))).contains("\(led):\(colour) "),
+                          "LED \(led) under the zone")
+        }
+        XCTAssertEqual(p(.split(alert: .done(.claude), work: .working(.claudeCodexCopilot))), """
+        0:#00ff37 160ms; 1:#00ff37 160ms; 2:#000000 160ms; 3:#000000 160ms; 4:#000000 160ms; 5:#000000 160ms; 6:#000000 160ms; 7:#000000 160ms
+        2:#0e5cff 760ms pulse 0ms; 3:#ff374a 760ms pulse 95ms; 4:#0a00ff 760ms pulse 190ms; 5:#0e5cff 760ms pulse 285ms; 6:#ff374a 760ms pulse 380ms; 7:#0a00ff 760ms pulse 475ms
         repeat
         """)
         XCTAssertEqual(p(.split(alert: .waiting(.claude), work: .working(.all)), leds: 2), """
         0:#000000 160ms; 1:#000000 160ms
         0:#ff7000 200ms pulse 0ms
-        0:#ff7000 200ms pulse 70ms; 1:#ff374a 760ms pulse 0ms
+        0:#ff7000 200ms pulse 70ms; 1:#0a00ff 760ms pulse 0ms
         repeat
-        """, "on the Dot the roll is one LED, in Claude's colour")
+        """, "on the Dot the roll is LED 1, in agent 1's colour")
     }
 
     /// The device contract, byte for byte. Every token here is a shape the

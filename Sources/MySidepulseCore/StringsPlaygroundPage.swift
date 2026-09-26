@@ -184,12 +184,14 @@ public struct PlaygroundPageStrings {
         }
     }
 
+    /// Every agent, named from `AgentKind`, so the sentence follows the list.
+    /// It says what both strips show: each agent's colour, by pass where the
+    /// passes fit and by LED where they do not.
     public var subtitleAllWorking: String {
+        let names = language.list(AgentKind.allCases.map(\.shortName))
         switch language {
-        case .en: "While all four work, the LEDs take the colours of Claude, Codex, "
-            + "Copilot and OpenCode in turn."
-        case .fr: "Pendant que les quatre travaillent, les LED prennent tour à tour les "
-            + "couleurs de Claude, Codex, Copilot et OpenCode."
+        case .en: return "Rolls in each one's colour while \(names) all work."
+        case .fr: return "Défile dans la couleur de chacun pendant que \(names) travaillent tous."
         }
     }
 

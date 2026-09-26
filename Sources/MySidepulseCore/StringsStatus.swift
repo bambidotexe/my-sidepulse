@@ -13,17 +13,9 @@ public struct StatusStrings {
     init(_ language: Language) { self.language = language }
 
     /// "Claude", "Claude and Codex", "Claude, Codex and Copilot": product
-    /// names in the agents' order, the same in both languages but for the
-    /// conjunction, which joins the last two.
+    /// names in the agents' order (`Language.list`).
     private func names(_ agents: Agents) -> String {
-        let names = (agents.kinds.isEmpty ? [AgentKind.claude] : agents.kinds).map(\.shortName)
-        guard let last = names.last, names.count > 1 else { return names.joined() }
-        let and: String
-        switch language {
-        case .en: and = " and "
-        case .fr: and = " et "
-        }
-        return names.dropLast().joined(separator: ", ") + and + last
+        language.list((agents.kinds.isEmpty ? [AgentKind.claude] : agents.kinds).map(\.shortName))
     }
 
     private func isPlural(_ agents: Agents) -> Bool { agents.kinds.count > 1 }

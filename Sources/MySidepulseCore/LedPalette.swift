@@ -100,7 +100,7 @@ public struct LedPalette: Equatable {
     }
 
     /// The colours of a roll shared by `agents`, in the agents' order, Claude's
-    /// first: one per pass for two, one per LED for three or more
+    /// first: one per pass where the passes fit, else one per LED
     /// (`LedProgram.rollPasses`). Never empty: a roll with no agent named
     /// takes Claude's colour.
     public func rollColors(_ agents: Agents) -> [String] {

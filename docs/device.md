@@ -75,9 +75,10 @@ below.
 (`testProgramsRespectDeviceLimits`). The 8-LED rainbow is the tightest at 486
 bytes, then the two-agent roll's two passes at 496; that ceiling is why the
 rainbow has four frames and steps two hues at a time, why a shared roll
-alternates by LED under a zone, and why the roll of three or four agents is
-one pass that alternates by LED on the whole strip too (three passes would be
-741 bytes). No program carries a `brightness N` line (see *Brightness*).
+alternates by LED under a zone, and why a shared roll whose passes would not
+fit alternates by LED on the whole strip too: three or four agents on eight
+LEDs (three passes would be 741 bytes). No program carries a `brightness N`
+line (see *Brightness*).
 
 A program the device cannot parse is not shown at all: the strip blinks red six
 times instead. One malformed colour is enough, which is why
@@ -122,11 +123,14 @@ repeat
 same roll in `K.codexWorking` (`#0a00ff`), `K.copilotWorking` (`#0e5cff`) and
 `K.opencodeWorking` (`#ff0043`).
 
-**Two agents at work**, `working(claude, codex)` for instance: one pass per
-colour, in the agents' order, each opening with the same fade, so the wave
-keeps its rhythm and changes colour at every pass. 496 bytes on 8 LEDs, the
-largest program the host writes after the rainbow; the loop is 3170 ms (2360
-on the Dot):
+**Several agents at work** roll one pass per colour, in the agents' order,
+wherever the whole program fits in 512 bytes and 20 lines, and one pass by LED
+where it does not (`LedProgram.rollPasses` decides on the rendered text).
+
+Two agents, `working(claude, codex)` for instance: one pass per colour, each
+opening with the same fade, so the wave keeps its rhythm and changes colour at
+every pass. 496 bytes on 8 LEDs, the largest program the host writes after the
+rainbow; the loop is 3170 ms (2360 on the Dot):
 
 ```
 off 160ms cosine
@@ -136,10 +140,10 @@ off 160ms cosine
 repeat
 ```
 
-**Three or four agents at work**: one pass, LED *i* in the colour of agent
-*i* mod *n*, in the agents' order (`LedProgram.rollPasses`). It is the single
-roll's shape and size, 251 bytes, and its loop, 1585 ms (1180 on the Dot);
-three passes would be 741 bytes. `working(claude, codex, copilot)`:
+Three or four agents on eight LEDs, where three passes would be 741 bytes:
+one pass, LED *i* in the colour of agent *i* mod *n*. It is the single roll's
+shape and size, 251 bytes, and its loop, 1585 ms.
+`working(claude, codex, copilot)`:
 
 ```
 off 160ms cosine
@@ -155,11 +159,19 @@ off 160ms cosine
 repeat
 ```
 
-On the Dot's two LEDs either shows the first two agents' colours only:
+On the Dot's two LEDs the passes fit for every number of agents: three are
+222 bytes, four 294, a loop of 1180 ms per pass. `working(claude, codex,
+copilot, opencode)` on the Dot:
 
 ```
 off 160ms cosine
-0:#ff374a 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+0:#ff374a 760ms pulse 0ms; 1:#ff374a 760ms pulse 260ms
+off 160ms cosine
+0:#0a00ff 760ms pulse 0ms; 1:#0a00ff 760ms pulse 260ms
+off 160ms cosine
+0:#0e5cff 760ms pulse 0ms; 1:#0e5cff 760ms pulse 260ms
+off 160ms cosine
+0:#ff0043 760ms pulse 0ms; 1:#ff0043 760ms pulse 260ms
 repeat
 ```
 
@@ -233,9 +245,12 @@ When the roll has two LEDs or fewer it uses the 260 ms stagger.
 
 A roll several agents share cannot alternate by pass under a zone: two passes
 of blink lines and roll lines are over 700 bytes on 8 LEDs. It alternates by
-LED instead, whatever the number of agents: the first agent's colour on the
-roll's first LED, the next agent's on the next, round again after the last;
-on the Dot, where the roll is one LED, only the first agent's shows. Claude
+LED instead, whatever the number of agents (`LedProgram.zoneRollColors`). Two
+agents alternate from the roll's first LED, the first agent's colour on it;
+on the Dot, where the roll is LED 1, only the first agent's shows. Three or
+four give LED *i* the colour of agent *i* mod *n*, the colour that LED has on
+the whole strip's roll by LED, so a zone opening or closing over it leaves
+every LED with its agent; on the Dot LED 1 takes the second agent's. Claude
 and Codex:
 
 ```
@@ -245,12 +260,12 @@ and Codex:
 repeat
 ```
 
-All four agents:
+All four agents, LED 3 in OpenCode's colour as on the whole strip:
 
 ```
 0:#000000 160ms; 1:#000000 160ms; … 7:#000000 160ms
 0:#ff7000 200ms pulse 0ms; 1:#ff7000 200ms pulse 0ms; 2:#ff7000 200ms pulse 0ms
-0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff374a 760ms pulse 0ms; 4:#0a00ff 760ms pulse 95ms; 5:#0e5cff 760ms pulse 190ms; 6:#ff0043 760ms pulse 285ms; 7:#ff374a 760ms pulse 380ms
+0:#ff7000 200ms pulse 70ms; 1:#ff7000 200ms pulse 70ms; 2:#ff7000 200ms pulse 70ms; 3:#ff0043 760ms pulse 0ms; 4:#ff374a 760ms pulse 95ms; 5:#0a00ff 760ms pulse 190ms; 6:#0e5cff 760ms pulse 285ms; 7:#ff0043 760ms pulse 380ms
 repeat
 ```
 
@@ -396,17 +411,17 @@ Every tail is cut from unscaled text, the palette's colours, and scaled once
 on the way out; the Engine keeps the unscaled text of what plays, so a second
 cut works from the same colours.
 
-**A loop of several passes**, the roll two agents share, is cut the same way,
+**A loop of several passes**, a shared roll by pass, is cut the same way,
 with one more rule. The bridge and the whole rest of the loop fit in 512 bytes
 while four LEDs or so are lit; when they would not, the tail is the bridge and
 the rest of the pass under way, which ends with every LED dark, and the loop
 is written there (`LedContinuation.currentPass`): the bridge is worth more
 than the pass order, and the cost is the first agent's colour twice in a row,
-once, after a brightness change during its pass. The roll of three or four
-agents is one pass and is cut like one agent's. The tail says how long it
+once, after a brightness change during its pass. A roll by LED is one pass
+and is cut like one agent's. The tail says how long it
 plays, and the Engine hands over at that moment. **The full-strip roll changing
 colour** (`LedProgram.rollRecolour`: any change of the agents rolling, between
-the one-pass and the two-pass rolls too) is carried on by the same tail at the
+a roll by pass and a roll by LED too) is carried on by the same tail at the
 same brightness, and the new loop is written at its end.
 A cut duration is spelled the shortest way (`0.1s`); an unchanged one keeps
 the spelling the host gave it, so the reader and the writer round-trip every
@@ -430,7 +445,7 @@ if three would not fit in 512 bytes. The last chord is the bridge: at its
 end a rising LED past half goes to its peak, one below half to black to start
 over, and a pulse that would have started during it starts at its end. A
 steady zone, and a zone that closes, open over the bridge itself. The tail ends
-where the roll's loop would have, or on the roll two agents share where the
+where the roll's loop would have, or on a roll of several passes where the
 pass under way ends, so the loop written there finds the roll dark; the blink pair's
 rhythm has one irregular gap there, from the transition to the loop's first
 pair. When the roll is at its dark end, with nothing left but LED 7's fall,
@@ -447,7 +462,7 @@ The 8-LED working roll 500 ms in, LEDs 0…2 lit, a question landing (brightness
 **Limits.** Every tail is checked at every phase in 5 ms steps, on 2 and 8 LEDs,
 at 255 and 254: under 512 bytes and 20 lines, no brightness line, every line a
 shape the reader knows, its length the loop's remainder within one frame, or
-the pass's on the roll two agents share
+the pass's on a roll of several passes
 (`testEveryTailIsWellFormedAndEndsAtTheLoopEnd`, `testEveryTransitionIsWellFormed`,
 `testTheRollRecolouredAcrossAgentCounts`, `CodexTests`).
 

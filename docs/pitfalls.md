@@ -204,10 +204,10 @@ rejected by eye within minutes of a build whose tests were green.
 - **Instead.** Frames of per-LED assignments, each crossfading into the next, with no dark line.
 
 ### Two passes of the shared roll fit the strip; two passes under a zone do not
-- **Symptom.** A roll two agents share that alternates its colour by pass on the whole strip and by LED under an alert zone; a roll three or four share that alternates by LED everywhere.
+- **Symptom.** A shared roll that alternates its colour by pass on the whole strip and by LED under an alert zone; on the Pro, a roll three or four agents share that alternates by LED everywhere, while the Dot keeps its passes.
 - **Why.** The device takes 512 bytes. Two passes of the roll are 496 bytes on 8 LEDs; add the split's baseline and its two blink lines per pass and the program is over 700 bytes, with no token to drop: the delays and durations are the shape the strip has proven.
-- **Instead.** `LedProgram.rolling(colors:)` writes one pass per colour on the whole strip; `splitProgram` gives each roll LED a colour in turn.
-- **Rule.** Count bytes before adding a pass. Three or four agents do not fit as passes on the whole strip either (three passes are 741 bytes): their roll is one pass, each LED in one agent's colour in turn (`LedProgram.rollPasses`), and on the Dot's two LEDs only the first two agents' colours show.
+- **Instead.** `LedProgram.rollPasses` writes one pass per colour on the whole strip wherever the rendered program fits 512 bytes and 20 lines, else one pass by LED; `splitProgram` gives each roll LED a colour (`zoneRollColors`).
+- **Rule.** Decide on the rendered text, not on a count. On the Pro three or four agents do not fit as passes (three passes are 741 bytes), so their roll is one pass, LED *i* in agent *i* mod *n*'s colour, and under a zone each roll LED keeps that colour; on the Dot four passes are 294 bytes and every number of agents keeps its passes.
 
 ### A tail of the shared roll ends at the pass, not the loop, when the bridge would not fit
 - **Symptom.** After a brightness press during Claude's pass of the shared roll, Claude's colour twice in a row, once.

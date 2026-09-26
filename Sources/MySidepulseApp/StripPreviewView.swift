@@ -55,10 +55,10 @@ struct StripPreviewView: View {
         }
         if case .working(let agents) = state {
             // The device program's own passes (`LedProgram.rollPasses`), each
-            // the single roll's cycle: a roll two agents share changes colour
-            // at every pass, and one three or four share gives each LED an
-            // agent's colour in turn, exactly as the strip does. A still frame
-            // shows the first pass.
+            // the single roll's cycle: a shared roll changes colour at every
+            // pass where its passes fit the strip, and gives each LED an
+            // agent's colour where they do not, exactly as the strip does. A
+            // still frame shows the first pass.
             let passes = LedProgram.rollPasses(palette.rollColors(agents), ledCount: max(2, min(8, ledCount)))
             var pass = 0
             if let t {
@@ -113,13 +113,16 @@ struct StripPreviewView: View {
         let zone = LedProgram.splitZone(alert: alert, ledCount: count)
         let rest = count - zone
         // Under a zone a roll several agents share alternates its colour by
-        // LED, as the device program does (`LedProgram.splitProgram`).
-        let workColors: [Color]
+        // LED, as the device program does (`LedProgram.zoneRollColors`).
+        let hexes: [String]
         switch work {
-        case .working(let agents): workColors = palette.rollColors(agents).map(screen)
-        case .jobRunning: workColors = [screen(palette.jobRunning)]
+        case .working(let agents): hexes = palette.rollColors(agents)
+        case .jobRunning: hexes = [palette.jobRunning]
         }
-        func workColor(_ index: Int) -> Color { workColors[max(0, index - zone) % workColors.count] }
+        let workColors = LedProgram.zoneRollColors(hexes, zone: zone, ledCount: count).map(screen)
+        func workColor(_ index: Int) -> Color {
+            workColors.isEmpty ? screen(hexes[0]) : workColors[max(0, index - zone) % workColors.count]
+        }
         let alertColor: Color
         let zoneIsGreen: Bool
         switch alert {

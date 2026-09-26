@@ -199,33 +199,50 @@ final class TransitionTests: XCTestCase {
         XCTAssertEqual(tail?.lengthMs, 1085)
     }
 
-    /// A zone landing over the four-agent roll, at every phase, on both
-    /// strips, opens exactly as it does over Claude's own roll: the same
-    /// lines for the same length, the roll's LEDs in their agents' colours.
-    /// The one-pass roll has no pass boundary to stop at before its loop's
-    /// end.
-    func testAZoneOpensOverTheFourAgentRollAsOverOneAgentsRoll() {
-        for leds in [2, 8] {
-            for alert: SplitAlert in [.waiting(.opencode), .done(.copilot)] {
-                let loopMs = LedContinuation.loopMs(of: p(.working(.all), leds: leds))!
-                XCTAssertEqual(loopMs, LedContinuation.loopMs(of: p(.working, leds: leds)))
-                var carriedAtAll = false
-                for phase in stride(from: 0, to: loopMs, by: 5) {
-                    let label = "\(alert) on \(leds) LEDs at \(phase) ms"
-                    let four = carried(.working(.all), .split(alert: alert, work: .working(.all)), at: phase, leds: leds)
-                    let one = carried(.working, .split(alert: alert, work: .working), at: phase, leds: leds)
-                    XCTAssertEqual(four == nil, one == nil, label)
-                    guard let four, let one else { continue }
-                    carriedAtAll = true
-                    XCTAssertLessThanOrEqual(four.program.utf8.count, 512, label)
-                    XCTAssertLessThanOrEqual(four.program.split(separator: "\n").count, 20, label)
-                    XCTAssertEqual(four.lengthMs, one.lengthMs, label)
-                    XCTAssertEqual(four.program.split(separator: "\n").count, one.program.split(separator: "\n").count,
-                                   label)
-                    XCTAssertEqual(LedContinuation.parse(four.program)?.loopMs, four.lengthMs, label)
-                }
-                XCTAssertTrue(carriedAtAll, "\(alert) on \(leds) LEDs: the roll carries on under the zone")
+    /// A zone landing over the four-agent roll, at every phase. On eight
+    /// LEDs, where that roll is one pass by LED, it opens exactly as over
+    /// Claude's own roll: the same lines for the same length. On the Dot,
+    /// where it is four passes, it opens like the two-agent roll: the pass
+    /// under way carries on in its one colour and the split takes over at
+    /// its end.
+    func testAZoneOpensOverTheFourAgentRoll() {
+        for alert: SplitAlert in [.waiting(.opencode), .done(.copilot)] {
+            let loopMs = LedContinuation.loopMs(of: p(.working(.all)))!
+            XCTAssertEqual(loopMs, LedContinuation.loopMs(of: p(.working)))
+            var carriedAtAll = false
+            for phase in stride(from: 0, to: loopMs, by: 5) {
+                let label = "\(alert) on 8 LEDs at \(phase) ms"
+                let four = carried(.working(.all), .split(alert: alert, work: .working(.all)), at: phase)
+                let one = carried(.working, .split(alert: alert, work: .working), at: phase)
+                XCTAssertEqual(four == nil, one == nil, label)
+                guard let four, let one else { continue }
+                carriedAtAll = true
+                XCTAssertLessThanOrEqual(four.program.utf8.count, 512, label)
+                XCTAssertLessThanOrEqual(four.program.split(separator: "\n").count, 20, label)
+                XCTAssertEqual(four.lengthMs, one.lengthMs, label)
+                XCTAssertEqual(four.program.split(separator: "\n").count, one.program.split(separator: "\n").count,
+                               label)
+                XCTAssertEqual(LedContinuation.parse(four.program)?.loopMs, four.lengthMs, label)
             }
+            XCTAssertTrue(carriedAtAll, "\(alert) on 8 LEDs: the roll carries on under the zone")
+
+            let dotLoop = p(.working(.all), leds: 2)
+            let passMs = LedContinuation.loopMs(of: p(.working, leds: 2))!
+            XCTAssertEqual(LedContinuation.loopMs(of: dotLoop), 4 * passMs, "four passes on the Dot")
+            let agentColours = [K.claudeWorking, K.codexWorking, K.copilotWorking, K.opencodeWorking]
+            carriedAtAll = false
+            for phase in stride(from: 0, to: 4 * passMs, by: 5) {
+                let label = "\(alert) on the Dot at \(phase) ms"
+                guard let tail = carried(.working(.all), .split(alert: alert, work: .working(.all)), at: phase, leds: 2)
+                else { continue }
+                carriedAtAll = true
+                XCTAssertLessThanOrEqual(tail.program.utf8.count, 512, label)
+                XCTAssertLessThanOrEqual(tail.lengthMs, passMs + K.askBlinkMs, "\(label): at most the pass's rest")
+                XCTAssertLessThanOrEqual(agentColours.filter(tail.program.contains).count, 1,
+                                         "\(label): one pass, one colour")
+                XCTAssertEqual(LedContinuation.parse(tail.program)?.loopMs, tail.lengthMs, label)
+            }
+            XCTAssertTrue(carriedAtAll, "\(alert) on the Dot: the roll carries on under the zone")
         }
     }
 }

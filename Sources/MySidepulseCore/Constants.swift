@@ -8,10 +8,10 @@ import Foundation
 /// the strip and on screen; the strip's brightness setting is what dims it,
 /// never a darker hex.
 public enum K {
-    /// Each agent at work, in the owner's colours. A roll two agents share
-    /// takes one agent's colour on one pass and the other's on the next; a
-    /// roll three or four share is one pass, each LED in one agent's colour
-    /// in turn (`LedProgram.rolling`).
+    /// Each agent at work, in the owner's colours. A roll several agents
+    /// share takes one agent's colour per pass wherever those passes fit the
+    /// strip's program, and otherwise one pass with each LED in one agent's
+    /// colour (`LedProgram.rollPasses`).
     public static let claudeWorking = "#ff374a"
     /// Codex at work: the owner's blue.
     public static let codexWorking = "#0a00ff"

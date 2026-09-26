@@ -27,6 +27,19 @@ public enum Language: String, CaseIterable, Sendable {
 
     /// A count and its noun: `1 LED`, `8 LEDs`.
     public func leds(_ count: Int) -> String { "\(count) \(ledsNoun(count))" }
+
+    /// Names in a sentence: "Claude", "Claude and Codex", "Claude, Codex and
+    /// Copilot"; the conjunction, which joins the last two, is the only word
+    /// that changes with the language.
+    func list(_ names: [String]) -> String {
+        guard let last = names.last, names.count > 1 else { return names.joined() }
+        let and: String
+        switch self {
+        case .en: and = " and "
+        case .fr: and = " et "
+        }
+        return names.dropLast().joined(separator: ", ") + and + last
+    }
 }
 
 /// The one language every string table reads.

@@ -135,6 +135,12 @@ final class LocalizationTests: XCTestCase {
                                   "\(language): the shared card names \(agent.shortName)")
                 }
                 XCTAssertFalse(t.titleAllWorking.isEmpty)
+                for count in ["four", "quatre", "4"] {
+                    XCTAssertFalse(t.subtitleAllWorking.lowercased().contains(count),
+                                   "\(language): the number of agents is not written into the sentence")
+                }
+                XCTAssertFalse(t.subtitleAllWorking.contains("in turn") || t.subtitleAllWorking.contains("tour à tour"),
+                               "\(language): true on both strips, which roll it differently")
                 XCTAssertFalse(Loc.settings.colors.coloursHint.contains("Codex"),
                                "\(language): the hint speaks of every agent, not of two")
             }

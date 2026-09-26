@@ -17,8 +17,9 @@ things are visible at a glance: an agent is **working**, an agent has
 **finished**, an agent **needs you**. The agents are Claude Code, Codex,
 GitHub Copilot and OpenCode, in that order everywhere they are listed. Each
 works in a colour of its own (Claude red, Codex blue, Copilot another blue,
-OpenCode another red): a wave two agents share takes one colour per pass, and
-one three or four share gives each LED one agent's colour in turn. Finished
+OpenCode another red): a wave several agents share takes one colour per pass
+wherever those passes fit the strip's program, and otherwise gives each LED
+one agent's colour. Finished
 and needs you are one colour whoever raised them, because they say that the
 Mac wants the user, not which agent does. When nobody is at the machine, the
 same finished / needs-you alerts go to a phone through ntfy, titled with the
@@ -79,13 +80,14 @@ pushes, is in English or French, chosen from the system language (§15).
 1. an agent session working — or an *acknowledged* open wait that still has
    subagents or background shells running behind it → the rolling wave, in
    the working agent's colour: Claude's red, Codex's blue, Copilot's blue,
-   OpenCode's red. When **two agents work at once, one pass in
-   the first one's colour and the next in the other's**; when **three or four
-   work at once, one pass whose LEDs take their colours in turn**, LED *i* in
-   the colour of agent *i* mod *n*. The agents go in their order, Claude's
-   first, and the rhythm is unchanged. Three passes would not fit in the
-   strip's program ([device.md](device.md)), and on the Dot's two LEDs a roll
-   of three or four shows the first two agents' colours;
+   OpenCode's red. When several agents work at once, **one pass in each
+   one's colour, in turn, wherever those passes fit the strip's program**
+   (512 bytes, 20 lines), and **one pass whose LEDs take their colours**,
+   LED *i* in the colour of agent *i* mod *n*, **where they do not**. On the
+   Pro's eight LEDs two agents keep their passes and three or four alternate
+   by LED (three passes would be 741 bytes); on the Dot's two LEDs every
+   number of agents keeps its passes (four are 294 bytes). The agents go in
+   their order, Claude's first, and the rhythm is unchanged;
 2. a terminal job running → rolling violet wave.
 
 Every agent shares every rung: the strip says that an agent wants the user,
@@ -95,9 +97,12 @@ In a split, a needs-you alert takes `K.alertZoneLedsNeedsYou` (3) LEDs and a
 finished alert `K.alertZoneLedsFinished` (2); at least one LED always stays
 with the work. The amber zone blinks in the same 1.5 s rhythm as the full-strip
 blink; the green zone holds steady. A roll shared by several agents under a
-zone alternates its colour **by LED**, whatever their number, Claude's first:
-two passes of blink lines and roll lines would not fit in the strip's program
-([device.md](device.md)).
+zone alternates its colour **by LED**, whatever their number: two passes of
+blink lines and roll lines would not fit in the strip's program
+([device.md](device.md)). Two agents alternate from the roll's first LED,
+Claude's first; three or four give LED *i* agent *i* mod *n*'s colour, the
+colour it has on the whole strip's roll by LED, so a zone opening or closing
+over that roll leaves every LED with its agent.
 
 With several sessions the strip does not say which one: the most urgent alert
 and the most active work win. `mysidepulse status` lists them individually.
@@ -143,17 +148,16 @@ the loop's end:
 
 4. **The full-strip roll changing colour**: Claude's roll becoming a shared
    one when another agent starts, a shared one becoming one agent's when the
-   others finish, and every other change of agents, between the two-pass roll
-   and the one-pass roll of three or four as well. The wave carries on from
+   others finish, and every other change of agents, between a roll by pass
+   and a roll by LED as well. The wave carries on from
    where it is and takes the new colours at its next pass. Under a zone the
    roll's agents changing starts the split anew.
 
-On the roll two agents share a tail ends at the loop's end when it fits in the
+On a roll of several passes a tail ends at the loop's end when it fits in the
 strip's program, and otherwise at the end of the pass under way, where every
 LED is dark; the loop then starts with the first agent's pass, so a brightness
-change during that pass can show its colour twice in a row, once. The roll of
-three or four agents is one pass, and its tail ends at the loop's end like
-one agent's.
+change during that pass can show its colour twice in a row, once. A roll by
+LED is one pass, and its tail ends at the loop's end like one agent's.
 
 A change of animation (working → done alone, a different roll) starts the
 new one from its first line: there is nothing to carry on. The exact cut, and

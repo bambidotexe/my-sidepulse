@@ -9,8 +9,8 @@ MySidepulse is a macOS menu-bar app that drives a **SidePulse** LED strip — an
 LED bar in SD-card form factor that sits in the Mac's card slot — so that three
 things are visible at a glance: an agent is **working** (a rolling wave in the
 agent's colour: red for Claude Code, blue for Codex, another blue for GitHub
-Copilot, another red for OpenCode; one colour per pass when two work, one per
-LED when three or four do), an agent has **finished** (a green breath), an
+Copilot, another red for OpenCode; one colour per pass when several work and
+the passes fit the strip, one per LED when they do not), an agent has **finished** (a green breath), an
 agent **needs you** (an amber double blink). The agents with hooks are
 **Claude Code and Codex**; Copilot and OpenCode have their colours and their
 place in the roll, and nothing sets up their hooks. Finished and needs you are one colour for
@@ -502,13 +502,13 @@ Known limitations, in plain words — the authority is *Open issues* in
   rollout marker: a TUI session goes dark when the daemon says its thread is
   idle, and any other rolls until 2 h after the rollout's last line. Whether Codex
   fires `PreToolUse` for `request_user_input` is unobserved.
-- The shared roll (two agents working: one colour per pass on the whole
-  strip; three or four: one pass, one colour per LED; one per LED under a
-  zone), its recolour tail and its pass-end handover are pinned by exact text
-  and the phase sweeps, and have not been seen on the strip, nor have
-  Copilot's `#0e5cff` and OpenCode's `#ff0043`. Judge them there before
-  trusting them. On the Dot a roll of three or four shows the first two
-  agents' colours only.
+- The shared roll (one colour per pass on the whole strip wherever the passes
+  fit: two agents on the Pro, any number on the Dot; one pass, one colour per
+  LED, for three or four on the Pro; one per LED under a zone, LED *i* keeping
+  agent *i* mod *n* for three or four), its recolour tail and its pass-end
+  handover are pinned by exact text and the phase sweeps, and have not been
+  seen on the strip, nor have Copilot's `#0e5cff` and OpenCode's `#ff0043`.
+  Judge them there before trusting them.
 - Copilot and OpenCode have their colours, their Colours rows, their
   Playground cards and their push titles and links, and nothing sets up their
   hooks, so no Copilot or OpenCode session reaches the strip.
