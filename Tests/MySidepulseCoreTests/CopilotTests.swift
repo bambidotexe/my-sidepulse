@@ -413,8 +413,8 @@ final class CopilotTests: XCTestCase {
     }
 
     /// A Copilot session waiting on a permission or a question is checked
-    /// too, its quiet gate counted from when the wait began; a failed turn's
-    /// `waiting(error)` never is, nor is a working session.
+    /// too, from the moment the wait began, with no quiet gate; a failed
+    /// turn's `waiting(error)` never is, nor is a working session.
     func testAnOpenCopilotWaitIsAWaitCandidate() {
         var store = waiting("permission_prompt")
         store.apply(line("userPromptSubmitted", ["sessionId": "c2"], 0))
@@ -426,23 +426,23 @@ final class CopilotTests: XCTestCase {
         store.apply(claude)
         store.apply(ev(.notification, 2, sid: "s1", ntype: "permission_prompt"))
 
-        XCTAssertTrue(store.copilotWaitCandidates(at: at(10)).isEmpty, "not quiet yet")
-        let quiet = store.copilotWaitCandidates(at: at(2 + K.abandonQuietSeconds))
-        XCTAssertEqual(quiet.map(\.sessionId), ["c1"], "not a working session, an error or Claude's")
-        XCTAssertEqual(quiet.first?.transcriptPath, transcript)
-        XCTAssertEqual(quiet.first?.waitSince, at(2))
-        XCTAssertEqual(store.copilotWaitCandidates(at: at(3), quietSeconds: 0).map(\.sessionId), ["c1"],
-                       "the launch check has no quiet gate")
-        XCTAssertEqual(waiting("elicitation_dialog").copilotWaitCandidates(at: at(100)).map(\.sessionId), ["c1"],
+        let waits = store.copilotWaitCandidates()
+        XCTAssertEqual(waits.map(\.sessionId), ["c1"], "not a working session, an error or Claude's")
+        XCTAssertEqual(waits.first?.transcriptPath, transcript)
+        XCTAssertEqual(waits.first?.waitSince, at(2))
+        XCTAssertEqual(waiting("elicitation_dialog").copilotWaitCandidates().map(\.sessionId), ["c1"],
                        "a question too")
     }
 
+    /// The wait is read on the recheck cadence from the moment it began:
+    /// no quiet gate delays the first read.
     func testNextDeadlineCoversTheCopilotWaitRecheck() {
         let store = waiting("permission_prompt", at: 5)
-        XCTAssertEqual(store.nextDeadline(after: at(5 + K.notifyDebounceSeconds)), at(5 + K.abandonQuietSeconds),
-                       "wake when the wait becomes a candidate")
+        XCTAssertEqual(store.nextDeadline(after: at(5 + K.notifyDebounceSeconds)),
+                       at(5 + K.notifyDebounceSeconds + K.abandonRecheckSeconds),
+                       "the recheck cadence, with no quiet gate to wait out")
         XCTAssertEqual(store.nextDeadline(after: at(100)), at(100 + K.abandonRecheckSeconds),
-                       "then on the recheck cadence")
+                       "and on it for as long as the wait stands")
     }
 
     /// Ctrl+C at a permission prompt: the file's `abort`, stamped after the
@@ -530,7 +530,7 @@ final class CopilotTests: XCTestCase {
         XCTAssertNil(store.sessions["c1"]?.notifyAt, "answered: nothing left to announce")
         XCTAssertEqual(strip(store, at: at(10)), .working(.copilot))
         XCTAssertTrue(store.tick(now: at(2 + K.notifyDebounceSeconds + 30)).isEmpty, "no push")
-        XCTAssertTrue(store.copilotWaitCandidates(at: at(100)).isEmpty)
+        XCTAssertTrue(store.copilotWaitCandidates().isEmpty)
         XCTAssertEqual(store.copilotCandidates(at: at(30)).map(\.sessionId), ["c1"],
                        "quiet since its last hook: the working turn's check reads the file next")
 

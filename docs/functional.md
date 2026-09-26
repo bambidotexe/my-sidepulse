@@ -457,8 +457,8 @@ names.
 
 A Copilot session waiting on a permission or a question (`waiting(permission)`
 or `waiting(question)`, never a failed turn's `waiting(error)`) is checked
-against the same file on the same schedule, its quiet gate counted from when
-the wait began, and once at launch with no gate, and the file's latest turn
+against the same file every `K.abandonRecheckSeconds` from the moment the wait
+began, with no quiet gate, and once at launch, and the file's latest turn
 marker decides. Ctrl+C or Esc Esc at the prompt fires no hook, and an `abort`
 stamped after the wait began ends the turn as a working turn's abort does
 (`idle`, dark), with no push. Answering the prompt fires no hook either
@@ -528,8 +528,8 @@ most.
 | Copilot: lost `Stop` | same, but the marker is the session's own `agentStop` hook starting | `done`, with its push | 20–35 s |
 | Copilot: failed turn | same, but the marker is a `session.error` | `waiting(error)`, with its push | 20–35 s |
 | Copilot: session closed mid-turn | same, but the marker is a `session.shutdown` with no end of the turn before it | `idle` (dark), no push | 20–35 s |
-| Copilot: a permission or question cancelled (Ctrl+C, Esc Esc at the prompt) | `waiting(permission)` or `waiting(question)` for ≥ `K.abandonQuietSeconds` (20 s); the last marker of `events.jsonl` is an `abort` stamped after the wait began | `idle` (dark), no push | 20–35 s |
-| Copilot: a permission answered | same wait; the turn is at work and the latest permission line of `events.jsonl` is `permission.completed`, stamped after the wait began | `working`, the push disarmed | ≤ 15 s after the answer, not before 20 s into the wait |
+| Copilot: a permission or question cancelled (Ctrl+C, Esc Esc at the prompt) | `waiting(permission)` or `waiting(question)`, from the moment the wait began; the last marker of `events.jsonl` is an `abort` stamped after the wait began | `idle` (dark), no push | ≤ 15 s |
+| Copilot: a permission answered | same wait; the turn is at work and the latest permission line of `events.jsonl` is `permission.completed`, stamped after the wait began | `working`, the push disarmed | ≤ 15 s after the answer |
 
 While the registry says `busy`, a quiet session is kept alive and stays
 `working`. The registry and open waits are re-read every
@@ -1430,7 +1430,7 @@ agent's colour while it works.
 | `staleSeconds` | 2 h | silent session forgotten |
 | `abortQuarantineSeconds` | 120 s | after an `Interrupt`, a tool or permission event without a turn id changes nothing |
 | `idleSignalMinQuietSeconds` | 50 s | quiet needed before `idle_prompt` counts as a lost Stop |
-| `abandonQuietSeconds` | 20 s | quiet before Claude's registry, a Codex rollout or a Copilot `events.jsonl` is consulted; for a Copilot wait, counted from when it began |
+| `abandonQuietSeconds` | 20 s | quiet before Claude's registry, a Codex rollout or a Copilot `events.jsonl` is consulted about a working turn; a Copilot wait has no quiet gate |
 | `abandonRecheckSeconds` | 15 s | registry / rollout / `events.jsonl` / open-wait recheck |
 | `CodexRolloutTail.tailBytes` | 64 KB | how much of a Codex rollout's end is read |
 | `CopilotTranscriptTail.tailBytes` | 64 KB | how much of a Copilot `events.jsonl`'s end is read |

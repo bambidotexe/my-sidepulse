@@ -633,12 +633,10 @@ public struct SessionStore {
             }
             if s.state.isOpenWaiting, s.agent == .copilot {
                 // The Copilot wait watch: a Copilot prompt answered, or
-                // cancelled with Ctrl+C, fires no hook. Counted from when the
-                // wait began; see `copilotWaitCandidates`.
-                let eligibleAt = s.stateSince.addingTimeInterval(K.abandonQuietSeconds)
-                deadlines.append(eligibleAt > now
-                                 ? eligibleAt
-                                 : now.addingTimeInterval(K.abandonRecheckSeconds))
+                // cancelled with Ctrl+C, fires no hook, so the wait is read
+                // on the recheck cadence from the moment it began, with no
+                // quiet gate; see `copilotWaitCandidates`.
+                deadlines.append(now.addingTimeInterval(K.abandonRecheckSeconds))
             }
             if s.state.isOpenWaiting, s.agent == .claude, s.agentPid != nil {
                 // The answered-dialog watch: an approval may fire no hook
@@ -741,17 +739,15 @@ public struct SessionStore {
         quietCandidates(of: .copilot, at: now, quietSeconds)
     }
 
-    /// Copilot sessions waiting on a permission or a question for
-    /// `quietSeconds` since the wait began, checked against the same file
-    /// for an `abort` or an answer: neither Ctrl+C nor Esc Esc at the
-    /// prompt, nor the prompt's answer, fires a hook. A failed turn's
-    /// `waiting(error)` is not an open wait. The launch check passes no quiet
-    /// gate (0).
-    public func copilotWaitCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
-    -> [(sessionId: String, transcriptPath: String?, waitSince: Date)] {
+    /// Every Copilot session waiting on a permission or a question, from the
+    /// moment the wait began, with no quiet gate, checked against the same
+    /// file for an `abort` or an answer: neither Ctrl+C nor Esc Esc at the
+    /// prompt, nor the prompt's answer, fires a hook, and Copilot writes the
+    /// answer's `permission.completed` within milliseconds of the click. A
+    /// failed turn's `waiting(error)` is not an open wait.
+    public func copilotWaitCandidates() -> [(sessionId: String, transcriptPath: String?, waitSince: Date)] {
         sessions.values.sorted { $0.id < $1.id }.compactMap { s in
-            guard s.agent == .copilot, s.state.isOpenWaiting,
-                  now.timeIntervalSince(s.stateSince) >= quietSeconds else { return nil }
+            guard s.agent == .copilot, s.state.isOpenWaiting else { return nil }
             return (s.id, s.transcriptPath, s.stateSince)
         }
     }

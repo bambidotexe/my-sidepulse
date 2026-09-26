@@ -525,10 +525,10 @@ Known limitations, in plain words — the authority is *Open issues* in
   run only in temporary Codex homes under the tests, never against the real
   `~/.codex` or a live Codex: the checklist's Codex rows are its verification.
 - A quiet Copilot turn is read from its `events.jsonl` within about 35 s, on
-  the same rule as Codex's rollout; a Copilot open wait cancelled with Ctrl+C
-  goes dark the same way, and one answered (approving a permission fires no
-  hook) goes back to working the same way, from the file's latest permission
-  line.
+  the same rule as Codex's rollout; a Copilot open wait is read from the same
+  file within about 15 s, with no quiet gate: cancelled with Ctrl+C it goes
+  dark, and answered (approving a permission fires no hook) it goes back to
+  working, from the file's latest permission line.
   Nothing here has run against a live Copilot.
 - The shared roll (one colour per pass on the whole strip wherever the passes
   fit: two agents on the Pro, any number on the Dot; one pass, one colour per

@@ -977,7 +977,7 @@ final class Engine {
         // permission line that is `permission.completed`, stamped after it,
         // is the answer, and the session is back to working; anything else
         // leaves the wait standing.
-        for (sessionId, recorded, waitSince) in store.copilotWaitCandidates(at: now, quietSeconds: quietSeconds) {
+        for (sessionId, recorded, waitSince) in store.copilotWaitCandidates() {
             let tail = CopilotTranscript.tail(sessionId: sessionId, recorded: recorded,
                                               root: Paths.copilotSessionState)
             switch tail.map({ CopilotTranscriptTail.waitDecision(tail: $0, sessionId: sessionId, waitSince: waitSince) })
