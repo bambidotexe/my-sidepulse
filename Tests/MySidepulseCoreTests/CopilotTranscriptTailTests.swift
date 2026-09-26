@@ -142,6 +142,10 @@ final class CopilotTranscriptTailTests: XCTestCase {
         XCTAssertEqual(verdict([line("23:30:00.000", "session.shutdown"),
                                 line("23:35:00.000", "session.start")] + shutdown),
                        .closed(at: stamp("23:40:08.679")), "a resumed session closes at its last shutdown")
+        XCTAssertEqual(verdict([line("23:40:08.300", "tool.execution_start"),
+                                hook("23:40:08.400", "agentStop", session: subagent)] + shutdown),
+                       .closed(at: stamp("23:40:08.679")),
+                       "a subagent's agentStop before the shutdown is no end of the turn")
         XCTAssertEqual(CopilotTranscriptTail.decision(verdict: .closed(at: stamp("23:40:08.679")),
                                                       lastMainEventAt: stamp("23:40:08.000")),
                        .closed(endedAt: stamp("23:40:08.679")))
@@ -222,6 +226,22 @@ final class CopilotTranscriptTailTests: XCTestCase {
         XCTAssertEqual(CopilotTranscriptTail.decision(verdict: .running(writtenAt: stamp("23:40:00.000")),
                                                       lastMainEventAt: prompt), .busy,
                        "work is work whenever the file was last written")
+    }
+
+    /// A session waiting on a permission or a question: only an `abort`
+    /// stamped after the wait began ends it (Ctrl+C at the prompt). Work, a
+    /// finish, a failure or a close, and an abort from before the wait,
+    /// change nothing: answering is the next hook's to say.
+    func testOnlyAnAbortAfterTheWaitBeganEndsAWait() {
+        let waitSince = stamp("23:50:28.786")
+        XCTAssertEqual(CopilotTranscriptTail.waitDecision(verdict: .aborted(at: stamp("23:50:34.361")),
+                                                          waitSince: waitSince),
+                       .aborted(endedAt: stamp("23:50:34.361")))
+        for v in [CopilotTranscriptTail.Verdict.aborted(at: stamp("23:50:20.000")), .aborted(at: waitSince),
+                  .running(writtenAt: stamp("23:50:40.000")), .complete(at: stamp("23:50:40.000")),
+                  .failed(at: stamp("23:50:40.000")), .closed(at: stamp("23:50:40.000")), .unreadable] {
+            XCTAssertEqual(CopilotTranscriptTail.waitDecision(verdict: v, waitSince: waitSince), .nothing, "\(v)")
+        }
     }
 
     // MARK: which file may be read

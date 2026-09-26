@@ -402,4 +402,109 @@ final class CopilotTests: XCTestCase {
         ghost.apply(verdict)
         XCTAssertTrue(ghost.sessions.isEmpty, "a verdict never creates a session")
     }
+
+    // MARK: a wait cancelled with Ctrl+C
+
+    func waiting(_ reason: String, at t: TimeInterval = 2) -> SessionStore {
+        var store = SessionStore()
+        store.apply(line("userPromptSubmitted", ["sessionId": "c1", "transcriptPath": transcript], 0))
+        store.apply(line("notification", ["sessionId": "c1", "notification_type": reason], t))
+        return store
+    }
+
+    /// A Copilot session waiting on a permission or a question is checked
+    /// too, its quiet gate counted from when the wait began; a failed turn's
+    /// `waiting(error)` never is, nor is a working session.
+    func testAnOpenCopilotWaitIsAWaitCandidate() {
+        var store = waiting("permission_prompt")
+        store.apply(line("userPromptSubmitted", ["sessionId": "c2"], 0))
+        store.apply(line("userPromptSubmitted", ["sessionId": "c3"], 0))
+        store.failTurn(sessionId: "c3", now: at(1), endedAt: at(1))
+        XCTAssertEqual(store.sessions["c3"]?.state, .waiting(.error))
+        var claude = ev(.userPromptSubmit, 0, sid: "s1", pid: 42)
+        claude.agent = .claude
+        store.apply(claude)
+        store.apply(ev(.notification, 2, sid: "s1", ntype: "permission_prompt"))
+
+        XCTAssertTrue(store.copilotWaitCandidates(at: at(10)).isEmpty, "not quiet yet")
+        let quiet = store.copilotWaitCandidates(at: at(2 + K.abandonQuietSeconds))
+        XCTAssertEqual(quiet.map(\.sessionId), ["c1"], "not a working session, an error or Claude's")
+        XCTAssertEqual(quiet.first?.transcriptPath, transcript)
+        XCTAssertEqual(quiet.first?.waitSince, at(2))
+        XCTAssertEqual(store.copilotWaitCandidates(at: at(3), quietSeconds: 0).map(\.sessionId), ["c1"],
+                       "the launch check has no quiet gate")
+        XCTAssertEqual(waiting("elicitation_dialog").copilotWaitCandidates(at: at(100)).map(\.sessionId), ["c1"],
+                       "a question too")
+    }
+
+    func testNextDeadlineCoversTheCopilotWaitRecheck() {
+        let store = waiting("permission_prompt", at: 5)
+        XCTAssertEqual(store.nextDeadline(after: at(5 + K.notifyDebounceSeconds)), at(5 + K.abandonQuietSeconds),
+                       "wake when the wait becomes a candidate")
+        XCTAssertEqual(store.nextDeadline(after: at(100)), at(100 + K.abandonRecheckSeconds),
+                       "then on the recheck cadence")
+    }
+
+    /// Ctrl+C at a permission prompt: the file's `abort`, stamped after the
+    /// wait began, ends the turn as a working turn's abort does: dark, the
+    /// push the wait armed disarmed, the turn closed. A question the same.
+    func testAWaitCancelledWithCtrlCGoesDarkWithoutAPush() {
+        var store = waiting("permission_prompt")
+        XCTAssertEqual(store.abandonWait(sessionId: "c1", now: at(40), endedAt: at(8)), at(8))
+        XCTAssertEqual(store.sessions["c1"]?.state, .idle)
+        XCTAssertEqual(store.sessions["c1"]?.stateSince, at(8))
+        XCTAssertNil(store.sessions["c1"]?.notifyAt)
+        XCTAssertTrue(store.tick(now: at(2 + K.notifyDebounceSeconds + 30)).isEmpty, "no push")
+
+        var question = waiting("elicitation_dialog")
+        XCTAssertEqual(question.abandonWait(sessionId: "c1", now: at(40), endedAt: at(8)), at(8))
+        XCTAssertEqual(question.sessions["c1"]?.state, .idle)
+
+        var early = waiting("permission_prompt")
+        XCTAssertNil(early.abandonWait(sessionId: "c1", now: at(40), endedAt: at(2)),
+                     "an abort from before the wait began is another turn's")
+        XCTAssertEqual(early.sessions["c1"]?.state, .waiting(.permission))
+
+        var working = SessionStore()
+        working.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        XCTAssertNil(working.abandonWait(sessionId: "c1", now: at(40), endedAt: at(8)), "a wait only")
+        var failed = SessionStore()
+        failed.apply(line("userPromptSubmitted", ["sessionId": "c1"], 0))
+        failed.failTurn(sessionId: "c1", now: at(1), endedAt: at(1))
+        XCTAssertNil(failed.abandonWait(sessionId: "c1", now: at(40), endedAt: at(8)), "an error is not an open wait")
+        XCTAssertEqual(failed.sessions["c1"]?.state, .waiting(.error))
+    }
+
+    /// Journaled as `turn-abandoned`: replaying the lines gives the session
+    /// the live store holds, reading the line back changes nothing, and a
+    /// line stamped before the wait began changes nothing either.
+    func testAnAbandonedWaitReplaysAsTheSameVerdict() {
+        let lines = [line("userPromptSubmitted", ["sessionId": "c1"], 0),
+                     line("notification", ["sessionId": "c1", "notification_type": "permission_prompt"], 2)]
+        func replay(_ extra: [JournalEvent]) -> SessionStore {
+            var s = SessionStore()
+            for l in lines + extra { s.apply(l) }
+            return s
+        }
+        func verdict(_ t: TimeInterval) -> JournalEvent {
+            var e = JournalEvent(loggedAt: at(t), event: .verdict)
+            e.sessionId = "c1"
+            e.verdict = TurnVerdict.turnAbandoned.rawValue
+            return e
+        }
+        var live = replay([])
+        XCTAssertEqual(live.abandonWait(sessionId: "c1", now: at(40), endedAt: at(8)), at(8))
+        XCTAssertEqual(replay([verdict(8)]).sessions["c1"], live.sessions["c1"])
+        let before = live.sessions["c1"]
+        live.apply(verdict(8))
+        XCTAssertEqual(live.sessions["c1"], before, "the app's own line read back is a no-op")
+        XCTAssertEqual(replay([verdict(1)]).sessions["c1"]?.state, .waiting(.permission),
+                       "a verdict from before the wait began is not about it")
+
+        var claude = SessionStore()
+        claude.apply(ev(.userPromptSubmit, 0, sid: "c1", pid: 42))
+        claude.apply(ev(.notification, 2, sid: "c1", ntype: "permission_prompt"))
+        claude.apply(verdict(8))
+        XCTAssertEqual(claude.sessions["c1"]?.state, .waiting(.permission), "only Copilot abandons a wait")
+    }
 }

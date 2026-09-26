@@ -395,7 +395,12 @@ public struct SessionStore {
             sessions[sid] = s
             return
         }
-        guard s.state == .working, !s.pendingDone else { return }
+        // A Copilot turn abandoned during an open wait (`abandonWait`)
+        // applies to a wait that began at or before the stamp; only Copilot
+        // abandons a wait.
+        let abandonsWait = verdict == .turnAbandoned && s.agent == .copilot && s.state.isOpenWaiting
+            && s.stateSince <= at
+        guard (s.state == .working && !s.pendingDone) || abandonsWait else { return }
         set(&s, outcome, at)
         closeTurn(&s, byInterrupt: false, now: at)
         sessions[sid] = s
@@ -626,6 +631,15 @@ public struct SessionStore {
                                  ? eligibleAt
                                  : now.addingTimeInterval(K.abandonRecheckSeconds))
             }
+            if s.state.isOpenWaiting, s.agent == .copilot {
+                // The cancelled-wait watch: Ctrl+C at a Copilot prompt fires
+                // no hook. Counted from when the wait began; see
+                // `copilotWaitCandidates`.
+                let eligibleAt = s.stateSince.addingTimeInterval(K.abandonQuietSeconds)
+                deadlines.append(eligibleAt > now
+                                 ? eligibleAt
+                                 : now.addingTimeInterval(K.abandonRecheckSeconds))
+            }
             if s.state.isOpenWaiting, s.agent == .claude, s.agentPid != nil {
                 // The answered-dialog watch: an approval may fire no hook
                 // at all, so open waits are re-checked on the same cadence.
@@ -727,6 +741,20 @@ public struct SessionStore {
         quietCandidates(of: .copilot, at: now, quietSeconds)
     }
 
+    /// Copilot sessions waiting on a permission or a question for
+    /// `quietSeconds` since the wait began, checked against the same file
+    /// for an `abort`: Ctrl+C or Esc Esc at the prompt fires no hook. A
+    /// failed turn's `waiting(error)` is not an open wait. The launch check
+    /// passes no quiet gate (0).
+    public func copilotWaitCandidates(at now: Date, quietSeconds: TimeInterval = K.abandonQuietSeconds)
+    -> [(sessionId: String, transcriptPath: String?, waitSince: Date)] {
+        sessions.values.sorted { $0.id < $1.id }.compactMap { s in
+            guard s.agent == .copilot, s.state.isOpenWaiting,
+                  now.timeIntervalSince(s.stateSince) >= quietSeconds else { return nil }
+            return (s.id, s.transcriptPath, s.stateSince)
+        }
+    }
+
     private func quietCandidates(of agent: AgentKind, at now: Date, _ quietSeconds: TimeInterval)
     -> [(sessionId: String, transcriptPath: String?)] {
         sessions.values.sorted { $0.id < $1.id }.compactMap { s in
@@ -755,6 +783,22 @@ public struct SessionStore {
     public mutating func abandonTurn(sessionId: String, now: Date, endedAt: Date? = nil) -> Date? {
         guard var s = sessions[sessionId], s.state == .working, !s.pendingDone else { return nil }
         let stamp = Self.rescueStamp(endedAt, in: s, now: now)
+        set(&s, .idle, stamp)
+        closeTurn(&s, byInterrupt: false, now: now)
+        sessions[sessionId] = s
+        return stamp
+    }
+
+    /// The same ending for a turn cancelled at an open wait: Copilot's
+    /// Ctrl+C at a permission or question prompt fires no hook, and its
+    /// `events.jsonl` ends on an `abort` stamped after the wait began. Dark,
+    /// the wait's push disarmed, the turn closed, as of `endedAt` (never
+    /// after now), and journaled as `turn-abandoned`. Nil when the session
+    /// is not in an open wait or the end is not after the wait began.
+    @discardableResult
+    public mutating func abandonWait(sessionId: String, now: Date, endedAt: Date) -> Date? {
+        guard var s = sessions[sessionId], s.state.isOpenWaiting, endedAt > s.stateSince else { return nil }
+        let stamp = min(endedAt, now)
         set(&s, .idle, stamp)
         closeTurn(&s, byInterrupt: false, now: now)
         sessions[sessionId] = s

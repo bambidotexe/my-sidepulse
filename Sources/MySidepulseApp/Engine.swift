@@ -79,10 +79,10 @@ final class Engine {
     /// has lost its hooks (both worth exactly one loud line).
     private var warnedNoRegistry: Set<String> = []
     private var warnedHooksSilent: Set<String> = []
-    /// The same canary for a quiet Codex session whose rollout, or a quiet
-    /// Copilot session whose `events.jsonl`, cannot be read or holds no turn
-    /// marker.
-    private var warnedNoRollout: Set<String> = []
+    /// The same canary for an agent's own transcript: a quiet Codex
+    /// session whose rollout, or a quiet Copilot session whose
+    /// `events.jsonl`, cannot be read or holds no turn marker.
+    private var warnedNoTranscript: Set<String> = []
     /// The Codex sessions with a question out to Codex's daemon, skipped by
     /// the periodic check until it is answered, and, after an answer that
     /// decided nothing, when each may be asked again: until then its rollout
@@ -872,7 +872,7 @@ final class Engine {
             if case .running(_, let at) = verdict { writtenAt = min(at, now) }
             store.noteBusy(sessionId: sessionId, now: writtenAt)
         case .nothing:
-            if verdict == .unreadable, warnedNoRollout.insert(sessionId).inserted {
+            if verdict == .unreadable, warnedNoTranscript.insert(sessionId).inserted {
                 Log.app.warning("""
                     quiet Codex turn undecidable: session \(sessionId, privacy: .public) — \
                     its rollout cannot be read or holds no turn marker; it stands until \
@@ -898,8 +898,9 @@ final class Engine {
     // MARK: Copilot's events.jsonl
 
     /// Copilot has no registry and no daemon, and fires no hook for Ctrl+C,
-    /// Esc Esc or a failed turn. Every quiet Copilot session is read from
-    /// its `events.jsonl`: `CopilotTranscriptTail` decides; this only reads
+    /// Esc Esc or a failed turn. Every quiet working Copilot session, and
+    /// every one waiting on a permission or a question, is read from its
+    /// `events.jsonl`: `CopilotTranscriptTail` decides; this only reads
     /// the file (the recorded path when Core trusts it, else the session's
     /// own under `~/.copilot/session-state`), maps the decision onto the
     /// store and logs identifiers, never a line of the file.
@@ -955,13 +956,35 @@ final class Engine {
                 if case .running(let at) = verdict { writtenAt = min(at, now) }
                 store.noteBusy(sessionId: sessionId, now: writtenAt)
             case .nothing:
-                if verdict == .unreadable, warnedNoRollout.insert(sessionId).inserted {
+                if verdict == .unreadable, warnedNoTranscript.insert(sessionId).inserted {
                     Log.app.warning("""
                         quiet Copilot turn undecidable: session \(sessionId, privacy: .public) — \
                         its events.jsonl cannot be read or holds no turn marker; it stands until \
                         the file says more, a hook arrives, or the 2 h staleness backstop
                         """)
                 }
+            }
+        }
+        // Ctrl+C or Esc Esc at a permission or question prompt fires no hook
+        // either: an `abort` stamped after the wait began ends the turn;
+        // anything else leaves the wait to the next hook.
+        for (sessionId, recorded, waitSince) in store.copilotWaitCandidates(at: now, quietSeconds: quietSeconds) {
+            let verdict = CopilotTranscript.verdict(sessionId: sessionId, recorded: recorded,
+                                                    root: Paths.copilotSessionState)
+            if case .aborted(let endedAt) = CopilotTranscriptTail.waitDecision(verdict: verdict, waitSince: waitSince) {
+                Log.app.notice("""
+                    turn abandoned: Copilot session \(sessionId, privacy: .public) — events.jsonl \
+                    ends on abort at \(endedAt, privacy: .public), during its wait — going dark
+                    """)
+                persist(.turnAbandoned, sessionId: sessionId,
+                        at: store.abandonWait(sessionId: sessionId, now: now, endedAt: endedAt))
+                ended = true
+            } else if verdict == .unreadable, warnedNoTranscript.insert(sessionId).inserted {
+                Log.app.warning("""
+                    quiet Copilot wait undecidable: session \(sessionId, privacy: .public) — its \
+                    events.jsonl cannot be read or holds no turn marker; the wait stands until a \
+                    hook arrives or the 2 h staleness backstop
+                    """)
             }
         }
         return ended

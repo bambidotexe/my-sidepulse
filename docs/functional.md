@@ -417,9 +417,9 @@ marker in it decides, when it is stamped after the last main-agent event
 (`idle`, dark), with no push; the `hook.start` Copilot writes when it runs
 the session's own `agentStop` hook is the lost `Stop` (`done`, with its
 push); a `session.error` is the failed turn, which takes the outcome a
-`StopFailure` gives (`waiting(error)`, with its push); a `session.shutdown`
-is the session closing, and the turn's own end before it, when there is one,
-says how the turn ended, else it is dark, with no push. A step of the turn
+`StopFailure` gives (`waiting(error)`, with its push); a `session.shutdown`,
+Copilot closing the session, is dark (`idle`), with no push, unless the
+turn's own end comes before it, which then says how the turn ended. A step of the turn
 at work (`user.message`, `assistant.turn_start`, `assistant.message`,
 `tool.execution_start`, `tool.execution_complete`, `permission.requested`,
 `permission.completed`) keeps the session alive, and the 2 h backstop then
@@ -433,6 +433,15 @@ a session no line gave a path, that session's own file there is read. Only
 the last 64 KB of the file are read, and of them only each line's type and
 stamp and, for a `hook.start`, the hook's name and the session its payload
 names.
+
+A Copilot session waiting on a permission or a question (`waiting(permission)`
+or `waiting(question)`, never a failed turn's `waiting(error)`) is checked
+against the same file on the same schedule, its quiet gate counted from when
+the wait began, and once at launch with no gate: Ctrl+C or Esc Esc at the
+prompt fires no hook, and an `abort` stamped after the wait began ends the
+turn as a working turn's abort does (`idle`, dark), with no push. Anything
+else in the file changes nothing for a waiting session: an answer fires the
+next hook, which clears the wait.
 
 When Codex's daemon is running it is asked first (`thread/read` on its
 control socket): a thread it has not loaded, or has idle, has nothing
@@ -467,8 +476,9 @@ asked which threads it holds (`thread/loaded/list`, never `thread/read`): a
 working hosted session whose thread is missing from the complete list has
 nothing running and is decided by its rollout at once, dark when the rollout
 says nothing, while a partial list or no answer decides nothing; then every
-working Claude Code, Codex or Copilot session is checked at once, with no
-quiet gate, before the strip is painted. The paint waits for the daemon's answer, 1 s at
+working Claude Code, Codex or Copilot session, and every Copilot session
+waiting on a permission or a question, is checked at once, with no quiet
+gate, before the strip is painted. The paint waits for the daemon's answer, 1 s at
 most.
 
 | Situation | Signal | Result | Latency |
@@ -486,6 +496,7 @@ most.
 | Copilot: lost `Stop` | same, but the marker is the session's own `agentStop` hook starting | `done`, with its push | 20–35 s |
 | Copilot: failed turn | same, but the marker is a `session.error` | `waiting(error)`, with its push | 20–35 s |
 | Copilot: session closed mid-turn | same, but the marker is a `session.shutdown` with no end of the turn before it | `idle` (dark), no push | 20–35 s |
+| Copilot: a permission or question cancelled (Ctrl+C, Esc Esc at the prompt) | `waiting(permission)` or `waiting(question)` for ≥ `K.abandonQuietSeconds` (20 s); the last marker of `events.jsonl` is an `abort` stamped after the wait began | `idle` (dark), no push | 20–35 s |
 
 While the registry says `busy`, a quiet session is kept alive and stays
 `working`. The registry and open waits are re-read every
@@ -1347,7 +1358,7 @@ agent's colour while it works.
 | `staleSeconds` | 2 h | silent session forgotten |
 | `abortQuarantineSeconds` | 120 s | after an `Interrupt`, a tool or permission event without a turn id changes nothing |
 | `idleSignalMinQuietSeconds` | 50 s | quiet needed before `idle_prompt` counts as a lost Stop |
-| `abandonQuietSeconds` | 20 s | quiet before Claude's registry, a Codex rollout or a Copilot `events.jsonl` is consulted |
+| `abandonQuietSeconds` | 20 s | quiet before Claude's registry, a Codex rollout or a Copilot `events.jsonl` is consulted; for a Copilot wait, counted from when it began |
 | `abandonRecheckSeconds` | 15 s | registry / rollout / `events.jsonl` / open-wait recheck |
 | `CodexRolloutTail.tailBytes` | 64 KB | how much of a Codex rollout's end is read |
 | `CopilotTranscriptTail.tailBytes` | 64 KB | how much of a Copilot `events.jsonl`'s end is read |

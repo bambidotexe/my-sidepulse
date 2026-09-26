@@ -104,6 +104,10 @@ public enum CopilotTranscriptTail {
             case .shutdown?:
                 if let shutdownAt { return .closed(at: shutdownAt) }
                 guard let stamp else { return .unreadable }
+                // The look-back: the scan goes on for the turn's own end. A
+                // new prompt closed before Copilot wrote its `user.message`
+                // (a window of milliseconds) finds the previous turn's end,
+                // stamped before the last main-agent event: it decides nothing.
                 shutdownAt = stamp
             case nil:
                 continue
@@ -125,6 +129,16 @@ public enum CopilotTranscriptTail {
         case .closed(let at): return at > lastMainEventAt ? .closed(endedAt: at) : .nothing
         case .unreadable: return .nothing
         }
+    }
+
+    /// What a verdict means for a session waiting on a permission or a
+    /// question since `waitSince`: an `abort` stamped after the wait began
+    /// is Ctrl+C or Esc Esc at the prompt, and ends the turn as a working
+    /// turn's abort does. Anything else changes nothing: an answer fires the
+    /// next hook, which clears the wait.
+    public static func waitDecision(verdict: Verdict, waitSince: Date) -> Decision {
+        if case .aborted(let at) = verdict, at > waitSince { return .aborted(endedAt: at) }
+        return .nothing
     }
 
     /// A recorded path is read only when it is exactly
