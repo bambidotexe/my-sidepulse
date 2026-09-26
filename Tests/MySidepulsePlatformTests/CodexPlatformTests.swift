@@ -6,9 +6,11 @@ import XCTest
 /// and the doctor's line about it.
 final class CodexPlatformTests: XCTestCase {
     var dir: URL!
-    var hooks: URL { dir.appendingPathComponent("hooks.json") }
-    var backup: URL { dir.appendingPathComponent("hooks.json.backup") }
+    /// A Codex home of its own: every test writes here, never in `~/.codex`.
+    var files: HookInstaller.CodexFiles { HookInstaller.CodexFiles(home: dir) }
+    var hooks: URL { files.hooks }
     var cli: String { dir.appendingPathComponent("MySidepulse.app/Contents/MacOS/mysidepulse").path }
+    var command: String { "\(cli) hook --agent codex" }
 
     override func setUpWithError() throws {
         dir = FileManager.default.temporaryDirectory
@@ -20,21 +22,27 @@ final class CodexPlatformTests: XCTestCase {
     }
     override func tearDown() { try? FileManager.default.removeItem(at: dir) }
 
-    // MARK: ~/.codex/hooks.json
+    // MARK: ~/.codex/hooks.json and its trust in ~/.codex/config.toml
 
     func testInstallSubscribesTheTwelveEventsWithACommandThatNamesCodex() throws {
         // What Codex's own import of Claude's hooks leaves in the file: a
         // bare entry of ours, and someone else's.
         let migrated = #"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"\#(cli) hook","timeout":5}]},{"matcher":"*","hooks":[{"type":"command","command":"other"}]}]}}"#
         try Data(migrated.utf8).write(to: hooks)
-        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, hooks: hooks), 0,
+        let config = "model = \"gpt-6\"   # the user's own\n"
+        try Data(config.utf8).write(to: files.config)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 0,
                        "the migrated entry does not name Codex, so it does not count")
 
-        let outcome = HookInstaller.installCodexHooks(cliPath: cli, hooks: hooks, backup: backup)
+        let outcome = HookInstaller.installCodexHooks(cliPath: cli, files: files)
         XCTAssertTrue(outcome.ok, outcome.message)
-        XCTAssertEqual(outcome.lines.first, "Installed 12 Codex hooks -> \(cli) hook --agent codex")
-        XCTAssertEqual(try String(contentsOf: backup, encoding: .utf8), migrated)
-        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, hooks: hooks), 12)
+        XCTAssertEqual(outcome.lines.first, "Installed 12 Codex hooks -> \(command)")
+        XCTAssertTrue(outcome.lines.contains("Trusted them in ~/.codex/config.toml"), outcome.message)
+        XCTAssertEqual(try String(contentsOf: files.hooksBackup, encoding: .utf8), migrated)
+        XCTAssertEqual(try String(contentsOf: files.configBackup, encoding: .utf8), config)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 12)
+        XCTAssertEqual(HookInstaller.codexHooksTrusted(cliPath: cli, files: files), 12)
+        XCTAssertEqual(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks), true)
 
         let root = try XCTUnwrap(try SettingsFile.load(at: hooks))
         let stop = try XCTUnwrap((root["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])
@@ -52,16 +60,116 @@ final class CodexPlatformTests: XCTestCase {
         XCTAssertTrue(text.contains("Interrupt"))
         XCTAssertFalse(text.contains("Notification"), "not a Codex event")
 
-        XCTAssertTrue(HookInstaller.removeCodexHooks(hooks: hooks, backup: backup).ok)
-        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, hooks: hooks), 0)
+        // The trust: Codex's own shape, after the user's text, keyed after
+        // each group's index.
+        let toml = try String(contentsOf: files.config, encoding: .utf8)
+        XCTAssertTrue(toml.hasPrefix(config), toml)
+        XCTAssertTrue(toml.contains("[hooks.state.\"\(files.trustName):stop:1:0\"]"), toml)
+        XCTAssertTrue(CodexHookTrust.allTrusted(toml, entries: CodexHookTrust.entries(
+            hooksFile: files.trustName, root: root, command: command)))
+
+        let removed = HookInstaller.removeCodexHooks(cliPath: cli, files: files)
+        XCTAssertTrue(removed.ok, removed.message)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 0)
         XCTAssertTrue(try String(contentsOf: hooks, encoding: .utf8).contains("other"))
+        XCTAssertEqual(try String(contentsOf: files.config, encoding: .utf8), config,
+                       "the trust goes with the hooks, and nothing else of the user's")
+    }
+
+    /// hooks.json holding our twelve entries and no trust is how every set-up
+    /// before this one left it: ours, and never run by Codex.
+    func testAnInstalledHookCodexDoesNotTrustIsNotSetUp() throws {
+        try SettingsFile.write(HookConfig.install(into: [:], command: command, agent: .codex), to: hooks)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 12)
+        XCTAssertEqual(HookInstaller.codexHooksTrusted(cliPath: cli, files: files), 0)
+        XCTAssertEqual(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks), false)
+
+        XCTAssertTrue(HookInstaller.installCodexHooks(cliPath: cli, files: files).ok)
+        XCTAssertEqual(HookInstaller.codexHooksTrusted(cliPath: cli, files: files), 12)
+        XCTAssertEqual(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks), true)
+
+        // One switched off in Codex's /hooks screen (the last table written).
+        let toml = try String(contentsOf: files.config, encoding: .utf8)
+        try Data((toml + "enabled = false\n").utf8).write(to: files.config)
+        XCTAssertEqual(HookInstaller.codexHooksTrusted(cliPath: cli, files: files), 11)
+        XCTAssertEqual(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks), false)
+    }
+
+    /// A trust written inline would be defined twice once a table is added,
+    /// which Codex refuses: nothing is written, and the outcome says where to
+    /// trust the hooks instead.
+    func testAnInlineStateIsRefusedAndNeitherFileIsTouched() throws {
+        let inline = "[hooks]\nstate = { \"x\" = { trusted_hash = \"y\" } }\n"
+        try Data(inline.utf8).write(to: files.config)
+        let outcome = HookInstaller.installCodexHooks(cliPath: cli, files: files)
+        XCTAssertFalse(outcome.ok)
+        XCTAssertTrue(outcome.message.contains("/hooks"), outcome.message)
+        XCTAssertTrue(outcome.message.contains("Your Codex files were not modified."), outcome.message)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hooks.path))
+        XCTAssertEqual(try String(contentsOf: files.config, encoding: .utf8), inline)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.configBackup.path))
+    }
+
+    func testAConfigThatIsNotTextIsNeverWrittenAndReadsUnknown() throws {
+        let binary = Data([0xff, 0xfe, 0x00, 0xc3])
+        try binary.write(to: files.config)
+        XCTAssertFalse(HookInstaller.installCodexHooks(cliPath: cli, files: files).ok)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hooks.path))
+        XCTAssertEqual(try Data(contentsOf: files.config), binary)
+        try SettingsFile.write(HookConfig.install(into: [:], command: command, agent: .codex), to: hooks)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 12)
+        XCTAssertNil(HookInstaller.codexHooksTrusted(cliPath: cli, files: files))
+        XCTAssertNil(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks))
+
+        // Removal still takes the hooks out, leaves the file it cannot read,
+        // and says so.
+        let removed = HookInstaller.removeCodexHooks(cliPath: cli, files: files)
+        XCTAssertFalse(removed.ok)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 0)
+        XCTAssertEqual(try Data(contentsOf: files.config), binary)
+    }
+
+    /// Whichever copy of the app set them up, and whether hooks.json is still
+    /// there or not, removal takes out every trust table of ours.
+    func testRemoveUntrustsFirstWhicheverCopyWroteThem() throws {
+        let other = dir.appendingPathComponent("Old/MySidepulse.app/Contents/MacOS/mysidepulse").path
+        try FileManager.default.createDirectory(at: URL(fileURLWithPath: other).deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: cli, toPath: other)
+        XCTAssertTrue(HookInstaller.installCodexHooks(cliPath: other, files: files).ok)
+        XCTAssertTrue(HookInstaller.removeCodexHooks(cliPath: cli, files: files).ok)
+        XCTAssertTrue(CodexHookTrust.states(in: try String(contentsOf: files.config, encoding: .utf8)).isEmpty)
+
+        XCTAssertTrue(HookInstaller.installCodexHooks(cliPath: cli, files: files).ok)
+        try FileManager.default.removeItem(at: hooks)
+        XCTAssertTrue(HookInstaller.removeCodexHooks(cliPath: cli, files: files).ok)
+        XCTAssertTrue(CodexHookTrust.states(in: try String(contentsOf: files.config, encoding: .utf8)).isEmpty,
+                      "a table of ours is known by its hash when the file naming it is gone")
     }
 
     func testAnAbsentFileIsCreatedByInstallAndNotByRemove() throws {
-        XCTAssertTrue(HookInstaller.removeCodexHooks(hooks: hooks, backup: backup).ok)
+        XCTAssertTrue(HookInstaller.removeCodexHooks(cliPath: cli, files: files).ok)
         XCTAssertFalse(FileManager.default.fileExists(atPath: hooks.path))
-        XCTAssertTrue(HookInstaller.installCodexHooks(cliPath: cli, hooks: hooks, backup: backup).ok)
-        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, hooks: hooks), 12)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.config.path))
+        XCTAssertTrue(HookInstaller.installCodexHooks(cliPath: cli, files: files).ok)
+        XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, files: files), 12)
+        XCTAssertEqual(HookInstaller.codexHooksTrusted(cliPath: cli, files: files), 12)
+    }
+
+    /// The generic entry points, told a hooks file, keep to that file's
+    /// folder for config.toml too.
+    func testTheGenericEntryPointsKeepToTheFolderTheyAreTold() {
+        XCTAssertTrue(HookInstaller.installHooks(for: .codex, cliPath: cli, file: hooks).ok)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: files.config.path))
+        XCTAssertEqual(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks), true)
+        XCTAssertTrue(HookInstaller.removeHooks(for: .codex, file: hooks).ok)
+        XCTAssertEqual(HookInstaller.hooksSetUp(for: .codex, cliPath: cli, file: hooks), false)
+    }
+
+    func testTheLiveTrustNameIsCodexsHomeResolvedThenTheHooksFile() {
+        XCTAssertEqual(HookInstaller.CodexFiles.live.trustName,
+                       Paths.codexHome.resolvingSymlinksInPath().appendingPathComponent("hooks.json").path)
+        XCTAssertEqual(HookInstaller.CodexFiles.live.config.lastPathComponent, "config.toml")
     }
 
     func testCodexIsInstalledWhenItsHomeIsADirectory() throws {
@@ -190,13 +298,23 @@ final class CodexPlatformTests: XCTestCase {
 
     // MARK: the doctor
 
-    func probes(codexRoot: [String: Any]?) -> Doctor.Probes {
-        Doctor.Probes(
+    static let trustName = "/Users/me/.codex/hooks.json"
+
+    /// `codexConfig` is config.toml's text: nil when it cannot be read, and by
+    /// default whatever trusts every entry of ours `codexRoot` holds.
+    func probes(codexRoot: [String: Any]?, codexConfig: String?? = .none) -> Doctor.Probes {
+        let trusted = codexRoot.flatMap { root in
+            CodexHookTrust.trusting("", entries: CodexHookTrust.ourEntries(hooksFile: Self.trustName, root: root)
+                .map(\.entry), ourHashes: [])
+        } ?? ""
+        return Doctor.Probes(
             appResponse: { ControlResponse(ok: true, mode: "auto", loginItem: "enabled") },
             settingsRoot: {
                 HookConfig.install(into: [:], command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook")
             },
             codexHooksRoot: { codexRoot },
+            codexConfigText: { codexConfig ?? trusted },
+            codexHooksTrustName: Self.trustName,
             binaryExists: { !$0.contains("gone") },
             journalWritable: { true },
             lastEventAge: { 42 })
@@ -225,7 +343,7 @@ final class CodexPlatformTests: XCTestCase {
 
         let good = Doctor.run(probes(codexRoot: full))
         XCTAssertEqual(good.failures, 0, good.lines.joined(separator: "\n"))
-        XCTAssertTrue(codexLine(good).contains("12 events"))
+        XCTAssertTrue(codexLine(good).contains("12 events") && codexLine(good).contains("trusted"), codexLine(good))
 
         var partial = full
         var hooks = partial["hooks"] as! [String: Any]
@@ -238,6 +356,19 @@ final class CodexPlatformTests: XCTestCase {
                                        agent: .codex)
         let staleReport = Doctor.run(probes(codexRoot: stale))
         XCTAssertTrue(codexLine(staleReport).hasPrefix("[FAIL]") && codexLine(staleReport).contains("missing binary"))
+
+        // Every event there and pointing at a binary that exists, and Codex
+        // has not trusted them: Codex never runs them, so the check fails.
+        let untrusted = Doctor.run(probes(codexRoot: full, codexConfig: ""))
+        XCTAssertEqual(untrusted.failures, 1, untrusted.lines.joined(separator: "\n"))
+        XCTAssertTrue(codexLine(untrusted).hasPrefix("[FAIL]") && codexLine(untrusted).contains("Not trusted")
+                      && codexLine(untrusted).contains("Interrupt"), codexLine(untrusted))
+        let unknown = Doctor.run(probes(codexRoot: full, codexConfig: .some(nil)))
+        XCTAssertTrue(codexLine(unknown).hasPrefix("[FAIL]") && codexLine(unknown).contains("config.toml"),
+                      codexLine(unknown))
+        XCTAssertTrue(codexLine(Doctor.run(probes(codexRoot: [:], codexConfig: .some(nil)))).hasPrefix("[OK]"),
+                      "nothing of ours in hooks.json: config.toml is not our business")
+
         XCTAssertEqual(Doctor.run(probes(codexRoot: full)).checks.count, 12,
                        "app, auto-start, hooks installed, hook binary, hook command, codex hooks, " +
                        "copilot hooks, opencode plugin, journal, last event, device, notifications")

@@ -83,12 +83,17 @@ final class DoctorTests: XCTestCase {
                                command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
                                agent: .codex)
         }
+        // Codex's hooks there and untrusted (config.toml empty), and config.toml unreadable.
+        let codexUntrusted = claudeNotSetUp
+        var codexConfigUnreadable = claudeNotSetUp
+        codexConfigUnreadable.codexConfigText = { nil }
         for language in Language.allCases {
             let saved = Loc.language
             Loc.language = language
             defer { Loc.language = saved }
             for p in [probes(), down, unreadable, stale, off, unusable, copilotOn, copilotDisabled,
-                      copilotUnreadable, opencodeOn, opencodeStale, claudeNotSetUp] {
+                      copilotUnreadable, opencodeOn, opencodeStale, claudeNotSetUp, codexUntrusted,
+                      codexConfigUnreadable] {
                 for check in Doctor.run(p).checks {
                     XCTAssertFalse(check.detail.contains { longDashes.contains($0) },
                                    "\(language) \(check.name): \(check.detail)")

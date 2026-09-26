@@ -87,6 +87,30 @@ public enum CodexHookTrust {
         }
     }
 
+    /// Our entries named after the command each event actually runs,
+    /// whichever copy of the app wrote it: the first group of the event that
+    /// holds a command carrying `HookConfig.ourMarker`. What removal
+    /// untrusts, and what the doctor asks Codex's trust about.
+    public static func ourEntries(hooksFile: String, root: [String: Any]) -> [(event: String, entry: Entry)] {
+        HookConfig.codexEvents.compactMap { event in
+            guard let command = HookConfig.installedCommand(in: root, event: event),
+                  let group = HookConfig.installedGroupIndex(in: root, event: event, command: command) else {
+                return nil
+            }
+            return (event, Entry(key: key(hooksFile: hooksFile, event: event, groupIndex: group),
+                                 hash: hash(event: event, command: command,
+                                            timeout: HookConfig.timeout(for: event, agent: .codex))))
+        }
+    }
+
+    /// The events whose hook of ours `toml` does not trust, or switches off:
+    /// Codex lists them and never runs them. An event with nothing of ours is
+    /// missing, not untrusted, and is not named.
+    public static func untrustedEvents(hooksFile: String, root: [String: Any], toml: String) -> [String] {
+        let states = states(in: toml)
+        return ourEntries(hooksFile: hooksFile, root: root).filter { !isTrusted($0.entry, in: states) }.map(\.event)
+    }
+
     /// Every hash our hooks can carry: a state table holding one is ours
     /// whatever its key says, which is how a table left under a key from an
     /// earlier layout of the hooks file is recognised.

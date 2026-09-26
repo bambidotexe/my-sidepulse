@@ -531,6 +531,7 @@ final class CodexTests: XCTestCase {
             withLanguage(language) {
                 let system = Loc.settings.system
                 XCTAssertTrue(system.withoutCodexHooksWarning.contains(system.setUpHooksButton), "\(language)")
+                XCTAssertTrue(system.codexHooksUntrustedWarning.contains(system.setUpHooksButton), "\(language)")
                 XCTAssertEqual(Loc.settings.colors.label(.codexWorking).isEmpty, false)
             }
         }

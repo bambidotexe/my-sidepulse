@@ -76,6 +76,41 @@ final class CodexHookTrustTests: XCTestCase {
         XCTAssertTrue(CodexHookTrust.entries(hooksFile: file, root: [:], command: cmd).isEmpty)
     }
 
+    /// Whichever copy of the app wrote them, our entries are named after the
+    /// command each event actually runs: that is what removal untrusts and
+    /// what the doctor asks Codex's trust about.
+    func testOurEntriesAreTheCommandsTheFileHolds() {
+        let other = "/Other/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"
+        let ours = CodexHookTrust.ourEntries(hooksFile: file, root: HookConfig.install(into: [:], command: other,
+                                                                                         agent: .codex))
+        XCTAssertEqual(ours.map(\.event), HookConfig.codexEvents)
+        XCTAssertEqual(ours.map(\.entry), CodexHookTrust.entries(
+            hooksFile: file, root: HookConfig.install(into: [:], command: other, agent: .codex), command: other))
+        XCTAssertEqual(CodexHookTrust.ourEntries(hooksFile: file, root: installed).map(\.entry), entries)
+        XCTAssertTrue(CodexHookTrust.ourEntries(hooksFile: file, root: ["hooks": ["Stop": [
+            ["hooks": [["type": "command", "command": "say done"]]]]]]).isEmpty, "a stranger's hook is not ours")
+    }
+
+    func testUntrustedEventsAreTheHooksOfOursCodexWouldNotRun() throws {
+        XCTAssertEqual(CodexHookTrust.untrustedEvents(hooksFile: file, root: installed, toml: ""),
+                       HookConfig.codexEvents)
+        let trusted = try XCTUnwrap(CodexHookTrust.trusting("", entries: entries, ourHashes: hashes))
+        XCTAssertEqual(CodexHookTrust.untrustedEvents(hooksFile: file, root: installed, toml: trusted), [])
+        XCTAssertEqual(CodexHookTrust.untrustedEvents(hooksFile: file, root: installed,
+                                                      toml: trusted + "enabled = false\n"),
+                       ["Interrupt"], "the last table, switched off in Codex's /hooks screen")
+        let other = "/Other/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"
+        XCTAssertEqual(CodexHookTrust.untrustedEvents(
+            hooksFile: file, root: HookConfig.install(into: [:], command: other, agent: .codex), toml: trusted),
+                       HookConfig.codexEvents, "another command hashes differently")
+        var partial = installed
+        var hooks = partial["hooks"] as! [String: Any]
+        hooks.removeValue(forKey: "PreCompact")
+        partial["hooks"] = hooks
+        XCTAssertFalse(CodexHookTrust.untrustedEvents(hooksFile: file, root: partial, toml: "").contains("PreCompact"),
+                       "an event with nothing of ours is missing, not untrusted")
+    }
+
     // MARK: config.toml
 
     /// Our twelve entries in a hooks file where a stranger's Stop group comes

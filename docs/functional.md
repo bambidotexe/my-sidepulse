@@ -184,8 +184,21 @@ under the same `hooks` key: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
 matcher (Codex reads a missing one as match-all) and a timeout of 5 s, 3 s for
 `SessionEnd` and `Interrupt`, the most Codex allows them; each goes after every
 group already in the event's list. Codex is on this Mac
-when `~/.codex` exists. **Codex runs a hook only once it has been trusted in
-Codex itself**, which MySidepulse cannot do for it; the group's note says so.
+when `~/.codex` exists. **Codex runs a hook only once it is trusted**: a
+`[hooks.state."<key>"]` table in `~/.codex/config.toml` whose `trusted_hash`
+is the hash Codex computes for the entry. So the set-up also writes that table
+for each of the 12 hooks, with Codex's own key (`<Codex's home, symlinks
+resolved>/hooks.json:<event in snake_case>:<group index>:0`) and hash, after
+the rest of the file, which it leaves as it is; both files are backed up first
+(`hooks.json.backup-mysidepulse`, `config.toml.backup-mysidepulse`), and
+`config.toml` is written only when the trust changes it. A `config.toml` that
+cannot be read as text, or that holds a hook state written as an inline table,
+stops the set-up before either file is written; the second says to trust the
+hooks from Codex's `/hooks` screen instead. Removing the hooks
+removes their trust first, whichever copy of the app wrote them; a
+`config.toml` that cannot be read is left as it is and said, and the hooks
+still go. A Codex hook counts as set up only while it is in `hooks.json`
+**and** trusted, and not switched off in Codex.
 
 GitHub Copilot CLI reads every file in `~/.copilot/hooks/` at each start, with
 no trust step. `install-hooks` writes `~/.copilot/hooks/mysidepulse.json` whole,
@@ -233,8 +246,9 @@ with a warning naming the file, and is never written. Claude Code re-reads
 seconds, without a restart, which the group's note says. Settings › System ›
 Codex is the same group for Codex, shown only while Codex is on this Mac or
 its hooks are set up; its `Codex hooks` row reads `Enabled` when all 12 events
-run this CLI with `--agent codex`, `Disabled` in orange otherwise (Codex is
-optional), and `Invalid` in orange when `hooks.json` cannot be parsed.
+run this CLI with `--agent codex` and Codex trusts every one of them,
+`Disabled` in orange otherwise (Codex is optional), and `Invalid` in orange
+when `hooks.json` cannot be parsed or `config.toml` cannot be read.
 
 Each event becomes one trimmed line in the journal, enriched with the agent
 (`claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's),
@@ -993,7 +1007,7 @@ orange one.
 | Health line | When | Reads |
 |---|---|---|
 | Claude Code hooks | always, once the hook files are read, except while another agent's hooks have something of ours and Claude Code's have nothing | Enabled; Disabled in red (also while nothing of any agent's is set up); Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
-| Codex hooks | once something of ours is at `~/.codex/hooks.json` | Enabled; Disabled in orange (optional) when an event is missing; Invalid in orange when the file cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
+| Codex hooks | once something of ours is at `~/.codex/hooks.json` | Enabled, only while every event is there and trusted in `~/.codex/config.toml`; Disabled in orange (optional) when an event is missing, or when Codex does not trust one of them or has it switched off, with a fix saying Codex never runs it and to press Set Up Hooks; Invalid in orange when either file cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
 | Copilot hooks | once something of ours is at Copilot's hook file | Enabled; Disabled in orange (optional) when an event is missing, when `disableAllHooks` turns them off in `~/.copilot/settings.json` or `~/.copilot/config.json`, or when the file belongs to another copy of MySidepulse (its events do not match); Invalid in orange when the hook file cannot be parsed as JSON; Failed in orange when the hooks cannot append to the journal |
 | OpenCode plugin | once something of ours is at OpenCode's plugin path | Enabled; Invalid in orange when the plugin file is not this copy's — a stale plugin of another copy of MySidepulse, which Set Up replaces, or a foreign file, which Set Up refuses and must be removed by hand; Failed in orange when the plugin cannot append to the journal |
 | Terminal hook | only while the zsh block is there | Enabled, in green |
@@ -1024,10 +1038,13 @@ button that gives it. `Claude Code hooks` is **Enabled** in green, **Disabled**
 in red with a warning to press Set Up Hooks, or **Invalid** in red when
 `~/.claude/settings.json` cannot be read; the note says open sessions pick new
 hooks up on their own. `Codex hooks`, in its own group while Codex is on this
-Mac or its hooks are set up, is **Enabled** in green, **Disabled** in orange
-with a warning to press Set Up Hooks, or **Invalid** in orange when
-`~/.codex/hooks.json` cannot be read; the note says Codex runs new hooks only
-once they have been trusted in Codex. `Copilot hooks`, in its own group while
+Mac or its hooks are set up, is **Enabled** in green while every hook is in
+`hooks.json` and trusted, **Disabled** in orange with a warning to press Set
+Up Hooks (a warning saying Codex has not trusted them, so it never runs them,
+when they are there untrusted or switched off in Codex), or **Invalid** in
+orange when `~/.codex/hooks.json` or `~/.codex/config.toml` cannot be read,
+with a warning naming the file; the note says Codex runs a hook only once it
+is trusted, and that Set Up trusts these. `Copilot hooks`, in its own group while
 Copilot is on this Mac or its hooks are set up, is **Enabled** in green,
 **Disabled** in orange with a warning to press Set Up Hooks (also the reading
 while `disableAllHooks` turns every hook off, with a warning naming both files
@@ -1222,10 +1239,10 @@ stay in Application Support.
 
 The button asks for confirmation, then, in this order:
 
-1. removes every agent's hooks (Claude Code's and Codex's entries, and
-   Copilot's hook file and OpenCode's plugin whichever copy of the app wrote
-   them), the zsh line and the backups the hooks left, while the binary they
-   name is still inside the bundle;
+1. removes every agent's hooks (Claude Code's and Codex's entries, with
+   Codex's trust of them, and Copilot's hook file and OpenCode's plugin
+   whichever copy of the app wrote them), the zsh line and the backups the
+   hooks left, while the binary they name is still inside the bundle;
 2. deletes `~/Library/LaunchAgents/io.mysidepulse.agent.plist`, so nothing loads
    at the next login even if step 6 never runs, and unregisters any
    `SMAppService` login item an older install left;
@@ -1271,7 +1288,7 @@ rule rather than a gap (§15).
 | `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
 | `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
 | `doctor` | twelve health checks | number of failures |
-| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists; writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours (`install-hooks` only: it refuses to touch a Copilot or OpenCode file it does not recognise; `uninstall-hooks` leaves such a file alone and still returns 0), or on error |
+| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists, with their trust in `~/.codex/config.toml` (backup `config.toml.backup-mysidepulse`; removed first by `uninstall-hooks`); writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours (`install-hooks` only: it refuses to touch a Copilot or OpenCode file it does not recognise; `uninstall-hooks` leaves such a file alone and still returns 0), or on error |
 | `run …`, `job begin\|end …` | terminal jobs | the command's status; 2 bad usage |
 | `notify [on\|off\|topic new\|topic T\|server URL\|test]` | notification settings; bare `notify` prints them, **including the full topic** | 0; 1; 2 |
 | `autostart [on\|off]` | the launch agent | 0; 1; 2 |
@@ -1323,8 +1340,10 @@ the owner may be using that agent instead — or a failure once nothing of any
 agent's is set up); hook binary exists; hook command (informational); codex
 hooks (a "not set up" word when nothing of ours is at `~/.codex/hooks.json`,
 whether or not Codex itself is on this Mac; with something there, all 12
-subscribed to a binary that exists); copilot hooks (the same "not set up" word
-when nothing of ours is at Copilot's hook file; with something there, all 7
+subscribed to a binary that exists and trusted in a readable
+`~/.codex/config.toml`, naming the ones Codex does not trust); copilot hooks
+(the same "not set up" word when nothing of ours is at Copilot's hook file;
+with something there, all 7
 subscribed to a binary that exists, and `disableAllHooks` fails the check even
 then); opencode plugin (the same "not set up" word when no plugin file is at
 OpenCode's plugin path; with one there, present and written by this copy of
@@ -1390,9 +1409,10 @@ but the reply to an update check and the download a click on Update asked
 for; fetch or install an update by itself (an automatic check only announces a
 release);
 read prompts, tool inputs or tool outputs (the hook drops them before writing);
-change anything in Claude Code or in Codex beyond its own hook entries, in
-GitHub Copilot beyond its own hook file, in OpenCode beyond its own plugin, or
-in `~/.zshrc` beyond its own block; trust its hooks in Codex; push for terminal
+change anything in Claude Code beyond its own hook entries, in Codex beyond
+its own hook entries and their trust tables in `config.toml`, in GitHub
+Copilot beyond its own hook file, in OpenCode beyond its own plugin, or
+in `~/.zshrc` beyond its own block; push for terminal
 jobs; identify which session an alert belongs to on the strip, beyond the
 agent's colour while it works.
 
@@ -1471,8 +1491,7 @@ LED colours and animation timings are in [device.md](device.md).
   ([pitfalls.md](pitfalls.md)).
 - Whether Codex fires `PreToolUse` for its `request_user_input` tool, and so
   whether a Codex question shows amber, is not established: the tool is
-  mapped, and nothing has been observed. Neither is the exact way Codex asks
-  for a hook to be trusted.
+  mapped, and nothing has been observed.
 - `Download and open…` has never met a real release: none is published, and
   the repository is private, which the anonymous check cannot see into.
   Whether macOS opens the app from a DMG this app downloaded without a

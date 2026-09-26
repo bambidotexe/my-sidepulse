@@ -113,6 +113,65 @@ public struct HookInstallStrings {
         }
     }
 
+    /// Codex's set-up writes two files, hooks.json and the trust in
+    /// config.toml.
+    public var codexNotModified: String {
+        switch language {
+        case .en: "Your Codex files were not modified."
+        case .fr: "Vos fichiers Codex n'ont pas été modifiés."
+        }
+    }
+
+    public func trustedInCodex(file: String) -> String {
+        switch language {
+        case .en: "Trusted them in \(file)"
+        case .fr: "Approuvés dans \(file)"
+        }
+    }
+
+    public func trustRemoved(file: String) -> String {
+        switch language {
+        case .en: "Removed their trust from \(file)."
+        case .fr: "Approbation retirée de \(file)."
+        }
+    }
+
+    public func configNotText(file: String) -> String {
+        switch language {
+        case .en: "could not read \(file) as UTF-8; refusing to touch it"
+        case .fr: "impossible de lire \(file) en UTF-8 ; refus d'y toucher"
+        }
+    }
+
+    /// A trust written as an inline table would be defined twice once a table
+    /// is added, which Codex refuses.
+    public func stateNotRewritable(file: String) -> String {
+        switch language {
+        case .en: "\(file) holds a hook state in a form this tool does not rewrite (an inline "
+            + "state table); trust the hooks from Codex's /hooks screen instead"
+        case .fr: "\(file) contient un état de hook sous une forme que cet outil ne réécrit pas "
+            + "(une table state en ligne) ; approuvez les hooks depuis l'écran /hooks de Codex"
+        }
+    }
+
+    /// config.toml could not be read, so the hooks were removed and any trust
+    /// of theirs left in it.
+    public func trustLeft(file: String) -> String {
+        switch language {
+        case .en: "Could not read \(file) as UTF-8, so any trust of MySidepulse's hooks was left in it."
+        case .fr: "Impossible de lire \(file) en UTF-8 : l'approbation des hooks de MySidepulse "
+            + "y a été laissée."
+        }
+    }
+
+    public func writtenBeforeFailure(_ joined: String) -> String {
+        switch language {
+        case .en: "Written before the failure: \(joined) (a .backup-mysidepulse copy sits beside each)."
+        case .fr: "Écrits avant l'échec : \(joined) (une copie .backup-mysidepulse se trouve à côté "
+            + "de chacun)."
+        }
+    }
+
     public func installFailed(_ error: String) -> String {
         switch language {
         case .en: "install-hooks failed: \(error)"

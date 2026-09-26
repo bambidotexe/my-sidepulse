@@ -9,6 +9,11 @@ public enum Doctor {
         /// Nothing of ours in it passes with a "not set up" sentence, whether or not Codex itself is on
         /// this Mac (`docs/functional.md` §10, §11).
         public var codexHooksRoot: () -> [String: Any]?
+        /// Codex's `config.toml`, where it records which hooks it trusts: `""` when it is missing, nil only
+        /// when it is there and cannot be read as text. Read only while something of ours is in hooks.json.
+        public var codexConfigText: () -> String?
+        /// The hooks file as Codex names it in a trust key (`Paths.codexHooksTrustName`).
+        public var codexHooksTrustName: String
         /// Copilot's `hooks/mysidepulse.json`, on the same rule as Codex's: `[:]` for missing or nothing of
         /// ours, nil only for unreadable; whether `disableAllHooks` turns its user hooks off.
         public var copilotHooksRoot: () -> [String: Any]?
@@ -22,6 +27,8 @@ public enum Doctor {
         public init(appResponse: @escaping () -> ControlResponse?,
                     settingsRoot: @escaping () -> [String: Any]?,
                     codexHooksRoot: @escaping () -> [String: Any]? = { [:] },
+                    codexConfigText: @escaping () -> String? = { "" },
+                    codexHooksTrustName: String = Paths.codexHooksTrustName,
                     copilotHooksRoot: @escaping () -> [String: Any]? = { [:] },
                     copilotHooksDisabled: @escaping () -> Bool = { false },
                     opencodePluginPresent: @escaping () -> Bool = { false },
@@ -31,6 +38,7 @@ public enum Doctor {
                     lastEventAge: @escaping () -> TimeInterval?) {
             self.appResponse = appResponse; self.settingsRoot = settingsRoot
             self.codexHooksRoot = codexHooksRoot; self.copilotHooksRoot = copilotHooksRoot
+            self.codexConfigText = codexConfigText; self.codexHooksTrustName = codexHooksTrustName
             self.copilotHooksDisabled = copilotHooksDisabled; self.opencodePluginPresent = opencodePluginPresent
             self.opencodePluginCurrent = opencodePluginCurrent
             self.binaryExists = binaryExists; self.journalWritable = journalWritable
@@ -149,15 +157,23 @@ public enum Doctor {
             r.check(false, "hook binary", t.settingsUnreadable)
             r.check(true, "hook command", t.hookCommandUnknown)
         }
-        // Codex: the same per-event bar as Claude Code's, on one line.
-        if let facts = codexFacts {
+        // Codex: the same per-event bar as Claude Code's, on one line, and every hook of ours trusted in
+        // config.toml, since Codex runs no other.
+        if let root = codexRoot, let facts = codexFacts {
             if codexNotSetUp {
                 r.check(true, "codex hooks", t.codexHooksNotSetUp)
             } else {
+                let config = p.codexConfigText()
+                let untrusted = config.map {
+                    CodexHookTrust.untrustedEvents(hooksFile: p.codexHooksTrustName, root: root, toml: $0)
+                } ?? []
                 let detail = !facts.missing.isEmpty ? t.missingEvents(facts.missing.joined(separator: ", "))
                     : facts.staleBinary ? t.hookPointsAtMissingBinary
-                    : t.allEventsSubscribed(HookConfig.codexEvents.count)
-                r.check(facts.missing.isEmpty && !facts.staleBinary, "codex hooks", detail)
+                    : config == nil ? t.codexConfigUnreadable
+                    : !untrusted.isEmpty ? t.codexHooksNotTrusted(untrusted.joined(separator: ", "))
+                    : t.codexHooksTrusted(HookConfig.codexEvents.count)
+                r.check(facts.missing.isEmpty && !facts.staleBinary && config != nil && untrusted.isEmpty,
+                        "codex hooks", detail)
             }
         } else {
             r.check(false, "codex hooks", t.codexHooksMissingOrUnparseable)
@@ -240,6 +256,8 @@ public enum Doctor {
             codexHooksRoot: {
                 try? (SettingsFile.load(at: Paths.codexHooks) ?? [:])
             },
+            codexConfigText: { try? HookInstaller.codexConfigText(Paths.codexConfig) },
+            codexHooksTrustName: Paths.codexHooksTrustName,
             copilotHooksRoot: {
                 try? (SettingsFile.load(at: Paths.copilotHooks) ?? [:])
             },

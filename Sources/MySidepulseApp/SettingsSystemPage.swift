@@ -123,7 +123,8 @@ struct SystemPage: View {
         }
     }
 
-    /// Codex is optional, so missing is orange, and so is a file that cannot be read.
+    /// Codex is optional, so missing is orange, and so is a file that cannot be read. A hook Codex does not
+    /// trust never runs, so it reads Disabled with a warning saying why.
     private var codexMark: StatusMark {
         let words = Loc.settings.words
         switch model.codexHooksSetUp {
@@ -140,9 +141,10 @@ struct SystemPage: View {
         case true?:
             break
         case false?:
-            warnings.append(t.withoutCodexHooksWarning)
+            warnings.append(model.codexTrust == .untrusted ? t.codexHooksUntrustedWarning : t.withoutCodexHooksWarning)
         case nil:
-            warnings.append(t.codexHooksUnreadableWarning)
+            warnings.append(model.codexTrust == .unreadable ? t.codexConfigUnreadableWarning
+                                                            : t.codexHooksUnreadableWarning)
         }
         if let error = model.codexHooksError { warnings.append(error) }
         return warnings

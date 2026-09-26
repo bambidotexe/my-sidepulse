@@ -48,6 +48,22 @@ public enum Paths {
     public static var codexHooksBackup: URL {
         codexHome.appendingPathComponent("hooks.json.backup-mysidepulse")
     }
+    /// Codex's own settings, where it keeps which of the user's hooks it
+    /// trusts (`[hooks.state]`); resolved like the hooks file.
+    public static var codexConfig: URL {
+        codexHome.appendingPathComponent("config.toml").resolvingSymlinksInPath()
+    }
+    public static var codexConfigBackup: URL {
+        codexHome.appendingPathComponent("config.toml.backup-mysidepulse")
+    }
+    /// The hooks file as Codex names it in every trust key: its home with
+    /// symlinks resolved, then `hooks.json`. `CODEX_HOME` would move the home
+    /// for a Codex started with it set, which the app, started by launchd,
+    /// cannot see; the hooks file, its trust and this name all follow
+    /// `~/.codex`.
+    public static var codexHooksTrustName: String {
+        codexHome.resolvingSymlinksInPath().appendingPathComponent("hooks.json").path
+    }
     /// GitHub Copilot CLI's home, `~/.copilot`: its presence is how the app
     /// tells that Copilot is on this Mac. `$COPILOT_HOME` moves it for a
     /// Copilot started with it set, which the app, started by launchd, cannot

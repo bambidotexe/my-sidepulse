@@ -65,22 +65,24 @@ public struct SystemPageStrings {
     public func codexHint(events: Int) -> String {
         switch language {
         case .en: "The hooks tell MySidepulse when Codex works, finishes or needs you. "
-            + "Set Up adds \(events) of them to Codex's hooks file, after backing it up. "
-            + "Remove takes out MySidepulse's own entries and nothing else."
+            + "Set Up adds \(events) of them to Codex's hooks file and trusts them in its "
+            + "config.toml, after backing both files up. Remove takes out MySidepulse's own "
+            + "entries and their trust, and nothing else."
         case .fr: "Les hooks indiquent à MySidepulse quand Codex travaille, termine ou "
             + "a besoin de vous. Configurer en ajoute \(events) au fichier de hooks de "
-            + "Codex, après l'avoir sauvegardé. Retirer ne supprime que les entrées "
-            + "propres à MySidepulse."
+            + "Codex et les approuve dans son config.toml, après avoir sauvegardé les deux "
+            + "fichiers. Retirer ne supprime que les entrées propres à MySidepulse et leur "
+            + "approbation."
         }
     }
 
-    /// Codex runs a hook only once it has been trusted in Codex itself, which
-    /// MySidepulse cannot do for it.
+    /// Codex runs a hook only once it is trusted, and Set Up writes that
+    /// trust, so no visit to Codex's own /hooks screen is needed.
     public var codexNote: String {
         switch language {
-        case .en: "Codex runs new hooks only once you have trusted them in Codex."
-        case .fr: "Codex n'exécute de nouveaux hooks qu'une fois que vous les avez "
-            + "approuvés dans Codex."
+        case .en: "Codex runs a hook only once it is trusted. Set Up trusts these for you."
+        case .fr: "Codex ne lance un hook qu'une fois approuvé. Configurer approuve "
+            + "ceux-ci pour vous."
         }
     }
 
@@ -108,6 +110,30 @@ public struct SystemPageStrings {
             + "~/.codex/hooks.json is valid JSON."
         case .fr: "Le fichier de hooks de Codex n'a pas pu être lu. "
             + "Vérifiez que ~/.codex/hooks.json est un JSON valide."
+        }
+    }
+
+    /// The hooks are in hooks.json and Codex has not trusted them, or one is
+    /// switched off in Codex: Codex never runs them. Names the button, so it
+    /// has to read exactly as the button does in the same language.
+    public var codexHooksUntrustedWarning: String {
+        switch language {
+        case .en: "Codex has not trusted the hooks, so it never runs them. Press "
+            + "\(setUpHooksButton) to trust them."
+        case .fr: "Codex n'a pas approuvé les hooks, il ne les lance donc jamais. "
+            + "Cliquez sur \(setUpHooksButton) pour les approuver."
+        }
+    }
+
+    /// config.toml is there and cannot be read as text: whether Codex trusts
+    /// the hooks is unknown, and Set Up refuses to write it.
+    public var codexConfigUnreadableWarning: String {
+        switch language {
+        case .en: "Codex's config.toml could not be read, so whether Codex trusts the "
+            + "hooks is unknown. Check that ~/.codex/config.toml is plain text."
+        case .fr: "Le fichier config.toml de Codex n'a pas pu être lu : on ne sait pas "
+            + "si Codex approuve les hooks. Vérifiez que ~/.codex/config.toml est du "
+            + "texte brut."
         }
     }
 

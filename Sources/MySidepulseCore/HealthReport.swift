@@ -121,8 +121,33 @@ public struct HealthFacts: Equatable {
     public var lastHookEventSeconds: Int?
     public var sessions: [Session] = []
 
+    /// Whether Codex trusts the hooks of ours that are in `~/.codex/hooks.json`: Codex runs a user hook
+    /// only while `~/.codex/config.toml` holds its trust.
+    public enum CodexTrust: Equatable {
+        /// Every hook of ours in the file is trusted.
+        case trusted
+        /// At least one is not, or is switched off in Codex: Codex never runs it.
+        case untrusted
+        /// config.toml is there and cannot be read as text.
+        case unreadable
+    }
+
+    /// Codex's line from its two files: how many of its events run this bundle's CLI in hooks.json (nil
+    /// when the file cannot be read), and how many of those Codex trusts (nil when config.toml cannot be
+    /// read). Set up only while every event is there **and** trusted; anything of ours short of that is
+    /// ours and broken.
+    public static func codex(installed: Int?, trusted: Int?) -> (hooks: HookFile, trust: CodexTrust?) {
+        guard let installed else { return (.unreadable, nil) }
+        let trust: CodexTrust = trusted.map { $0 < installed ? .untrusted : .trusted } ?? .unreadable
+        if installed <= 0 { return (.notSetUp, trust) }
+        let all = HookConfig.setUpCount(for: .codex)
+        return (installed >= all && (trusted ?? 0) >= all ? .setUp : .missing, trust)
+    }
+
     // Codex
     public var codexHooks: HookFile?
+    /// Whether Codex trusts what of ours is in hooks.json; read with `codexHooks`.
+    public var codexTrust: CodexTrust?
     /// The doctor's "codex hooks".
     public var codexHooksCheck: Check?
     /// The command this bundle's Codex hooks run, which is what `hooks.json` holds while the line is green.
@@ -254,7 +279,8 @@ public enum HealthReport {
     }
 
     /// Optional: a line only once something of ours is at `~/.codex/hooks.json`, whether or not Codex
-    /// itself is on this Mac. Nothing of ours is no line at all; something there but not working is orange.
+    /// itself is on this Mac. Nothing of ours is no line at all; something there but not working is orange,
+    /// a hook Codex does not trust included: Codex never runs it.
     static func codexHooks(_ facts: HealthFacts) -> HealthRow? {
         guard let hooks = facts.codexHooks else { return nil }
         let t = Loc.settings.health
@@ -264,9 +290,18 @@ public enum HealthReport {
         switch hooks {
         case .notSetUp: return nil
         case .missing:
-            return HealthRow(id: "codex hooks", label: label, level: HealthRules.grant(held: false, required: false),
-                             word: words.disabled, detail: facts.codexHooksCheck?.detail,
-                             fix: system.withoutCodexHooksWarning)
+            let level = HealthRules.grant(held: false, required: false)
+            switch facts.codexTrust {
+            case .untrusted?:
+                return HealthRow(id: "codex hooks", label: label, level: level, word: words.disabled,
+                                 detail: facts.codexHooksCheck?.detail, fix: system.codexHooksUntrustedWarning)
+            case .unreadable?:
+                return HealthRow(id: "codex hooks", label: label, level: level, word: words.invalid,
+                                 detail: facts.codexHooksCheck?.detail, fix: system.codexConfigUnreadableWarning)
+            case .trusted?, nil:
+                return HealthRow(id: "codex hooks", label: label, level: level, word: words.disabled,
+                                 detail: facts.codexHooksCheck?.detail, fix: system.withoutCodexHooksWarning)
+            }
         case .unreadable:
             return HealthRow(id: "codex hooks", label: label, level: .warning, word: words.invalid,
                              detail: facts.codexHooksCheck?.detail, fix: system.codexHooksUnreadableWarning)

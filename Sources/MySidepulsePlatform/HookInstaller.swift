@@ -3,11 +3,11 @@ import MachO
 import MySidepulseCore
 
 /// Setting up and removing the hooks that feed the app: its entries in Claude
-/// Code's settings.json and in Codex's hooks.json, GitHub Copilot's hook file
-/// and OpenCode's plugin, which are MySidepulse's whole, and its block in
-/// ~/.zshrc. Shared by `mysidepulse install-hooks` / `uninstall-hooks` and the
-/// settings window, so both do the same thing and both report what actually
-/// landed.
+/// Code's settings.json and in Codex's hooks.json, with the trust Codex wants
+/// for them in its config.toml, GitHub Copilot's hook file and OpenCode's
+/// plugin, which are MySidepulse's whole, and its block in ~/.zshrc. Shared by
+/// `mysidepulse install-hooks` / `uninstall-hooks` and the settings window, so
+/// both do the same thing and both report what actually landed.
 public enum HookInstaller {
     public struct Outcome: Equatable {
         public let ok: Bool
@@ -35,14 +35,14 @@ public enum HookInstaller {
 
     // MARK: an agent's hook file
 
-    /// Where an agent that shares its hook file with the user keeps its hooks,
-    /// and the copy taken before it is touched. Nil for Copilot and OpenCode,
+    /// Where Claude Code keeps its hooks, in a file it shares with the user,
+    /// and the copy taken before it is touched. Nil for Codex, whose hooks
+    /// file goes with its trust (`CodexFiles`), and for Copilot and OpenCode,
     /// whose file MySidepulse owns whole (`ownedFile`).
     static func files(for agent: AgentKind) -> (file: URL, backup: URL, name: String)? {
         switch agent {
         case .claude: return (Paths.claudeSettings, Paths.claudeSettingsBackup, "~/.claude/settings.json")
-        case .codex: return (Paths.codexHooks, Paths.codexHooksBackup, "~/.codex/hooks.json")
-        case .copilot, .opencode: return nil
+        case .codex, .copilot, .opencode: return nil
         }
     }
 
@@ -108,6 +108,9 @@ public enum HookInstaller {
         if agent == .copilot || agent == .opencode {
             return installOwnedFile(for: agent, cliPath: cliPath, file: file)
         }
+        if agent == .codex {
+            return installCodexHooks(cliPath: cliPath, files: .told(file: file, backup: backup))
+        }
         let defaults = files(for: agent)
         guard let file = file ?? defaults?.file, let backup = backup ?? defaults?.backup else {
             return Outcome(ok: false, lines: [t.notModified])
@@ -151,6 +154,9 @@ public enum HookInstaller {
         if agent == .copilot || agent == .opencode {
             return removeOwnedFile(for: agent, file: file)
         }
+        if agent == .codex {
+            return removeCodexHooks(files: .told(file: file, backup: backup))
+        }
         let defaults = files(for: agent)
         guard let file = file ?? defaults?.file, let backup = backup ?? defaults?.backup else {
             return Outcome(ok: true, lines: [t.noSettingsFileNothingToRemove])
@@ -170,7 +176,8 @@ public enum HookInstaller {
     /// How many of the agent's events run this bundle's CLI, or for OpenCode
     /// whether its plugin is the one this bundle writes (1) or not (0). An
     /// absent file counts as none; nil when the file exists and cannot be
-    /// read.
+    /// read. For Codex, what hooks.json holds, trusted or not
+    /// (`codexHooksTrusted` counts the trusted ones).
     public static func hooksInstalled(for agent: AgentKind, cliPath: String = cliPath(),
                                       file: URL? = nil) -> Int? {
         switch agent {
@@ -183,7 +190,9 @@ public enum HookInstaller {
             guard FileManager.default.fileExists(atPath: file.path) else { return 0 }
             guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
             return HookConfig.isCurrentOpencodePlugin(text, cliPath: cliPath) ? 1 : 0
-        case .claude, .codex:
+        case .codex:
+            return codexHooksInstalled(cliPath: cliPath, files: .told(file: file))
+        case .claude:
             guard let file = file ?? files(for: agent)?.file else { return 0 }
             guard let root = try? SettingsFile.load(at: file) ?? [:] else { return nil }
             let command = HookConfig.command(cliPath: cliPath, agent: agent)
@@ -194,10 +203,14 @@ public enum HookInstaller {
     }
 
     /// Whether the agent's hooks are set up for this bundle's CLI: every one
-    /// of its events, or OpenCode's plugin as this bundle writes it; nil when
-    /// the file cannot be read.
+    /// of its events, and for Codex every one trusted in its config.toml, or
+    /// OpenCode's plugin as this bundle writes it; nil when a file cannot be
+    /// read.
     public static func hooksSetUp(for agent: AgentKind, cliPath: String = cliPath(), file: URL? = nil) -> Bool? {
-        hooksInstalled(for: agent, cliPath: cliPath, file: file).map { $0 == HookConfig.setUpCount(for: agent) }
+        let count = agent == .codex
+            ? codexHooksTrusted(cliPath: cliPath, files: .told(file: file))
+            : hooksInstalled(for: agent, cliPath: cliPath, file: file)
+        return count.map { $0 == HookConfig.setUpCount(for: agent) }
     }
 
     /// Whether OpenCode's plugin is absent, holds exactly what this bundle would write, or holds something
@@ -315,22 +328,189 @@ public enum HookInstaller {
         hooksInstalled(for: .claude, cliPath: cliPath, file: settings)
     }
 
-    // MARK: Codex — ~/.codex/hooks.json
+    // MARK: Codex — ~/.codex/hooks.json, and its trust in ~/.codex/config.toml
 
-    public static func installCodexHooks(cliPath: String = cliPath(),
-                                         hooks: URL = Paths.codexHooks,
-                                         backup: URL = Paths.codexHooksBackup) -> Outcome {
-        installHooks(for: .codex, cliPath: cliPath, file: hooks, backup: backup)
+    /// Codex's two files and the name its trust keys give the hooks file.
+    /// `live` is `~/.codex`; a test passes a temporary home, so nothing it does
+    /// can reach the real one.
+    public struct CodexFiles: Equatable {
+        public var hooks: URL
+        public var hooksBackup: URL
+        public var config: URL
+        public var configBackup: URL
+        /// The hooks file as Codex names it in a trust key.
+        public var trustName: String
+
+        public init(home: URL) {
+            hooks = home.appendingPathComponent("hooks.json")
+            hooksBackup = home.appendingPathComponent("hooks.json.backup-mysidepulse")
+            config = home.appendingPathComponent("config.toml")
+            configBackup = home.appendingPathComponent("config.toml.backup-mysidepulse")
+            trustName = home.resolvingSymlinksInPath().appendingPathComponent("hooks.json").path
+        }
+
+        public static var live: CodexFiles {
+            var files = CodexFiles(home: Paths.codexHome)
+            files.hooks = Paths.codexHooks
+            files.hooksBackup = Paths.codexHooksBackup
+            files.config = Paths.codexConfig
+            files.configBackup = Paths.codexConfigBackup
+            files.trustName = Paths.codexHooksTrustName
+            return files
+        }
+
+        /// What the generic entry points are told: no file is the live home;
+        /// a hooks file keeps config.toml in its own folder.
+        static func told(file: URL?, backup: URL? = nil) -> CodexFiles {
+            guard let file else { return .live }
+            var files = CodexFiles(home: file.deletingLastPathComponent())
+            files.hooks = file
+            if let backup { files.hooksBackup = backup }
+            return files
+        }
     }
 
-    public static func removeCodexHooks(hooks: URL = Paths.codexHooks,
-                                        backup: URL = Paths.codexHooksBackup) -> Outcome {
-        removeHooks(for: .codex, file: hooks, backup: backup)
+    static let codexHooksName = "~/.codex/hooks.json"
+    static let codexConfigName = "~/.codex/config.toml"
+
+    enum CodexFailure: Error, CustomStringConvertible {
+        case configNotText, stateNotRewritable
+        var description: String {
+            switch self {
+            case .configNotText: return Loc.hookInstall.configNotText(file: codexConfigName)
+            case .stateNotRewritable: return Loc.hookInstall.stateNotRewritable(file: codexConfigName)
+            }
+        }
     }
 
-    public static func codexHooksInstalled(cliPath: String = cliPath(),
-                                           hooks: URL = Paths.codexHooks) -> Int? {
-        hooksInstalled(for: .codex, cliPath: cliPath, file: hooks)
+    /// config.toml as text: empty when absent, an error when it cannot be
+    /// read as UTF-8, which is never treated as empty: the write would
+    /// replace the user's whole file with our tables.
+    static func codexConfigText(_ config: URL) throws -> String {
+        guard FileManager.default.fileExists(atPath: config.path) else { return "" }
+        guard let text = try? String(contentsOf: config, encoding: .utf8) else { throw CodexFailure.configNotText }
+        return text
+    }
+
+    static func writeText(_ text: String, to file: URL) throws {
+        do { try text.write(to: file, atomically: true, encoding: .utf8) }
+        catch { throw SettingsFile.Failure.writeFailed(error.localizedDescription) }
+    }
+
+    /// The 12 hooks into hooks.json, then their trust into config.toml:
+    /// without the second, Codex lists the hooks and never runs them. Both
+    /// files are read and every refusal decided before either is written; a
+    /// failure between the two writes says which file landed. config.toml is
+    /// written only when the trust changes it.
+    public static func installCodexHooks(cliPath: String = cliPath(), files: CodexFiles = .live) -> Outcome {
+        let t = Loc.hookInstall
+        let command = HookConfig.command(cliPath: cliPath, agent: .codex)
+        let events = HookConfig.codexEvents
+        // A hook command pointing at a missing binary fails silently, and an
+        // entry without the marker could never be recognised again.
+        guard command.contains(HookConfig.ourMarker),
+              FileManager.default.isExecutableFile(atPath: cliPath) else {
+            return Outcome(ok: false, lines: [t.noCLIInBundle(path: cliPath), t.codexNotModified])
+        }
+        var written: [String] = []
+        do {
+            let root = try SettingsFile.load(at: files.hooks) ?? [:]
+            let configText = try codexConfigText(files.config)
+            let edited = HookConfig.install(into: root, command: command, agent: .codex)
+            let entries = CodexHookTrust.entries(hooksFile: files.trustName, root: edited, command: command)
+            guard let trusted = CodexHookTrust.trusting(configText, entries: entries,
+                                                        ourHashes: CodexHookTrust.hashes(command: command)) else {
+                throw CodexFailure.stateNotRewritable
+            }
+            try SettingsFile.backup(from: files.hooks, to: files.hooksBackup)
+            try SettingsFile.write(edited, to: files.hooks)
+            written.append(codexHooksName)
+            let configWritten = trusted != configText
+            if configWritten {
+                try SettingsFile.backup(from: files.config, to: files.configBackup)
+                try writeText(trusted, to: files.config)
+                written.append(codexConfigName)
+            }
+            // Count what actually landed rather than assuming, as for Claude
+            // Code's file.
+            let missing = events.filter { HookConfig.installedCommand(in: edited, event: $0) != command }
+            let total = events.count
+            var lines = missing.isEmpty
+                ? [t.installed(total: total, agent: .codex, command: command)]
+                : [t.installedPartial(installed: total - missing.count, total: total, command: command),
+                   t.declinedToTouch(missing.joined(separator: ", ")),
+                   t.declinedShapeNote(file: codexHooksName)]
+            if !entries.isEmpty { lines.append(t.trustedInCodex(file: codexConfigName)) }
+            if FileManager.default.fileExists(atPath: files.hooksBackup.path) {
+                lines.append(t.backupWritten(path: files.hooksBackup.path))
+            }
+            if configWritten, FileManager.default.fileExists(atPath: files.configBackup.path) {
+                lines.append(t.backupWritten(path: files.configBackup.path))
+            }
+            return Outcome(ok: missing.isEmpty, lines: lines)
+        } catch {
+            return Outcome(ok: false, lines: [t.installFailed("\(error)"), written.isEmpty
+                ? t.codexNotModified : t.writtenBeforeFailure(written.joined(separator: ", "))])
+        }
+    }
+
+    /// The trust goes first, named after the hooks as they still sit in the
+    /// file, whichever copy of the app wrote them, and after this copy's
+    /// command, so a table of ours is known by its hash even once the file
+    /// naming it is gone; then the hooks. A config.toml that cannot be read
+    /// is left as it is and said: the hooks still go, since hooks left behind
+    /// would run a command that may soon be gone.
+    public static func removeCodexHooks(cliPath: String = cliPath(), files: CodexFiles = .live) -> Outcome {
+        let t = Loc.hookInstall
+        var written: [String] = []
+        var trustLines: [String] = []
+        var ok = true
+        do {
+            let root = try SettingsFile.load(at: files.hooks)
+            if let configText = try? codexConfigText(files.config) {
+                let ours = CodexHookTrust.ourEntries(hooksFile: files.trustName, root: root ?? [:]).map(\.entry)
+                let hashes = Set(ours.map(\.hash))
+                    .union(CodexHookTrust.hashes(command: HookConfig.command(cliPath: cliPath, agent: .codex)))
+                if let untrusted = CodexHookTrust.untrusting(configText, keys: Set(ours.map(\.key)),
+                                                             ourHashes: hashes) {
+                    try SettingsFile.backup(from: files.config, to: files.configBackup)
+                    try writeText(untrusted, to: files.config)
+                    written.append(codexConfigName)
+                    trustLines.append(t.trustRemoved(file: codexConfigName))
+                }
+            } else {
+                ok = false
+                trustLines.append(t.trustLeft(file: codexConfigName))
+            }
+            guard let root else {
+                return Outcome(ok: ok, lines: [t.noSettingsFileNothingToRemove] + trustLines)
+            }
+            try SettingsFile.backup(from: files.hooks, to: files.hooksBackup)
+            try SettingsFile.write(HookConfig.uninstall(from: root), to: files.hooks)
+            return Outcome(ok: ok, lines: [t.removedHooks] + trustLines)
+        } catch {
+            return Outcome(ok: false, lines: [t.uninstallFailed("\(error)"), written.isEmpty
+                ? t.codexNotModified : t.writtenBeforeFailure(written.joined(separator: ", "))])
+        }
+    }
+
+    /// How many of Codex's events run this bundle's CLI in hooks.json,
+    /// trusted or not; nil when the file cannot be read.
+    public static func codexHooksInstalled(cliPath: String = cliPath(), files: CodexFiles = .live) -> Int? {
+        guard let root = try? SettingsFile.load(at: files.hooks) ?? [:] else { return nil }
+        let command = HookConfig.command(cliPath: cliPath, agent: .codex)
+        return HookConfig.codexEvents.filter { HookConfig.installedCommand(in: root, event: $0) == command }.count
+    }
+
+    /// How many of those Codex trusts and has not switched off: the hooks it
+    /// runs. Nil when either file cannot be read.
+    public static func codexHooksTrusted(cliPath: String = cliPath(), files: CodexFiles = .live) -> Int? {
+        guard let root = try? SettingsFile.load(at: files.hooks) ?? [:],
+              let text = try? codexConfigText(files.config) else { return nil }
+        let states = CodexHookTrust.states(in: text)
+        let command = HookConfig.command(cliPath: cliPath, agent: .codex)
+        return CodexHookTrust.entries(hooksFile: files.trustName, root: root, command: command)
+            .filter { CodexHookTrust.isTrusted($0, in: states) }.count
     }
 
     // MARK: every agent at once, for the CLI and the installer

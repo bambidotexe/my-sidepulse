@@ -43,6 +43,7 @@ enum Uninstall {
         }
         try? FileManager.default.removeItem(at: Paths.claudeSettingsBackup)
         try? FileManager.default.removeItem(at: Paths.codexHooksBackup)
+        try? FileManager.default.removeItem(at: Paths.codexConfigBackup)
 
         // The plist goes now so that nothing loads at the next login even if the helper never runs. The
         // job itself is booted out by the helper, once this process is no longer the thing running as it.

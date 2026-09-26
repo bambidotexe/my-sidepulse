@@ -146,6 +146,31 @@ public struct DoctorStrings {
         }
     }
 
+    /// Codex runs a hook only while config.toml trusts it, so the line passes only then.
+    public func codexHooksTrusted(_ count: Int) -> String {
+        switch language {
+        case .en: "all \(count) events subscribed and trusted in ~/.codex/config.toml"
+        case .fr: "les \(count) événements sont tous abonnés et approuvés dans ~/.codex/config.toml"
+        }
+    }
+
+    public func codexHooksNotTrusted(_ joined: String) -> String {
+        switch language {
+        case .en: "Not trusted in ~/.codex/config.toml, so Codex never runs them: \(joined). "
+            + "Run mysidepulse install-hooks"
+        case .fr: "Non approuvés dans ~/.codex/config.toml, Codex ne les lance donc jamais : \(joined). "
+            + "Lancez mysidepulse install-hooks"
+        }
+    }
+
+    public var codexConfigUnreadable: String {
+        switch language {
+        case .en: "~/.codex/config.toml could not be read as text, so whether Codex trusts the hooks is unknown"
+        case .fr: "~/.codex/config.toml n'a pas pu être lu comme du texte : on ne sait pas si Codex "
+            + "approuve les hooks"
+        }
+    }
+
     /// Nothing of MySidepulse's is in Copilot's hook file: never set up, or removed. Shown whether or not
     /// Copilot itself is on this Mac; the Health page mirrors the same rule.
     public var copilotHooksNotSetUp: String {

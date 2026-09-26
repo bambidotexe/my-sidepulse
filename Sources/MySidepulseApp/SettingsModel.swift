@@ -122,7 +122,10 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var claudeHooksInstalledCount: Int?
     @Published private(set) var codexHooksInstalledCount: Int?
     @Published private(set) var copilotHooksInstalledCount: Int?
-    /// The same for Codex's hooks.json.
+    /// How many of Codex's events in hooks.json Codex trusts in its config.toml: nil when either file
+    /// cannot be read. Only a trusted hook runs.
+    @Published private(set) var codexHooksTrustedCount: Int?
+    /// The same for Codex's hooks: every event in hooks.json **and** trusted in config.toml.
     @Published private(set) var codexHooksSetUp: Bool?
     /// Whether Codex is on this Mac (`~/.codex` exists), read with the hook files: its group and its
     /// Health line are shown only while it is, or while its hooks are set up.
@@ -167,6 +170,7 @@ final class SettingsModel: ObservableObject {
         claudeHooksInstalledCount = HookInstaller.hooksInstalled(for: .claude)
         codexHooksSetUp = HookInstaller.hooksSetUp(for: .codex)
         codexHooksInstalledCount = HookInstaller.hooksInstalled(for: .codex)
+        codexHooksTrustedCount = HookInstaller.codexHooksTrusted()
         codexInstalled = HookInstaller.codexInstalled()
         copilotHooksSetUp = HookInstaller.hooksSetUp(for: .copilot)
         copilotHooksInstalledCount = HookInstaller.hooksInstalled(for: .copilot)
@@ -176,6 +180,12 @@ final class SettingsModel: ObservableObject {
         opencodeInstalled = HookInstaller.opencodeInstalled()
         zshHookSetUp = HookInstaller.zshrcHasSnippet()
         hooksRead = true
+    }
+
+    /// Whether Codex trusts what of ours is in hooks.json, which tells the System page's warnings apart:
+    /// untrusted, and config.toml that cannot be read.
+    var codexTrust: HealthFacts.CodexTrust? {
+        HealthFacts.codex(installed: codexHooksInstalledCount, trusted: codexHooksTrustedCount).trust
     }
 
     /// Whether the window shows Codex at all: on a Mac without it there is nothing to set up, and a
@@ -417,7 +427,9 @@ final class SettingsModel: ObservableObject {
                 return count >= setUpCount ? .setUp : .missing
             }
             facts.claudeHooks = state(count: claudeHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .claude))
-            facts.codexHooks = state(count: codexHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .codex))
+            // Codex's hooks count as set up only while every one is there and trusted in config.toml.
+            (facts.codexHooks, facts.codexTrust) = HealthFacts.codex(installed: codexHooksInstalledCount,
+                                                                     trusted: codexHooksTrustedCount)
             facts.copilotHooks = state(count: copilotHooksInstalledCount, setUpCount: HookConfig.setUpCount(for: .copilot))
             facts.copilotHooksDisabled = copilotHooksDisabled
             // OpenCode's three-way state already tells "nothing of ours" (absent) apart from "unreadable"

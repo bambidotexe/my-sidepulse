@@ -89,6 +89,53 @@ final class HealthTests: XCTestCase {
         XCTAssertNil(check("claude code hooks", facts), "something of Copilot's, even broken, is still something")
     }
 
+    /// A Codex hook counts as set up only while it is in hooks.json **and**
+    /// Codex trusts it in config.toml.
+    func testCodexHooksAreSetUpOnlyWhileInstalledAndTrusted() {
+        let all = HookConfig.codexEvents.count
+        func state(_ installed: Int?, _ trusted: Int?) -> HealthFacts.HookFile {
+            HealthFacts.codex(installed: installed, trusted: trusted).hooks
+        }
+        func trust(_ installed: Int?, _ trusted: Int?) -> HealthFacts.CodexTrust? {
+            HealthFacts.codex(installed: installed, trusted: trusted).trust
+        }
+        XCTAssertEqual(state(all, all), .setUp)
+        XCTAssertEqual(trust(all, all), .trusted)
+        XCTAssertEqual(state(all, 0), .missing, "installed and never trusted: ours, and broken")
+        XCTAssertEqual(trust(all, 0), .untrusted)
+        XCTAssertEqual(state(all, all - 1), .missing, "one switched off in Codex")
+        XCTAssertEqual(trust(all, all - 1), .untrusted)
+        XCTAssertEqual(state(all, nil), .missing, "config.toml cannot be read")
+        XCTAssertEqual(trust(all, nil), .unreadable)
+        XCTAssertEqual(state(all - 1, all - 1), .missing)
+        XCTAssertEqual(trust(all - 1, all - 1), .trusted, "an event missing, every one there trusted")
+        XCTAssertEqual(state(0, 0), .notSetUp)
+        XCTAssertEqual(state(0, nil), .notSetUp, "nothing of ours: config.toml is not our business")
+        XCTAssertEqual(trust(0, nil), .unreadable, "though a set-up could not write the trust")
+        XCTAssertEqual(state(nil, nil), .unreadable)
+        XCTAssertNil(trust(nil, nil))
+    }
+
+    func testAnUntrustedOrUnreadableCodexTrustIsOrangeAndSaysSo() {
+        withLanguage(.en) {
+            var facts = healthy()
+            facts.codexHooks = .missing
+            facts.codexTrust = .untrusted
+            XCTAssertEqual(check("codex hooks", facts)?.level, .warning)
+            XCTAssertEqual(check("codex hooks", facts)?.word, Loc.settings.words.disabled)
+            XCTAssertEqual(check("codex hooks", facts)?.fix, Loc.settings.system.codexHooksUntrustedWarning)
+            facts.codexTrust = .unreadable
+            XCTAssertEqual(check("codex hooks", facts)?.level, .warning)
+            XCTAssertEqual(check("codex hooks", facts)?.word, Loc.settings.words.invalid)
+            XCTAssertEqual(check("codex hooks", facts)?.fix, Loc.settings.system.codexConfigUnreadableWarning)
+            facts.codexTrust = .trusted
+            XCTAssertEqual(check("codex hooks", facts)?.fix, Loc.settings.system.withoutCodexHooksWarning,
+                           "an event missing, and every one there trusted")
+            facts.codexHooks = .setUp
+            XCTAssertEqual(check("codex hooks", facts)?.level, .good)
+        }
+    }
+
     func testHooksPointingAtAMissingCopyOrUnableToWriteAreRedOnTheirOneLine() {
         var facts = healthy()
         facts.hookBinary = .init(ok: false, detail: "binary missing")
