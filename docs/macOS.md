@@ -89,7 +89,8 @@ All through `sysctl` and `libproc`, with no subprocess and no permission:
 `KERN_PROC_PID` for parent, name and controlling tty; `proc_pidpath` and
 `KERN_PROCARGS2` for the executable path and environment; `KERN_BOOTTIME` for
 the boot time; kqueue `EVFILT_PROC` for exits. This is how the hook finds the
-agent's process (the nearest agent ancestor: Claude by a `claude` name or
+agent's process (the nearest ancestor running the agent it speaks for, its
+`--agent` or else Claude Code: Claude by a `claude` name or
 path component, Codex by a `codex` one, which covers the standalone release
 under `~/.codex/packages`, the `~/.local/bin` launcher and the copy inside
 `ChatGPT.app`, Copilot by an executable named `copilot`, OpenCode by one

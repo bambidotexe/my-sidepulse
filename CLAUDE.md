@@ -352,7 +352,7 @@ Full version in `docs/architecture.md`.
   French side by side, one table per surface).
 - **`Sources/MySidepulsePlatform`** — headless, testable I/O. `HookCommand` +
   `JournalWriter` (the hook path) · `JournalTailer` (kqueue, follows rotation) ·
-  `ProcWalk` (sysctl: the nearest of the four agents' processes, its host
+  `ProcWalk` (sysctl: the nearest process of the agent a hook speaks for, its host
   app, its terminal tab) ·
   `ProcessWatcher` (kqueue exits) · `ClaudeProcessRegistry` + `TranscriptTail`
   (Claude's side channels) · `CodexRollout` + `CodexDaemonClient` (Codex's: the rollout's tail, and its daemon's `thread/read` and `thread/loaded/list`, 1 s per call) ·

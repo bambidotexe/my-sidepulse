@@ -348,9 +348,10 @@ public enum ProcWalk {
         return tty
     }
 
-    /// The agent = the nearest ancestor that is one (`agent` names which one
-    /// to look for, when the hook was told); host = first ancestor living
-    /// inside a .app bundle (outermost bundle wins for nested helpers).
+    /// The agent = the nearest ancestor running `agent` (the hook always
+    /// names one: its `--agent`, else Claude Code), or with none the nearest
+    /// that is any agent; host = first ancestor living inside a .app bundle
+    /// (outermost bundle wins for nested helpers).
     /// Nearest, because one agent can run the other: a Codex started by
     /// Claude's shell tool fires Codex's hooks, and it is Codex's process that
     /// hosts them. `claimed` is a pid the payload names as the agent's own

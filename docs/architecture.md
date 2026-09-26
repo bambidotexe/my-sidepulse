@@ -314,16 +314,17 @@ symlink. The launch agent lives at
 
 `mysidepulse hook` runs inside every agent's turn, so it is built to be
 harmless: it drains stdin to EOF (keeping at most 8 MB), walks its ancestry
-with `sysctl` (no subprocess) for the nearest agent process, its host app and
-its tab, trims the payload to a bounded `JournalEvent`, appends one line, and
+with `sysctl` (no subprocess) for the nearest process of the agent it speaks
+for, its host app and its tab, trims the payload to a bounded `JournalEvent`, appends one line, and
 returns 0 on every path — including unreadable input, which becomes a
 `ParseError` line, and an unknown `--agent` value, a flag without its value
 or one it does not know, which are ignored (`HookCommand.Arguments`). Copilot
 denies a tool whose `preToolUse` hook fails, which is one reason none is
 subscribed and the other reason the hook never fails. `--agent` names the
 agent outright, which is how every agent's hooks but Claude Code's are
-installed, and it always wins; without the flag the nearest agent process the
-walk recognises says, whichever agent it is, and Claude is the fallback.
+installed, and it always wins; without the flag the hook is Claude Code's,
+whose hooks carry none, and records the nearest Claude Code process the walk
+finds, never an agent of another kind (`HookCommand.origin`).
 `MYSIDEPULSE_DISABLE=1` makes it return at once. Tool inputs, tool outputs
 and prompts never reach the journal.
 

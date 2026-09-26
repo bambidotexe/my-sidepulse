@@ -23,21 +23,22 @@ public enum HookCommand {
     }
 
     /// Who fired the hook, read from its ancestry: the nearest process of the
-    /// agent the flag names, or with no flag the nearest agent process the
-    /// walk recognises, whichever agent that is. OpenCode's payload names its
-    /// server, which is taken when it is an OpenCode ancestor of the hook.
+    /// agent the flag names, or with no flag Claude Code's, whose hooks carry
+    /// none; never the nearest agent of another kind, which a Claude Code the
+    /// walk cannot recognise (one run through an interpreter) can sit under.
+    /// OpenCode's payload names its server, which is taken when it is an
+    /// OpenCode ancestor of the hook.
     public static func origin(for chain: [ProcWalk.ProcInfo], agent: AgentKind?, input: Data) -> ProcWalk.Origin {
         let claimed = agent == .opencode ? Trim.opencodePid(fromHookPayload: input.prefix(K.hookStdinMaxBytes)) : nil
-        return ProcWalk.classify(chain, agent: agent, claimed: claimed)
+        return ProcWalk.classify(chain, agent: agent ?? .claude, claimed: claimed)
     }
 
     /// The entire hook path. Must never block on anything but the single
     /// append, and must always report success to the agent: Copilot denies a
     /// tool whose hook fails, so no form of it, bad input included, exits
     /// other than 0. `agent` is who fired the hook: the command line's
-    /// `--agent`, which always wins, or the nearest agent process in the
-    /// chain, or Claude, whose hooks carry no flag because they never needed
-    /// one. A Copilot payload takes its event from `event` and writes nothing
+    /// `--agent`, which always wins, else Claude Code, whose hooks carry no
+    /// flag because they never needed one. A Copilot payload takes its event from `event` and writes nothing
     /// for a subagent's session (`CopilotSessionState`, under
     /// `$COPILOT_HOME` when the environment sets it); an OpenCode payload
     /// is mapped by `Trim.opencodeEvent`, and an event outside its mapping
@@ -51,7 +52,7 @@ public enum HookCommand {
         // Spec §1: 8 MB cap. A payload past it parses as garbage and becomes
         // a ParseError line, which is the honest record of "too big to trust".
         let payload = input.prefix(K.hookStdinMaxBytes)
-        let speaker = agent ?? origin?.agent ?? .claude
+        let speaker = agent ?? .claude
         var event: JournalEvent
         switch agent {
         case .copilot:

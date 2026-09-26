@@ -330,7 +330,7 @@ rejected by eye within minutes of a build whose tests were green.
 ### Codex copies Claude Code's hooks into its own file, bare
 - **Symptom.** `~/.codex/hooks.json` holding `mysidepulse hook` on eleven events that nothing of ours wrote; a Codex session that would be journaled as Claude's, with no agent process found.
 - **Why.** Codex's own import of Claude Code's settings (`Migrate hooks from ~/.claude to ~/.codex/hooks.json` in its global state) copies every hook entry as it is.
-- **Instead.** Codex's hooks are installed as `mysidepulse hook --agent codex`, so the journal line says who fired it whatever process did; `HookConfig.install` replaces every entry carrying the marker, migrated ones included. A hook with no flag falls back to the nearest agent process in its ancestry, then to Claude.
+- **Instead.** Codex's hooks are installed as `mysidepulse hook --agent codex`, so the journal line says who fired it whatever process did; `HookConfig.install` replaces every entry carrying the marker, migrated ones included. A hook with no flag is Claude Code's, and records the nearest Claude Code process in its ancestry, never an agent of another kind.
 - **Rule.** A hook must say who it is for. Never read the agent from the payload's shape: both agents send the same fields.
 
 ### A hook in `~/.codex/hooks.json` alone never runs
@@ -374,7 +374,7 @@ rejected by eye within minutes of a build whose tests were green.
 - **Rule.** Never call any other method: the same socket starts turns, answers approvals and writes Codex's config. Never block the main queue on it or wait longer than 1 s. Never read a partial loaded list, or the daemon's word on a thread it does not host, as proof that a thread is not running: the turn would be ended under a live session.
 
 ### One agent can run the other
-- A Codex started by Claude's shell tool fires Codex's hooks from a chain that holds both agents. `ProcWalk.classify` takes the nearest agent process, and the `--agent` flag names which one to look for. The pid recorded is that agent's, so the process watch and the startup prune ask about the right process (`ProcWalk.looksLike(_:pid:)`).
+- A Codex started by Claude's shell tool fires Codex's hooks from a chain that holds both agents. `ProcWalk.classify` takes the nearest process of the agent the hook speaks for: its `--agent`, else Claude Code. The pid recorded is that agent's, so the process watch and the startup prune ask about the right process (`ProcWalk.looksLike(_:pid:)`).
 
 ---
 
@@ -638,5 +638,4 @@ Known, bounded, and left alone.
 - **A `/compact` after a Copilot turn whose `agentStop` hook was lost** writes about 95 KB of model lines after the turn's end, which pushes it out of the 64 KB the app reads: the check decides nothing, and the turn rolls until the next hook, the process's exit or the 2 h backstop.
 - **A Copilot run under a `COPILOT_HOME` other than `~/.copilot`** has its `events.jsonl` refused, since only `~/.copilot/session-state/` is trusted and the app, started by launchd, cannot see the variable: its quiet turns decide nothing.
 - **A `copilot -p` finish is gone at once**: Copilot fires `sessionEnd` (`complete`) right after every `-p` turn's `agentStop`, and a `SessionEnd` forgets the session, as it does for every agent.
-- **A bare hook reads its agent from its ancestry**, so a Claude Code the walk cannot recognise (one run through an interpreter) under a Copilot or an OpenCode is journaled as that agent's. Every hook MySidepulse installs but Claude Code's carries `--agent`, which always wins.
 - **A standalone OpenCode server inside OpenCode.app is its session's host**, as the first bundle in the chain always is: while OpenCode.app itself runs, such a session's alerts are acknowledged by bringing OpenCode.app forward, not the terminal. The shared server is parented by launchd, has no host, and acknowledges on any input.

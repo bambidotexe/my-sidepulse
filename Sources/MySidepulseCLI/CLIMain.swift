@@ -9,9 +9,8 @@ enum CLIMain {
             // `hook [--agent claude|codex|copilot|opencode] [--event NAME]`:
             // every agent's hooks but Claude Code's say who they are, and
             // Copilot's name their event, which its payloads do not. With no
-            // flag the nearest agent process in the chain says, and Claude is
-            // the fallback. An unknown value or flag is ignored the same way,
-            // since the hook must never fail.
+            // flag the hook is Claude Code's. An unknown value or flag is
+            // ignored the same way, since the hook must never fail.
             let flags = HookCommand.Arguments(args)
             // 64 KB chunks, retaining at most the 8 MB cap while still
             // draining stdin to EOF — stopping early could block or break the

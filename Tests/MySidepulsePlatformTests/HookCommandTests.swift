@@ -102,12 +102,11 @@ final class HookCommandTests: XCTestCase {
         return try XCTUnwrap(JournalCodec.decodeLine(Data(String(try XCTUnwrap(raw)).utf8)))
     }
 
-    /// The flag always wins. With none, the nearest agent process the walk
-    /// recognises says, whichever agent it is: a Claude Code the walk cannot
-    /// recognise (one run through an interpreter) under a Copilot is
-    /// journaled as Copilot's, which is the known cost of reading a bare
-    /// hook's agent from its ancestry.
-    func testTheFlagAlwaysWinsAndABareHookTakesTheNearestRecognisedAgent() throws {
+    /// The flag always wins. With none, the hook is Claude Code's, whose
+    /// hooks carry no flag: its pid is the nearest Claude Code ancestor,
+    /// never the nearest agent of another kind, and none when the walk finds
+    /// no Claude Code (one run through an interpreter).
+    func testTheFlagAlwaysWinsAndABareHookIsClaudeCodes() throws {
         let url = tempJournal()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let chain = [
@@ -116,17 +115,18 @@ final class HookCommandTests: XCTestCase {
             proc(500, 1, "copilot", "/Users/u/.local/bin/copilot"),
         ]
         let payload = Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"s1"}"#.utf8)
-        func record(_ agent: AgentKind?) throws -> JournalEvent {
+        func record(_ chain: [ProcWalk.ProcInfo], _ agent: AgentKind?) throws -> JournalEvent {
             try? FileManager.default.removeItem(at: url)
             let origin = HookCommand.origin(for: chain, agent: agent, input: payload)
             XCTAssertEqual(HookCommand.run(input: payload, environment: [:], journalURL: url, now: Date(),
                                            origin: origin, agent: agent), 0)
             return try firstLine(url)
         }
-        let bare = try record(nil)
-        XCTAssertEqual(bare.agent, .copilot)
-        XCTAssertEqual(bare.agentPid, 500)
-        let flagged = try record(.claude)
+        let bare = try record(chain, nil)
+        XCTAssertEqual(bare.agent, .claude, "a Claude Code the walk cannot recognise, under a Copilot")
+        XCTAssertEqual(bare.event, .userPromptSubmit, "Claude Code's own event passes")
+        XCTAssertNil(bare.agentPid, "the Copilot is not the hook's agent")
+        let flagged = try record(chain, .claude)
         XCTAssertEqual(flagged.agent, .claude, "the flag says who fired it")
         XCTAssertNil(flagged.agentPid, "and no Claude process is in the chain")
 
@@ -134,13 +134,22 @@ final class HookCommandTests: XCTestCase {
             proc(700, 650, "node", "/opt/homebrew/bin/node"),
             proc(650, 1, "opencode", "/Users/u/.opencode/bin/opencode"),
         ]
-        try? FileManager.default.removeItem(at: url)
-        XCTAssertEqual(HookCommand.run(input: payload, environment: [:], journalURL: url, now: Date(),
-                                       origin: HookCommand.origin(for: underOpenCode, agent: nil, input: payload)), 0)
-        let bareUnderOpenCode = try firstLine(url)
-        XCTAssertEqual(bareUnderOpenCode.agent, .opencode)
-        XCTAssertEqual(bareUnderOpenCode.agentPid, 650)
+        let bareUnderOpenCode = try record(underOpenCode, nil)
+        XCTAssertEqual(bareUnderOpenCode.agent, .claude)
+        XCTAssertNil(bareUnderOpenCode.agentPid)
         XCTAssertNil(bareUnderOpenCode.tty)
+
+        let claudeUnderCopilot = [
+            proc(700, 500, "node", "/opt/homebrew/bin/node"),
+            proc(500, 400, "copilot", "/Users/u/.local/bin/copilot"),
+            proc(400, 300, "zsh", "/bin/zsh"),
+            proc(300, 1, "claude", "/Users/u/.local/bin/claude"),
+        ]
+        let nearestClaude = try record(claudeUnderCopilot, nil)
+        XCTAssertEqual(nearestClaude.agent, .claude)
+        XCTAssertEqual(nearestClaude.agentPid, 300, "the nearest Claude Code, past a nearer agent of another kind")
+        XCTAssertEqual(HookCommand.origin(for: claudeUnderCopilot, agent: .copilot, input: payload).agentPid, 500,
+                       "the flag's agent, when there is one")
     }
 
     /// OpenCode's payload names its server; it is taken when it is an

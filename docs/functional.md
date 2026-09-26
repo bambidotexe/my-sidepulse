@@ -233,8 +233,9 @@ path that holds anything else is neither replaced nor deleted, and
 when it is on this Mac; `install-hooks` says which were not, and
 `uninstall-hooks` removes every agent's hooks, on the Mac or not. The
 `--agent` flag is how a journal line says who fired the hook, and it always
-wins; a hook without it records the nearest agent process its ancestry shows,
-whichever agent that is, and Claude Code when there is none.
+wins; a hook without it is Claude Code's, whose hooks carry no flag, and
+records the nearest Claude Code process its ancestry shows, never an agent of
+another kind.
 
 Settings › System › Claude Code does the same from the window: `Set Up Hooks`
 subscribes, `Remove Hooks` unsubscribes. The `Claude Code hooks` row reads
@@ -1292,7 +1293,7 @@ rule rather than a gap (§15).
 
 | Command | Does | Exit |
 |---|---|---|
-| `hook [--agent claude\|codex\|copilot\|opencode] [--event NAME]` | the hook entry Claude Code, Codex and GitHub Copilot run, and OpenCode's plugin runs; reads the payload on stdin. The flag says who fired it and always wins; without it, the nearest agent process in the ancestry, else Claude. `--event` names a Copilot event, which its payload does not; an unknown value or flag is ignored | always 0 |
+| `hook [--agent claude\|codex\|copilot\|opencode] [--event NAME]` | the hook entry Claude Code, Codex and GitHub Copilot run, and OpenCode's plugin runs; reads the payload on stdin. The flag says who fired it and always wins; without it, Claude Code, with the nearest Claude Code process in the ancestry. `--event` names a Copilot event, which its payload does not; an unknown value or flag is ignored | always 0 |
 | `led auto\|off\|toggle\|#RRGGBB\|<effect>` | sets the mode; `toggle` flips off ↔ auto | 0; 1 app down; 2 bad argument |
 | `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
 | `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
