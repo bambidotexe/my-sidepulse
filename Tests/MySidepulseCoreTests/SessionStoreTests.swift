@@ -670,8 +670,10 @@ final class SessionStoreTests: XCTestCase {
 
     /// The answered dialog: approving a plan can fire no hook at all, so the
     /// wait would otherwise stand until the next tool call happened by. The
-    /// store nominates every open wait for the registry check; the verdict
-    /// flips it back to working and disarms its push.
+    /// store nominates every Claude wait for the registry check, a failed
+    /// turn's included: `busy` after the wait began is the agent at work,
+    /// whatever the wait was. The verdict flips it back to working and
+    /// disarms its push, and replays the same.
     func testOpenWaitCandidatesAndAnsweredVerdict() {
         var s = SessionStore()
         s.apply(ev(.userPromptSubmit, 0, pid: 42))
@@ -686,13 +688,23 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(state(s), .working)
         XCTAssertNil(s.sessions["s1"]?.notifyAt, "answered: nothing left to announce")
 
-        var dead = SessionStore()
-        dead.apply(ev(.userPromptSubmit, 0, pid: 42))
-        dead.apply(ev(.stopFailure, 5))
-        XCTAssertTrue(dead.openWaitCandidates().isEmpty,
-                      "a dead turn's wait is not an open dialog")
-        dead.dialogAnswered(sessionId: "s1", now: at(300))
-        XCTAssertEqual(state(dead), .waiting(.error), "and the verdict refuses it too")
+        var failed = SessionStore()
+        failed.apply(ev(.userPromptSubmit, 0, pid: 42))
+        failed.apply(ev(.stopFailure, 5))
+        XCTAssertEqual(failed.openWaitCandidates().map(\.sessionId), ["s1"],
+                       "a failed turn's wait is answered by the agent going busy too")
+        XCTAssertEqual(failed.openWaitCandidates().map(\.stateSince), [at(5)])
+        var replayed = failed
+        XCTAssertEqual(failed.dialogAnswered(sessionId: "s1", now: at(300)), at(300))
+        XCTAssertEqual(state(failed), .working)
+        XCTAssertNil(failed.sessions["s1"]?.notifyAt, "the failure's push is disarmed")
+        replayed.apply(verdictLine("dialog-answered", 300))
+        XCTAssertEqual(replayed.sessions["s1"], failed.sessions["s1"], "the journaled verdict replays the same")
+
+        var working = SessionStore()
+        working.apply(ev(.userPromptSubmit, 0, pid: 42))
+        XCTAssertTrue(working.openWaitCandidates().isEmpty, "a working turn waits on nothing")
+        XCTAssertNil(working.dialogAnswered(sessionId: "s1", now: at(300)))
     }
 
     func testOpenWaitSchedulesItsRecheck() {
@@ -703,6 +715,12 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertNotNil(next)
         XCTAssertLessThanOrEqual(next!.timeIntervalSince(at(60)), K.abandonRecheckSeconds,
                                  "an open wait must keep waking the registry check")
+
+        var failed = SessionStore()
+        failed.apply(ev(.userPromptSubmit, 0, pid: 42))
+        failed.apply(ev(.stopFailure, 5))
+        XCTAssertEqual(failed.nextDeadline(after: at(60)), at(60 + K.abandonRecheckSeconds),
+                       "so must a failed turn's")
     }
 
     // MARK: - acknowledgement persistence

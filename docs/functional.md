@@ -523,7 +523,7 @@ most.
 | Lost `Stop` | `idle_prompt` / `agent_needs_input` on a `working` session whose main agent has been quiet ≥ `K.idleSignalMinQuietSeconds` (50 s) | treated as the `Stop` | ~60 s |
 | Lost `Stop` | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); Claude's registry says `idle`; the transcript ends on a completed assistant answer (`end_turn` / `stop_sequence`) | `done`, with its push | 20–35 s |
 | Interrupted turn | same, but the transcript ends on an unanswered entry, or cannot be read | `idle` (dark) | 20–35 s |
-| Dialog answered with no hook | an open wait; the registry says `busy`, stamped more than `K.dialogAnswerMinStampLeadSeconds` (2 s) after the dialog | `working` | ≤ 15 s + |
+| Dialog answered with no hook | a wait, a failed turn's `waiting(error)` included; the registry says `busy`, stamped more than `K.dialogAnswerMinStampLeadSeconds` (2 s) after the wait began | `working` | ≤ 15 s + |
 | Codex: lost `Stop` | `working`, nothing out, quiet ≥ `K.abandonQuietSeconds` (20 s); the rollout's last turn marker is a `task_complete` stamped after the last main-agent event, or naming its turn | `done`, with its push | 20–35 s |
 | Codex: interrupted turn, `Interrupt` lost | same, but the marker is a `turn_aborted` | `idle` (dark), no push | 20–35 s |
 | Codex, a TUI session: the turn ended with no hook | same quiet gate; Codex's daemon says the thread is `notLoaded` or `idle` | `done` with its push when the rollout ends the turn on `task_complete`, else `idle` (dark), no push | 20–36 s |
@@ -536,8 +536,9 @@ most.
 | Copilot: a permission answered | same wait; the turn is at work and the latest permission line of `events.jsonl` is `permission.completed`, stamped after the wait began | `working`, the push disarmed | ≤ 15 s after the answer |
 
 While the registry says `busy`, a quiet session is kept alive and stays
-`working`. The registry and open waits are re-read every
-`K.abandonRecheckSeconds` (15 s) while the condition lasts.
+`working`. The registry of a quiet turn and of a waiting Claude Code session
+is re-read every `K.abandonRecheckSeconds` (15 s) while the condition lasts:
+`busy` after the wait began is the agent at work, whatever the wait was.
 
 The registry is Claude Code's own `<config>/sessions/<pid>.json`, where
 `<config>` is the directory the session's transcript lives in

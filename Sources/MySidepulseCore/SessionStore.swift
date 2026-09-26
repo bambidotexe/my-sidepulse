@@ -390,7 +390,7 @@ public struct SessionStore {
         case .turnFinished: outcome = .done
         case .turnFailed: outcome = .waiting(.error)
         case .dialogAnswered:
-            guard s.state.isOpenWaiting else { return }
+            guard s.state.isWaiting else { return }
             set(&s, .working, at)
             sessions[sid] = s
             return
@@ -638,10 +638,11 @@ public struct SessionStore {
                 // quiet gate; see `copilotWaitCandidates`.
                 deadlines.append(now.addingTimeInterval(K.abandonRecheckSeconds))
             }
-            if s.state.isOpenWaiting, s.agent == .claude, s.agentPid != nil {
+            if s.state.isWaiting, s.agent == .claude, s.agentPid != nil {
                 // The answered-dialog watch: an approval may fire no hook
-                // at all, so open waits are re-checked on the same cadence.
-                // Claude only, like the registry it reads.
+                // at all, so waits, a failed turn's included, are re-checked
+                // on the same cadence. Claude only, like the registry it
+                // reads.
                 deadlines.append(now.addingTimeInterval(K.abandonRecheckSeconds))
             }
             if let settlingUntil = s.settlingUntil { deadlines.append(settlingUntil) }
@@ -897,27 +898,28 @@ public struct SessionStore {
         sessions[sessionId] = s
     }
 
-    /// Open waits (question/permission/plan) that can be checked against
-    /// the registry for having been ANSWERED: approving a plan can produce
-    /// no PostToolUse(ExitPlanMode) hook at all, leaving the wait standing
-    /// until the next tool call happens by. The registry stamp is the
-    /// approval's footprint.
+    /// Claude waits that can be checked against the registry for having
+    /// been ANSWERED: approving a plan can produce no PostToolUse(ExitPlanMode)
+    /// hook at all, leaving the wait standing until the next tool call
+    /// happens by. The registry stamp is the approval's footprint. Every
+    /// wait, a failed turn's `waiting(error)` included: the registry going
+    /// busy after the wait began is the agent at work, whatever the wait was.
     public func openWaitCandidates() -> [(sessionId: String, pid: Int32, stateSince: Date)] {
         sessions.values.compactMap { s in
-            guard s.agent == .claude, s.state.isOpenWaiting, let pid = s.agentPid else { return nil }
+            guard s.agent == .claude, s.state.isWaiting, let pid = s.agentPid else { return nil }
             return (s.id, pid, s.stateSince)
         }
     }
 
-    /// The dialog was answered and the turn is running again — Claude's own
-    /// registry says busy with a stamp newer than the dialog itself, or a
-    /// Copilot session's `events.jsonl` shows its prompt's
-    /// `permission.completed` after the wait began. Back to working; `set` disarms the pending push with the state
-    /// change.
+    /// The wait was answered and the turn is running again — Claude's own
+    /// registry says busy with a stamp newer than the wait itself, a failed
+    /// turn's included, or a Copilot session's `events.jsonl` shows its
+    /// prompt's `permission.completed` after the wait began. Back to
+    /// working; `set` disarms the pending push with the state change.
     /// Returns `now` when it took effect, or nil when it changed nothing.
     @discardableResult
     public mutating func dialogAnswered(sessionId: String, now: Date) -> Date? {
-        guard var s = sessions[sessionId], s.state.isOpenWaiting else { return nil }
+        guard var s = sessions[sessionId], s.state.isWaiting else { return nil }
         set(&s, .working, now)
         sessions[sessionId] = s
         return now

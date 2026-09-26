@@ -797,8 +797,9 @@ final class Engine {
         // The answered dialog: approving a plan can fire no hook at all, so
         // the wait would otherwise stand until the next tool call drifted
         // in — unbounded in principle. The approval DOES re-stamp the
-        // registry busy, so an open wait whose stamp is newer than the
-        // dialog itself has been answered — back on the work.
+        // registry busy, so a wait whose stamp is newer than the wait
+        // itself has been answered — back on the work. A failed turn's
+        // wait too: busy after it is the agent at work.
         for (sessionId, pid, stateSince) in store.openWaitCandidates() {
             guard let record = ClaudeProcessRegistry.read(pid: pid,
                                                           transcriptPath: store.sessions[sessionId]?.transcriptPath),

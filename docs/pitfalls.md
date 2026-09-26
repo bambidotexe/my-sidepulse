@@ -279,7 +279,7 @@ rejected by eye within minutes of a build whose tests were green.
 ### Hooks can die mid-session, and single events can go missing
 - **Symptom.** Every hook silent for ~10 minutes after a Ctrl-C, then back; or one approval producing no `PostToolUse` at all.
 - **Why.** Upstream.
-- **Instead.** The registry keeps `working` honest during an outage and a finish inside one is recovered from the transcript. An open wait is rechecked every 15 s: a `busy` stamp more than 2 s newer than the dialog means it was answered. The margin exists because whether *opening* a dialog also stamps `busy` is unproven.
+- **Instead.** The registry keeps `working` honest during an outage and a finish inside one is recovered from the transcript. A wait, a failed turn's `waiting(error)` included, is rechecked every 15 s: a `busy` stamp more than 2 s newer than the wait means the agent is at work again. The margin exists because whether *opening* a dialog also stamps `busy` is unproven.
 - **Rule.** A *question* raised during an outage is lost — hooks are its only carrier. The once-per-session `hooks look dead` warning is the tell.
 
 ### Claude is identified by path
