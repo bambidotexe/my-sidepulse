@@ -372,6 +372,54 @@ final class SessionStoreTests: XCTestCase {
                        "the main agent's dialog is still open; helper traffic is not an answer")
     }
 
+    /// Any wait a helper raised, its question and its plan included, is
+    /// answered by that helper acting again: the dialog is what stopped it.
+    func testAHelperActingAgainAnswersAnyWaitItRaised() {
+        for (tool, reason) in [("AskUserQuestion", WaitReason.question), ("ExitPlanMode", .plan),
+                               ("request_user_input", .question), ("Bash", .permission)] {
+            var s = SessionStore()
+            s.apply(ev(.userPromptSubmit, 0))
+            s.apply(ev(.permissionRequest, 10, tool: tool, agent: "a1"))
+            XCTAssertEqual(state(s), .waiting(reason), tool)
+            XCTAssertEqual(s.sessions["s1"]?.waitingFromAgent, true, tool)
+            s.apply(ev(.postToolUse, 20, tool: tool, agent: "a1"))
+            XCTAssertEqual(state(s), .working, "\(tool): the helper acting again answered its wait")
+        }
+
+        // The main agent's own question is not the helper's to answer.
+        var main = SessionStore()
+        main.apply(ev(.userPromptSubmit, 0))
+        main.apply(ev(.subagentStart, 1, agent: "a1"))
+        main.apply(ev(.preToolUse, 10, tool: "AskUserQuestion"))
+        main.apply(ev(.preToolUse, 15, tool: "Read", agent: "a1"))
+        XCTAssertEqual(state(main), .waiting(.question))
+    }
+
+    /// The main process's `permission_prompt` echo of a helper's
+    /// `PermissionRequest` re-stamps the wait for the push, and the wait
+    /// stays the helper's: its next event still answers it.
+    func testAPermissionPromptEchoKeepsAHelpersWaitTheHelpers() throws {
+        var s = SessionStore()
+        s.apply(ev(.userPromptSubmit, 0))
+        s.apply(ev(.permissionRequest, 10, tool: "Bash", agent: "a1"))
+        s.apply(ev(.notification, 12, ntype: "permission_prompt"))
+        let wait = try XCTUnwrap(s.sessions["s1"])
+        XCTAssertEqual(wait.state, .waiting(.permission))
+        XCTAssertEqual(wait.stateSince, ev(.notification, 12).loggedAt, "the repeat is re-stamped for the push")
+        XCTAssertTrue(wait.waitingFromAgent, "still the helper's wait")
+        s.apply(ev(.preToolUse, 20, tool: "Bash", agent: "a1"))
+        XCTAssertEqual(state(s), .working)
+
+        // A main-agent wait stays the main agent's through the same echo.
+        var main = SessionStore()
+        main.apply(ev(.userPromptSubmit, 0))
+        main.apply(ev(.subagentStart, 1, agent: "a1"))
+        main.apply(ev(.permissionRequest, 10, tool: "Bash"))
+        main.apply(ev(.notification, 12, ntype: "permission_prompt"))
+        main.apply(ev(.preToolUse, 20, tool: "Read", agent: "a1"))
+        XCTAssertEqual(state(main), .waiting(.permission))
+    }
+
     /// Since Claude Code 2.1 a background helper can outlive its turn's Stop
     /// and only emit its first visible event AFTER the verdict landed. That
     /// activity re-opens the turn: the strip goes back on the work and the

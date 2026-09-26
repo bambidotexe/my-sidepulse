@@ -521,8 +521,6 @@ Known limitations, in plain words — the authority is *Open issues* in
 
 - Cancelling a standing dialog with Esc leaves its amber up until the next
   prompt or the 2 h backstop.
-- A subagent's question or plan wait is not cleared by that subagent's next
-  event; the answered-dialog check clears it within about 30 s.
 - A subagent silent for over 4 minutes releases a held finish while it may
   still run: green over real work, by design, as the price of not trusting
   `SubagentStop`.

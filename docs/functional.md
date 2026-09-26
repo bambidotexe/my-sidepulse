@@ -321,8 +321,8 @@ the settle keeps that wait off the strip and its push is disarmed with it.
 | `PostToolUse`, `PostToolUseFailure`, `PermissionDenied` | `working` |
 | `PreCompact` | `working`, remembering the state it found; a second `PreCompact` with no `PostCompact` and no turn boundary since keeps what the first remembered. A turn boundary — a prompt, a `Stop`, an `Interrupt`, a `SessionStart` that is not a compaction's — forgets it. |
 | `PostCompact` | the state `PreCompact` found, or `working` when it found none: a compaction inside a turn leaves it working, one at the prompt leaves it idle, finished or waiting, a finish or a wait with its alert — since when, seen or not, its push, whether a helper raised it, its settle — untouched |
-| `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait. |
-| `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan`; a Copilot or OpenCode `elicitation_dialog` is `waiting(question)` |
+| `PermissionRequest` | `waiting`, reason from the tool name: `AskUserQuestion` or `request_user_input` → `question`, `ExitPlanMode` → `plan`, else `permission`. A subagent's request raises the same wait, and that subagent's next event answers it, whatever it asked. |
+| `Notification` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | `waiting(permission)`, unless the session already waits for a `question` or a `plan`; a Copilot or OpenCode `elicitation_dialog` is `waiting(question)`. A repeat over a standing wait re-stamps it (its push re-armed) and keeps whose it is: a wait a subagent raised is still answered by that subagent's next event. |
 | `Notification` `idle_prompt`, `agent_needs_input` | Never an alert. See "lost Stop" below. |
 | other `Notification` types | nothing |
 | `Stop` | `done` — or held, see below |
@@ -358,8 +358,10 @@ commit?" is green. Amber is raised only by the explicit signals above.
 
 Subagent events (those carrying an `agent_id`) never speak for the main agent,
 with two exceptions: a subagent's permission request blocks the turn and shows
-amber, and subagent activity after `done` re-opens the turn as `working`, unless
-that turn is closed.
+amber until that subagent acts again (whatever the dialog asked: a permission, a
+question or a plan) or the main agent moves on, and subagent activity after
+`done` re-opens the turn as `working`, unless that turn is closed. Subagent
+activity never answers a wait the main agent raised.
 
 ### Finishing, and holds
 

@@ -48,9 +48,10 @@ public struct Session: Equatable {
     public var pendingDone: Bool = false
     public var holdReleasedAt: Date?
     public var acknowledged: Bool = false
-    /// True while the current `waiting(.permission)` was raised by a helper
-    /// agent rather than the main agent — cleared the moment the helper acts
-    /// again, since main-agent activity only clears main-raised waits.
+    /// True while the current wait was raised by a helper agent rather than
+    /// the main agent — its permission, question or plan: the helper acting
+    /// again answers it, where helper activity never answers a main-raised
+    /// wait. A repeated dialog notification keeps it as it was.
     public var waitingFromAgent: Bool = false
     /// When an unacknowledged alert should be pushed off the machine.
     public var notifyAt: Date?
@@ -198,8 +199,9 @@ public struct SessionStore {
                     fromAgent: true)
             default:
                 s.liveAgents[agentId] = now
-                if s.state == .waiting(.permission), s.waitingFromAgent {
-                    // The helper is acting again, so its prompt was answered.
+                if s.state.isWaiting, s.waitingFromAgent {
+                    // The helper is acting again, so the dialog it raised,
+                    // whatever it asked, was answered.
                     set(&s, .working, now)
                 } else if s.state == .done {
                     // A helper still running after `done` means the turn was
@@ -319,9 +321,14 @@ public struct SessionStore {
                 // and OpenCode's question tool arrives as one (`Trim`);
                 // Claude Code's is an MCP form, which it waits on like a
                 // permission.
+                // A repeat re-stamps the wait for the push and leaves whose
+                // it is alone: the main process echoes a helper's
+                // PermissionRequest, and that helper acting again must still
+                // answer it.
                 if s.state == .waiting(.question) || s.state == .waiting(.plan) { break }
                 let asks = e.notificationType == "elicitation_dialog" && (s.agent == .copilot || s.agent == .opencode)
-                clearPending(&s); set(&s, .waiting(asks ? .question : .permission), now)
+                clearPending(&s)
+                set(&s, .waiting(asks ? .question : .permission), now, fromAgent: s.state.isWaiting && s.waitingFromAgent)
             case "idle_prompt", "agent_needs_input":
                 // A timer, not a request: Claude Code says the turn has gone
                 // quiet and it is sitting at the input prompt. That is never

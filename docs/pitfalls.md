@@ -622,7 +622,6 @@ This is every app's trap: `docs/shared/pitfalls.md`, **B3**.
 Known, bounded, and left alone.
 
 - **Cancelling a standing dialog with Esc leaves its amber up** until the next prompt or the 2 h backstop: the abort fires no hook, and at a dialog "at rest" and "waiting for you" look the same from outside.
-- **A subagent's question or plan wait is not cleared by that subagent's next event** — only `waiting(permission)` is (`SessionStore.apply`, subagent branch). The answered-dialog rescue clears it within ~15–30 s.
 - **A subagent quiet for over 4 minutes releases a hold while it still runs.**
 - **A daemon-hosted session has no tab to scope to**, so it is acknowledged by any input anywhere. And because the daemon shares the user's session id, a `SessionEnd` from *any* process with that id deletes the record while the daemon's process may still run; it reappears on its next event.
 - **The `idle_prompt` lost-Stop rescue writes no log line**, unlike the registry rescues.
