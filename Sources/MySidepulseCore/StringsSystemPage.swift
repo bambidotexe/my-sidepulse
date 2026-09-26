@@ -157,19 +157,21 @@ public struct SystemPageStrings {
 
     public var copilotHooksInvalidWarning: String {
         switch language {
-        case .en: "Copilot's hook file could not be read, or belongs to another copy of MySidepulse. "
-            + "Press \(setUpHooksButton) to replace it."
-        case .fr: "Le fichier de hooks de Copilot n'a pas pu être lu, ou appartient à une autre copie "
-            + "de MySidepulse. Cliquez sur \(setUpHooksButton) pour le remplacer."
+        case .en: "Copilot's hook file could not be read as JSON. Fix or remove "
+            + "~/.copilot/hooks/mysidepulse.json by hand: \(setUpHooksButton) refuses a file it "
+            + "does not recognise."
+        case .fr: "Le fichier de hooks de Copilot n'a pas pu être lu comme JSON. Réparez-le ou "
+            + "supprimez ~/.copilot/hooks/mysidepulse.json à la main : \(setUpHooksButton) refuse "
+            + "un fichier qu'il ne reconnaît pas."
         }
     }
 
     public var copilotHooksDisabledWarning: String {
         switch language {
         case .en: "Copilot's hooks are turned off. Remove \u{201c}disableAllHooks\u{201d} from "
-            + "~/.copilot/settings.json."
+            + "~/.copilot/settings.json or ~/.copilot/config.json."
         case .fr: "Les hooks de Copilot sont désactivés. Retirez \u{ab} disableAllHooks \u{bb} de "
-            + "~/.copilot/settings.json."
+            + "~/.copilot/settings.json ou ~/.copilot/config.json."
         }
     }
 
@@ -233,10 +235,12 @@ public struct SystemPageStrings {
 
     public var opencodePluginInvalidWarning: String {
         switch language {
-        case .en: "OpenCode's plugin belongs to another copy of MySidepulse. Press "
-            + "\(setUpPluginButton) to replace it."
-        case .fr: "Le plugin OpenCode appartient à une autre copie de MySidepulse. Cliquez sur "
-            + "\(setUpPluginButton) pour le remplacer."
+        case .en: "OpenCode's plugin is not this copy's. A stale plugin of another copy of "
+            + "MySidepulse is replaced by pressing \(setUpPluginButton); a plugin it does not "
+            + "recognise must be removed by hand."
+        case .fr: "Le plugin OpenCode n'est pas celui de cette copie. Un plugin d'une autre copie "
+            + "de MySidepulse est remplacé en cliquant sur \(setUpPluginButton) ; un plugin qu'il "
+            + "ne reconnaît pas doit être supprimé à la main."
         }
     }
 

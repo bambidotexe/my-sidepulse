@@ -537,8 +537,12 @@ Scope:
   must match. The front tab is asked of Terminal or iTerm2 through Apple
   Events. Any other terminal, a timeout, or a denied permission means
   "unknown", and the alert is acknowledged at app level.
-- A session with no focusable host (one hosted by the Claude Code daemon, or
-  whose terminal has quit) is acknowledged by any activity.
+- A session with no focusable host is acknowledged by any activity: one hosted
+  by the Claude Code daemon, whose terminal has quit, hosted by Codex's
+  managed daemon (a TUI session with no window of its own), or an OpenCode
+  session, whose server runs under launchd with no terminal tab or host app —
+  so a "needs you" or "finished" from any of these is acknowledged by the next
+  keystroke or click anywhere on the Mac.
 
 Every unknown widens acknowledgement; none can strand an alert.
 
@@ -953,8 +957,8 @@ where it is installed.
 |---|---|---|
 | Claude Code hooks | always, once the hook files are read | Enabled; Disabled in red; Invalid in red when `~/.claude/settings.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone (the command as the tooltip); Failed in red when the hooks cannot append to the journal |
 | Codex hooks | once the hook files are read, while Codex is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional); Invalid in orange when `~/.codex/hooks.json` cannot be read, or when the hooks run a copy of MySidepulse that is gone; Failed in orange when the hooks cannot append to the journal |
-| Copilot hooks | once the hook files are read, while Copilot is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional) when an event is missing, or when `disableAllHooks` turns them off; Invalid in orange when the hook file cannot be read or belongs to another copy of MySidepulse; Failed in orange when the hooks cannot append to the journal |
-| OpenCode plugin | once the hook files are read, while OpenCode is on this Mac or the plugin is set up | Enabled; Disabled in orange (optional) with no plugin file; Invalid in orange when the plugin belongs to another copy of MySidepulse; Failed in orange when the plugin cannot append to the journal |
+| Copilot hooks | once the hook files are read, while Copilot is on this Mac or its hooks are set up | Enabled; Disabled in orange (optional) when an event is missing, when `disableAllHooks` turns them off in `~/.copilot/settings.json` or `~/.copilot/config.json`, or when the file belongs to another copy of MySidepulse (its events do not match); Invalid in orange when the hook file cannot be parsed as JSON; Failed in orange when the hooks cannot append to the journal |
+| OpenCode plugin | once the hook files are read, while OpenCode is on this Mac or the plugin is set up | Enabled; Disabled in orange (optional) with no plugin file; Invalid in orange when the plugin file is not this copy's — a stale plugin of another copy of MySidepulse, which Set Up replaces, or a foreign file, which Set Up refuses and must be removed by hand; Failed in orange when the plugin cannot append to the journal |
 | Terminal hook | always, once read | Enabled, or Disabled in orange |
 | Notifications permission | always, once read | Granted, or Denied in orange |
 | SidePulse strip | always, once the engine has answered | Available (each strip's name, LEDs and mount path as the tooltip); Missing in orange with none plugged in; Stalled in orange |
@@ -989,16 +993,20 @@ with a warning to press Set Up Hooks, or **Invalid** in orange when
 once they have been trusted in Codex. `Copilot hooks`, in its own group while
 Copilot is on this Mac or its hooks are set up, is **Enabled** in green,
 **Disabled** in orange with a warning to press Set Up Hooks (also the reading
-while `disableAllHooks` turns every hook off, with a warning naming the exact
-line to remove from `~/.copilot/settings.json`), or **Invalid** in orange when
-the hook file cannot be read or belongs to another copy of MySidepulse; the
-note says Copilot picks new hooks up at its next start, with no trust step of
-its own. `OpenCode plugin`, in its own group while OpenCode is on this Mac or
-the plugin is set up, is **Enabled** in green, **Disabled** in orange with a
-warning to press Set Up Plugin, or **Invalid** in orange when the plugin
-belongs to another copy of MySidepulse (the same fix: Set Up overwrites it);
-the note says a running server picks the plugin up within a second, with no
-restart. `Terminal hook` is **Enabled** in green or **Disabled**
+while `disableAllHooks` turns every hook off, with a warning naming both files
+it can be in, `~/.copilot/settings.json` and `~/.copilot/config.json`, or when
+the file belongs to another copy of MySidepulse, whose events do not match
+this one's), or **Invalid** in orange when the hook file cannot be parsed as
+JSON, with a warning to fix or remove `~/.copilot/hooks/mysidepulse.json` by
+hand, since Set Up refuses a file it does not recognise; the note says Copilot
+picks new hooks up at its next start, with no trust step of its own.
+`OpenCode plugin`, in its own group while OpenCode is on this Mac or the
+plugin is set up, is **Enabled** in green, **Disabled** in orange with a
+warning to press Set Up Plugin, or **Invalid** in orange when the plugin file
+is not this copy's: a stale plugin of another copy of MySidepulse, which Set
+Up replaces, or a foreign file, which Set Up refuses and the warning says to
+remove by hand; the note says a running server picks the plugin up within a
+second, with no restart. `Terminal hook` is **Enabled** in green or **Disabled**
 in orange with a warning to press Set Up Terminal Hook; the note says to open a
 new terminal window after setting it up. A set-up or removal that fails shows
 the installer's message as a warning under its group. `Notifications
@@ -1226,7 +1234,7 @@ rule rather than a gap (§15).
 | `brightness cycle [--steps N]` | one step brighter on every plugged-in strip, off after the last step, then the first step again (below) | 0; 1 app down or no strip; 2 bad argument |
 | `status [--json]` | mode, display (an agent state names its agents: `working (claude+codex)`), battery, strips, sessions with their agent, jobs, notifications (topic masked) | 0; 1 app down |
 | `doctor` | twelve health checks | number of failures |
-| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists; writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours, or on error |
+| `install-hooks` / `uninstall-hooks` | edits `~/.claude/settings.json`, after a backup to `settings.json.backup-mysidepulse`, and `~/.codex/hooks.json` the same way (backup `hooks.json.backup-mysidepulse`) when `~/.codex` exists; writes `~/.copilot/hooks/mysidepulse.json` when `~/.copilot` exists, and `~/.config/opencode/plugins/mysidepulse.js` when OpenCode is on this Mac, or deletes them (`uninstall-hooks` does every agent's, on the Mac or not); foreign hooks, shapes it does not recognise and a file at the last two paths that is not MySidepulse's are left alone; refused, file untouched, when the CLI is not inside an app bundle | 0; 1 if any event was declined, a file was not ours (`install-hooks` only: it refuses to touch a Copilot or OpenCode file it does not recognise; `uninstall-hooks` leaves such a file alone and still returns 0), or on error |
 | `run …`, `job begin\|end …` | terminal jobs | the command's status; 2 bad usage |
 | `notify [on\|off\|topic new\|topic T\|server URL\|test]` | notification settings; bare `notify` prints them, **including the full topic** | 0; 1; 2 |
 | `autostart [on\|off]` | the launch agent | 0; 1; 2 |

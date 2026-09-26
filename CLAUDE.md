@@ -537,6 +537,10 @@ Known limitations, in plain words — the authority is *Open issues* in
   has been walked with a real Copilot or OpenCode session: the System page's
   two new groups, the Health page's `Copilot hooks` and `OpenCode plugin`
   lines and the doctor's two new checks are proven only by their tests.
+- An OpenCode session's server runs under launchd with no terminal tab or
+  host app, so an OpenCode "needs you" or "finished" is acknowledged by the
+  next keystroke or click anywhere on the Mac — the same rule as Codex's
+  daemon-hosted TUI sessions.
 - Jobs are not journaled: a restart forgets them.
 - One write queue serves every strip: a card whose write never returns freezes
   all of them until the app restarts.

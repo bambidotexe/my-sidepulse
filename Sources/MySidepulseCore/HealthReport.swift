@@ -314,8 +314,9 @@ public enum HealthReport {
     }
 
     /// Optional, like Copilot's: a Mac without OpenCode has no plugin to set up. A plugin that is there but
-    /// belongs to another copy of MySidepulse reads Invalid, the same fix as a missing one: Set Up
-    /// overwrites it.
+    /// is not this copy's reads Invalid: a stale plugin of another copy of MySidepulse, which Set Up
+    /// replaces, or a foreign file, which Set Up refuses and must be removed by hand — the two cannot be
+    /// told apart from here, so the fix names both.
     static func opencodeHooks(_ facts: HealthFacts) -> HealthRow? {
         guard let hooks = facts.opencodeHooks, facts.opencodeInstalled == true || hooks == .setUp else { return nil }
         let t = Loc.settings.health

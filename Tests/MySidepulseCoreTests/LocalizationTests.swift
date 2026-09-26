@@ -163,6 +163,21 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    /// Copilot's and OpenCode's equivalents of the same rule, pinned separately
+    /// because each names its own button (Set Up Hooks vs. Set Up Plugin), as
+    /// Codex's is pinned in `CodexTests`.
+    func testAWarningThatNamesTheCopilotOrOpenCodeButtonNamesItInTheSameLanguage() {
+        for language in Language.allCases {
+            withLanguage(language) {
+                let system = Loc.settings.system
+                XCTAssertTrue(system.withoutCopilotHooksWarning.contains(system.setUpHooksButton),
+                              "\(language): \(system.withoutCopilotHooksWarning)")
+                XCTAssertTrue(system.withoutOpencodePluginWarning.contains(system.setUpPluginButton),
+                              "\(language): \(system.withoutOpencodePluginWarning)")
+            }
+        }
+    }
+
     /// Every sentence in the window, in both languages, read out of the source
     /// rather than listed here: a string added to a table without its rule
     /// checked is exactly what this is for.

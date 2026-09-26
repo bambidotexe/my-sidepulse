@@ -151,8 +151,10 @@ public struct DoctorStrings {
 
     public var copilotHooksDisabledDetail: String {
         switch language {
-        case .en: "disableAllHooks turns every Copilot hook off. Remove it from ~/.copilot/settings.json"
-        case .fr: "disableAllHooks désactive tous les hooks Copilot. Retirez-le de ~/.copilot/settings.json"
+        case .en: "disableAllHooks turns every Copilot hook off. Remove it from ~/.copilot/settings.json "
+            + "or ~/.copilot/config.json"
+        case .fr: "disableAllHooks désactive tous les hooks Copilot. Retirez-le de ~/.copilot/settings.json "
+            + "ou ~/.copilot/config.json"
         }
     }
 
@@ -179,8 +181,12 @@ public struct DoctorStrings {
 
     public var opencodePluginStale: String {
         switch language {
-        case .en: "plugin belongs to another copy of MySidepulse. Run mysidepulse install-hooks"
-        case .fr: "le plugin appartient à une autre copie de MySidepulse. Lancez mysidepulse install-hooks"
+        case .en: "plugin is not this copy's. A stale plugin of another copy of MySidepulse is "
+            + "replaced by mysidepulse install-hooks; a plugin it does not recognise must be "
+            + "removed by hand"
+        case .fr: "le plugin n'est pas celui de cette copie. Un plugin d'une autre copie de "
+            + "MySidepulse est remplacé par mysidepulse install-hooks ; un plugin qu'il ne "
+            + "reconnaît pas doit être supprimé à la main"
         }
     }
 

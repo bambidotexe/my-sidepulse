@@ -312,7 +312,7 @@ public enum ProcWalk {
 
     /// The terminal TAB a session is displayed in — the one fact that scopes
     /// acknowledgement to what the user can actually see. The same walk
-    /// serves both agents: it starts at the agent's process, whichever it is.
+    /// serves every agent: it starts at the agent's process, whichever it is.
     ///
     /// A tty is NOT proof of a tab. Claude Code 2.1's daemon hosts sessions
     /// on ptys it allocates itself (`claude daemon run` → `bg-pty-host` →

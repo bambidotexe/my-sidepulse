@@ -58,7 +58,7 @@ side. That decision is what this app is.
 
 | The strip | Means | Until |
 |---|---|---|
-| A **red wave** rolling along it | an agent is working | the turn ends |
+| A **wave** rolling along it, each agent in its own colour | an agent is working | the turn ends |
 | A **green breath**, every 4.5 s | an agent has finished | you have seen it, or 20 minutes |
 | An **amber double blink** | an agent needs you: a question, a permission, a plan to approve, a turn that failed | you have seen it |
 | Dark | nothing is going on | |
@@ -230,8 +230,10 @@ make install
 That builds the same signed, notarized bundle, puts it in `/Applications`, launches it, sets up the hooks or
 plugin of whichever of Claude Code, Codex, GitHub Copilot CLI and OpenCode is on the Mac, and prints
 `mysidepulse doctor`. Claude Code's and Codex's hooks go into their own `settings.json` / `hooks.json`, backed
-up first; entries that are not MySidepulse's are left alone, and sessions already open pick the new ones up
-within seconds.
+up first; entries that are not MySidepulse's are left alone. What "picking up the new hooks" means differs by
+agent: Claude Code's open sessions pick them up within seconds; Codex's wait until the hooks have been trusted
+in Codex; Copilot reads its hook file when a session starts; a running OpenCode server loads the plugin within
+a second.
 `make uninstall` reverses either one; your settings and the journal stay. Settings › General › Uninstall does
 the same from inside the app.
 
@@ -260,8 +262,9 @@ the flat icon without Liquid Glass. The icon's source is `Resources/AppIcon.icon
 
 - **macOS 26 or later**, and a Swift toolchain to build it.
 - **A SidePulse Pro or Dot.** The app runs without one: sessions are followed and your phone is still told.
-- **Claude Code, Codex, GitHub Copilot CLI or OpenCode** — any subset, each followed only while it is on the
-  Mac. **zsh**, if you want terminal commands on the strip.
+- **Claude Code, Codex, GitHub Copilot CLI or OpenCode** — any subset. Claude Code's hooks are always
+  installed; Codex, Copilot and OpenCode are each followed only while it is on the Mac. **zsh**, if you want
+  terminal commands on the strip.
 - **Two permissions**: removable volumes, because the strip mounts as one (macOS may ask once), and Automation
   for Terminal or iTerm2, asked the first time one of them comes to the front, so that looking at one tab
   clears only that tab's alert. Refuse the second and acknowledgement covers the whole terminal app. No

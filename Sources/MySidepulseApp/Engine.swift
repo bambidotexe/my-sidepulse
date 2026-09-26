@@ -633,12 +633,12 @@ final class Engine {
                 }
             }
             // The same loop at another brightness, or the full-strip roll
-            // changing colour (Claude's becoming the shared one, or back):
-            // the rest of what plays, then the loop at its own boundary.
+            // changing colour (an agent's pass joining or leaving the shared
+            // roll): the rest of what plays, then the loop at its own boundary.
             if current.loop == program || LedProgram.rollRecolour(from: current.state, to: state),
                let tail = LedContinuation.tail(of: current.playing, elapsedMs: elapsed, brightness: brightness) {
                 // The tail says when it ends: the loop's own boundary, or
-                // the current pass's on the roll both agents share. A cut of
+                // the current pass's on the roll every agent shares. A cut of
                 // a tail already playing keeps the boundary it was given.
                 let boundary: Date
                 if let pending = current.boundary, current.handover != nil {

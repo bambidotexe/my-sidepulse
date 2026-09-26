@@ -148,8 +148,9 @@ struct SystemPage: View {
         return warnings
     }
 
-    /// Copilot is optional, so missing is orange, and so is a stale file or the hooks turned off by
-    /// disableAllHooks.
+    /// Copilot is optional, so missing is orange, and so is a file belonging to another copy of
+    /// MySidepulse (its events do not match this one's) or the hooks turned off by disableAllHooks;
+    /// a file that cannot be parsed as JSON reads Invalid instead.
     private var copilotMark: StatusMark {
         let words = Loc.settings.words
         switch model.copilotHooksSetUp {
@@ -177,8 +178,9 @@ struct SystemPage: View {
         return warnings
     }
 
-    /// OpenCode is optional, so an absent plugin is orange; a plugin of another copy of MySidepulse
-    /// (`opencodeHooksSetUp == nil`) is Invalid, the same fix as absent: Set Up overwrites it.
+    /// OpenCode is optional, so an absent plugin is orange; a plugin that is not this copy's
+    /// (`opencodeHooksSetUp == nil`) is Invalid: a stale plugin of another copy of MySidepulse, which
+    /// Set Up replaces, or a foreign file, which Set Up refuses and must be removed by hand.
     private var opencodeMark: StatusMark {
         let words = Loc.settings.words
         switch model.opencodeHooksSetUp {
