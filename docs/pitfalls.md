@@ -568,6 +568,12 @@ This is every app's trap: `docs/shared/pitfalls.md`, **B3**.
 - **Instead.** `ShellInitTests` runs the generated snippet in a real interactive zsh against a stub CLI. That test caught two real bugs; comparing the string with itself proves nothing.
 - **Rule.** `precmd` captures `$?` first and returns it, or later hooks and prompt themes lose the exit status. The same discipline applies to the notification copy (`AlertCopy`) and the LED program text.
 
+### An agent's tool shell loads the snippet
+- **Symptom.** A command an agent runs shows as a job: violet beside the agent's colour, and a job that outlives the agent's session. Seen with KoffeeLid on this Mac: Codex's shell tool under its app-server daemon (`~/.codex/packages/app-server-daemon/…/bin/codex`), and an OpenCode tool's `zsh -c … sleep` under `opencode serve --service`, still running after a Ctrl+C in OpenCode's window.
+- **Why.** An agent's shell tool can run an interactive zsh, which reads `~/.zshrc` and so the snippet; and OpenCode's server, not its window, owns a tool's processes, so interrupting the session does not end them.
+- **Instead.** `Engine` drops a `job-begin` whose shell has an agent's process on its chain (`ProcWalk.hostingAgent(in:)`), logging `job ignored: shell <pid> runs under <agent>` once per shell: the agent's own session is what shows its work.
+- **Rule.** Do not filter by environment variables (each agent sets its own, none is promised) or in the snippet (it cannot see the process chain cheaply), and do not count a desktop app's window process as the agent, or a terminal pane the user opens in that app stops counting.
+
 ### `exec zsh` and `source ~/.zshrc` end the running job
 - **Symptom.** Right after `exec zsh` or `source ~/.zshrc` (the natural thing to type after Set Up Terminal Hook), the strip turns violet 5 s later and stays on a job nobody runs, until the next command in that shell, the shell's exit or the 2 h backstop.
 - **Why.** `preexec` began a job (labelled `exec` or `source`); then the snippet ran again, inside the `source` command or in the new image under the same pid, and its `typeset -g _mysidepulse_job=` at load emptied the job variable, so `precmd` ended nothing. The shell is alive and watched, so the kqueue never fires.

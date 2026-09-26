@@ -288,6 +288,16 @@ public enum ProcWalk {
 
     static func isClaudeProcess(_ info: ProcInfo) -> Bool { agent(of: info) == .claude }
 
+    /// The agent whose process runs anywhere on a shell's chain (the shell
+    /// first): the shell is that agent's tool shell, or one a script it
+    /// started opened, and its commands are the agent's own work, never a
+    /// terminal command. Its CLI or its server, never a desktop app's window
+    /// process: a terminal pane the user opens in an app is theirs. Nil for a
+    /// shell in a terminal, an editor, tmux or over ssh.
+    public static func hostingAgent(in chain: [ProcInfo]) -> AgentKind? {
+        chain.lazy.compactMap(agent(of:)).first
+    }
+
     /// Whether a live pid still looks like that agent's process. Used by
     /// the replay-time prune: a pid recycled by some unrelated process while
     /// the app was down would otherwise keep a dead session alive until the

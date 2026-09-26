@@ -83,6 +83,9 @@ final class Engine {
     /// session whose rollout, or a quiet Copilot session whose
     /// `events.jsonl`, cannot be read or holds no turn marker.
     private var warnedNoTranscript: Set<String> = []
+    /// The agent-hosted shells already logged as ignored; one line per
+    /// shell, the set kept small.
+    private var agentShells: Set<Int32> = []
     /// The Codex sessions with a question out to Codex's daemon, skipped by
     /// the periodic check until it is answered, and, after an answer that
     /// decided nothing, when each may be asked again: until then its rollout
@@ -1329,6 +1332,18 @@ final class Engine {
         case "job-begin":
             guard let job = request.job else {
                 return ControlResponse(ok: false, error: "job-begin needs a job")
+            }
+            // A shell under an agent runs that agent's work: its session
+            // shows it, a job never does.
+            if let pid = job.pid, let agent = ProcWalk.hostingAgent(in: ProcWalk.chain(from: pid)) {
+                if agentShells.count >= 64 { agentShells.removeAll() }
+                if agentShells.insert(pid).inserted {
+                    Log.app.notice("""
+                        job ignored: shell \(pid, privacy: .public) runs under \(agent.productName, privacy: .public) \
+                        — its commands are that agent's work
+                        """)
+                }
+                return ControlResponse(ok: true)
             }
             jobs.begin(id: job.id, pid: job.pid, slotPid: job.slotPid ?? job.pid,
                        label: job.label, hostBundleId: job.hostBundleId,

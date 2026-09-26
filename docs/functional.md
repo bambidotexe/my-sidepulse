@@ -635,6 +635,15 @@ The only other tool wired in is the terminal itself.
   interactively, every word after the shell's name being a flag (`zsh`,
   `bash -l`, `zsh -f -i`); a shell that runs a script (`bash build.sh`,
   `sh -c '…'`, `zsh script.zsh`) is a job like any other.
+- A shell under an agent is never a job: a shell with Claude Code, Codex (its
+  CLI or its app-server daemon), Copilot or OpenCode (its CLI or its server)
+  anywhere on its process chain is that agent's tool shell, or one a script
+  it started opened, and its commands are the agent's own work, which the
+  agent's session already shows. The app drops such a `job begin` when it
+  receives it, even after the agent's session has ended and the command runs
+  on (OpenCode's server keeps a tool's process running after a Ctrl+C in its
+  window). A terminal pane opened in a desktop app is the user's: the app's
+  own window process is not the agent.
 - A shell that re-reads the snippet (`source ~/.zshrc`), or is replaced by
   `exec` (`exec zsh`), ends the job it was running: an interactive shell
   loading the snippet ends its own slot's job as a cancellation (`job end
