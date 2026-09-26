@@ -208,9 +208,12 @@ public enum Trim {
         return String(path.prefix(K.pathMaxChars))
     }
 
+    /// The background shells' ids, the first sixteen of them: the shells are
+    /// picked out first, so no number of other entries ahead of a shell
+    /// pushes it out.
     static func taskIds(_ raw: Any) -> [String]? {
         guard let arr = raw as? [Any] else { return nil }
-        return arr.prefix(16).compactMap { item -> String? in
+        return Array(arr.compactMap { item -> String? in
             if let s = item as? String { return String(s.prefix(40)) }
             guard let d = item as? [String: Any] else { return nil }
             // Only background shells hold the animation. Subagents are tracked
@@ -222,7 +225,7 @@ public enum Trim {
                 if let v = d[key] as? String { return String(v.prefix(40)) }
             }
             return nil
-        }
+        }.prefix(16))
     }
 
     /// Encode with guaranteed cap via fixed shrink passes and terminal fallback.

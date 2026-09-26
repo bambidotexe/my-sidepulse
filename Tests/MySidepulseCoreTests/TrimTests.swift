@@ -57,6 +57,17 @@ final class TrimTests: XCTestCase {
                        "an entry with no type is an unknown shape — stay conservative and keep it")
     }
 
+    /// The shells are picked out first and sixteen of them kept: sixteen
+    /// helpers or monitors ahead of a shell never push it out of the line.
+    func testSixteenShellsAreKeptAfterTheOthersAreDropped() {
+        let others: [[String: Any]] = (0..<16).map { ["type": $0 % 2 == 0 ? "subagent" : "monitor", "id": "x\($0)"] }
+        let shells: [[String: Any]] = (0..<20).map { ["type": "shell", "id": "sh-\($0)"] }
+        let e = Trim.journalEvent(fromHookPayload: payload([
+            "hook_event_name": "Stop", "session_id": "s1", "background_tasks": others + shells,
+        ]), agent: .claude, loggedAt: t0)
+        XCTAssertEqual(e.backgroundTaskIds, (0..<16).map { "sh-\($0)" })
+    }
+
     func testBackgroundTaskWithNoUsableIdIsDropped() {
         let e = Trim.journalEvent(fromHookPayload: payload([
             "hook_event_name": "Stop", "session_id": "s1",

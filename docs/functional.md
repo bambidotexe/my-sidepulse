@@ -367,7 +367,8 @@ activity never answers a wait the main agent raised.
 
 A `Stop` means `done` only if nothing is still out. If the session has a live
 subagent or a background shell (from the payload's `background_tasks`, entries
-of type `shell`), the strip stays on `working` and the finish is *held*:
+of type `shell` or of no type, the first sixteen of them once the others are
+left out), the strip stays on `working` and the finish is *held*:
 
 - when the last subagent stops and the background set is empty, the turn
   becomes `done` `K.holdGraceSeconds` (90 s) later;
