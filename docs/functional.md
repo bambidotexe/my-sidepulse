@@ -666,11 +666,14 @@ The only other tool wired in is the terminal itself.
   CLI or its app-server daemon), Copilot or OpenCode (its CLI or its server)
   anywhere on its process chain is that agent's tool shell, or one a script
   it started opened, and its commands are the agent's own work, which the
-  agent's session already shows. The app drops such a `job begin` when it
-  receives it, even after the agent's session has ended and the command runs
-  on (OpenCode's server keeps a tool's process running after a Ctrl+C in its
-  window). A terminal pane opened in a desktop app is the user's: the app's
-  own window process is not the agent.
+  agent's session already shows. `job begin` and `run` write no line for
+  such a shell (`run` then writes no end either), and the app drops a begin
+  line from one when it reads it, live or replayed while the shell's pid
+  can be read, so a line an older CLI wrote begins nothing either, even
+  after the agent's session has ended and the command runs on (OpenCode's
+  server keeps a tool's process running after a Ctrl+C in its window). A
+  terminal pane opened in a desktop app is the user's: the app's own window
+  process is not the agent.
 - A shell that re-reads the snippet (`source ~/.zshrc`), or is replaced by
   `exec` (`exec zsh`), ends the job it was running: an interactive shell
   loading the snippet ends its own slot's job as a cancellation (`job end

@@ -7,6 +7,16 @@ import MySidepulseCore
 /// that cannot be written is dropped: the shell's probe ends a job whose end
 /// was lost.
 public enum JobJournal {
+    /// A begin line, unless `chain`, the watched process's ancestry, holds an
+    /// agent's process: a shell under an agent runs that agent's work, which
+    /// its session shows, and it is decided here while the shell is certainly
+    /// alive, so the journal never carries the line. True when written.
+    @discardableResult
+    public static func begin(_ event: JournalEvent, chain: [ProcWalk.ProcInfo], to journalURL: URL) -> Bool {
+        guard ProcWalk.hostingAgent(in: chain) == nil else { return false }
+        return append(event, to: journalURL)
+    }
+
     @discardableResult
     public static func append(_ event: JournalEvent, to journalURL: URL) -> Bool {
         try? FileManager.default.createDirectory(at: journalURL.deletingLastPathComponent(),

@@ -77,33 +77,47 @@ public enum JobLine {
     }
 }
 
+/// What one journal line did to the jobs.
+public enum JobLineEffect: Equatable {
+    /// Not a job's line: the session store's.
+    case notAJobLine
+    case applied
+    /// A begin from a shell with an agent's process on its chain, dropped.
+    case agentShell(pid: Int32, agent: AgentKind)
+}
+
 public struct JobStore {
     public private(set) var jobs: [String: Job] = [:]
     public init() {}
 
     /// Folds one journal line in, live or replayed, as of the line's own
-    /// stamp; true when the line is a job's (`.jobBegin`, `.jobEnd`, an
-    /// `.ack` naming a job), which the session store has no use for. A begin
-    /// with no slot takes its watched process as its slot, and one with no
-    /// grace the `run` default; an end with no status is a success.
+    /// stamp. A job's lines are `.jobBegin`, `.jobEnd` and an `.ack` naming a
+    /// job; the session store has no use for them. A begin with no slot takes
+    /// its watched process as its slot, and one with no grace the `run`
+    /// default; an end with no status is a success. A shell with an agent's
+    /// process on its chain runs that agent's work, which its session shows:
+    /// a begin whose watched pid `hostingAgent` places under an agent begins
+    /// nothing, whichever CLI wrote it.
     @discardableResult
-    public mutating func apply(_ e: JournalEvent) -> Bool {
+    public mutating func apply(_ e: JournalEvent,
+                               hostingAgent: (Int32) -> AgentKind? = { _ in nil }) -> JobLineEffect {
         switch e.event {
         case .jobBegin:
-            guard let id = e.jobId else { return true }
+            guard let id = e.jobId else { return .applied }
+            if let pid = e.jobPid, let agent = hostingAgent(pid) { return .agentShell(pid: pid, agent: agent) }
             begin(id: id, pid: e.jobPid, slotPid: e.jobSlotPid ?? e.jobPid, label: e.jobLabel,
                   hostBundleId: e.hostBundleId,
                   showAfterSeconds: e.jobShowAfterSeconds ?? K.jobShowAfterDefaultSeconds, now: e.loggedAt)
         case .jobEnd:
-            guard let id = e.jobId else { return true }
+            guard let id = e.jobId else { return .applied }
             end(id: id, exitCode: e.jobExitCode ?? 0, now: e.loggedAt)
         case .ack:
-            guard let id = e.jobId else { return false }
+            guard let id = e.jobId else { return .notAJobLine }
             if let since = e.ackStateSince { acknowledge(JobAckRecord(jobId: id, stateSince: since)) }
         default:
-            return false
+            return .notAJobLine
         }
-        return true
+        return .applied
     }
 
     public mutating func begin(id: String, pid: Int32?, slotPid: Int32?, label: String?,

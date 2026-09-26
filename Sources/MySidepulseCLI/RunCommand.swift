@@ -4,13 +4,16 @@ import MySidepulsePlatform
 
 /// A job's begin and end, each one journal line (`JobJournal`): no call to
 /// the app, so an app that is down, wedged or older never delays or fails
-/// the user's command, and a restart replays the line.
+/// the user's command, and a restart replays the line. No begin is written
+/// for a process with an agent on its chain (`JobJournal.begin`); true when
+/// one was.
 enum JobReport {
-    static func begin(id: String, pid: Int32, slotPid: Int32, label: String?, showAfter: Double) {
-        JobJournal.append(JobLine.begin(id: id, pid: pid, slotPid: slotPid, label: label,
-                                        showAfterSeconds: showAfter,
-                                        hostBundleId: ProcWalk.callerHostBundleId(), loggedAt: Date()),
-                          to: Paths.journal)
+    @discardableResult
+    static func begin(id: String, pid: Int32, slotPid: Int32, label: String?, showAfter: Double) -> Bool {
+        JobJournal.begin(JobLine.begin(id: id, pid: pid, slotPid: slotPid, label: label,
+                                       showAfterSeconds: showAfter,
+                                       hostBundleId: ProcWalk.callerHostBundleId(), loggedAt: Date()),
+                         chain: ProcWalk.chain(from: pid), to: Paths.journal)
     }
 
     static func end(id: String, exitCode: Int32) {
@@ -55,8 +58,9 @@ enum RunCommand {
         let id = UUID().uuidString
         // Watch this process; own the shell's slot. A second `mysidepulse run`
         // from the same shell then replaces this one instead of stacking.
-        JobReport.begin(id: id, pid: getpid(), slotPid: getppid(),
-                        label: label ?? command.joined(separator: " "), showAfter: showAfter)
+        // Under an agent nothing is written, the end included.
+        let journaled = JobReport.begin(id: id, pid: getpid(), slotPid: getppid(),
+                                        label: label ?? command.joined(separator: " "), showAfter: showAfter)
 
         let process = Process()
         // env, so the command is found on PATH exactly as the shell would.
@@ -65,7 +69,7 @@ enum RunCommand {
         do {
             try process.run()
         } catch {
-            JobReport.end(id: id, exitCode: 127)
+            if journaled { JobReport.end(id: id, exitCode: 127) }
             FileHandle.standardError.write(Data(
                 "mysidepulse run: cannot run \(command[0]): \(error.localizedDescription)\n".utf8))
             return 127
@@ -76,7 +80,7 @@ enum RunCommand {
         let code = process.terminationReason == .uncaughtSignal
             ? 128 + process.terminationStatus
             : process.terminationStatus
-        JobReport.end(id: id, exitCode: code)
+        if journaled { JobReport.end(id: id, exitCode: code) }
         return code
     }
 

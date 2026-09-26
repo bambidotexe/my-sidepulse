@@ -270,8 +270,9 @@ final class JobTests: XCTestCase {
     /// fork time against.
     func testABeginLineBeginsTheJobAtItsOwnStamp() {
         var s = JobStore()
-        XCTAssertTrue(s.apply(JobLine.begin(id: "zsh-900", pid: 900, slotPid: 900, label: "make",
-                                            showAfterSeconds: 5, hostBundleId: "com.apple.Terminal", loggedAt: at(0))))
+        XCTAssertEqual(s.apply(JobLine.begin(id: "zsh-900", pid: 900, slotPid: 900, label: "make",
+                                             showAfterSeconds: 5, hostBundleId: "com.apple.Terminal", loggedAt: at(0))),
+                       .applied)
         let job = s.jobs["zsh-900"]
         XCTAssertEqual(job?.state, .running); XCTAssertEqual(job?.stateSince, at(0))
         XCTAssertEqual(job?.showAfter, at(5)); XCTAssertEqual(job?.label, "make")
@@ -295,7 +296,7 @@ final class JobTests: XCTestCase {
     func testAnEndLineCarriesTheOutcome() {
         for (code, state) in [(Int32(0), JobState?.some(.succeeded)), (1, .failed), (137, .failed), (130, nil), (131, nil)] {
             var s = store("zsh-900", pid: 900)
-            XCTAssertTrue(s.apply(JobLine.end(id: "zsh-900", exitCode: code, loggedAt: at(7))))
+            XCTAssertEqual(s.apply(JobLine.end(id: "zsh-900", exitCode: code, loggedAt: at(7))), .applied)
             XCTAssertEqual(s.jobs["zsh-900"]?.state, state, "exit \(code)")
             if state != nil { XCTAssertEqual(s.jobs["zsh-900"]?.stateSince, at(7)) }
         }
@@ -365,7 +366,7 @@ final class JobTests: XCTestCase {
         XCTAssertNil(ack.sessionId, "no session's acknowledgement")
 
         var replay = JobStore()
-        for line in [begin, end, ack] { XCTAssertTrue(replay.apply(line)) }
+        for line in [begin, end, ack] { XCTAssertEqual(replay.apply(line), .applied) }
         XCTAssertEqual(replay.displayable, [], "seen before the restart, seen after it")
 
         var later = JobStore()
@@ -379,16 +380,45 @@ final class JobTests: XCTestCase {
         XCTAssertEqual(running.displayable.map(\.state), [.running], "a job in flight is never acknowledged")
     }
 
+    /// A begin line from a shell with an agent on its chain is that agent's
+    /// work, live or replayed: no job, and the shell and agent come back for
+    /// the log. Lines an older CLI wrote are dropped the same way. The chain
+    /// is read from the line's watched pid; a line with none is not asked.
+    func testABeginFromAShellUnderAnAgentIsDropped() {
+        var asked: [Int32] = []
+        let reader: (Int32) -> AgentKind? = { pid in asked.append(pid); return pid == 900 ? .opencode : nil }
+        var s = JobStore()
+        let underAgent = JobLine.begin(id: "zsh-900", pid: 900, slotPid: 900, label: "sleep", showAfterSeconds: 5,
+                                       hostBundleId: nil, loggedAt: at(0))
+        XCTAssertEqual(s.apply(underAgent, hostingAgent: reader), .agentShell(pid: 900, agent: .opencode))
+        XCTAssertTrue(s.jobs.isEmpty)
+        XCTAssertEqual(s.apply(JobLine.end(id: "zsh-900", exitCode: 1, loggedAt: at(9)), hostingAgent: reader), .applied)
+        XCTAssertTrue(s.jobs.isEmpty, "its end finds nothing to end")
+
+        var wrapper = JobLine.begin(id: "u1", pid: 1001, slotPid: 900, label: "make", showAfterSeconds: 0,
+                                    hostBundleId: nil, loggedAt: at(10))
+        XCTAssertEqual(s.apply(wrapper, hostingAgent: reader), .applied)
+        XCTAssertEqual(s.jobs["u1"]?.state, .running, "a terminal's shell is the user's")
+        wrapper.jobId = "u2"; wrapper.jobPid = nil
+        XCTAssertEqual(s.apply(wrapper, hostingAgent: reader), .applied)
+        XCTAssertEqual(asked, [900, 1001], "the chain is read from the watched pid, and only with one")
+
+        var prompt = JournalEvent(loggedAt: at(0), event: .userPromptSubmit)
+        prompt.sessionId = "s1"
+        XCTAssertEqual(s.apply(prompt, hostingAgent: reader), .notAJobLine)
+        XCTAssertEqual(asked.count, 2, "a session's line never walks a chain")
+    }
+
     /// Only the job lines, and an ack naming a job, are the job store's; a
     /// session's lines are not, and the session store ignores the job lines.
     func testTheJobLinesAreTheJobStoresAlone() {
         var jobs = JobStore()
         var prompt = JournalEvent(loggedAt: at(0), event: .userPromptSubmit)
         prompt.sessionId = "s1"
-        XCTAssertFalse(jobs.apply(prompt))
+        XCTAssertEqual(jobs.apply(prompt), .notAJobLine)
         var sessionAck = JournalEvent(loggedAt: at(0), event: .ack)
         sessionAck.sessionId = "s1"; sessionAck.ackStateSince = at(0)
-        XCTAssertFalse(jobs.apply(sessionAck))
+        XCTAssertEqual(jobs.apply(sessionAck), .notAJobLine)
         XCTAssertTrue(jobs.jobs.isEmpty)
 
         var sessions = SessionStore()

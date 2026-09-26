@@ -276,10 +276,15 @@ final class Engine {
     }
 
     /// One journal line, live or replayed: a job's to the job store, every
-    /// other to the session store. A shell under an agent runs that agent's
-    /// work: its session shows it, a job never does.
+    /// other to the session store. A begin from a shell under an agent is
+    /// dropped there (`JobStore.apply`), and logged once per shell.
     private func ingest(_ event: JournalEvent) {
-        if event.event == .jobBegin, let pid = event.jobPid, let agent = hostingAgent(ofShell: pid) {
+        switch jobs.apply(event, hostingAgent: { hostingAgent(ofShell: $0) }) {
+        case .notAJobLine:
+            store.apply(event)
+        case .applied:
+            break
+        case .agentShell(let pid, let agent):
             if agentShells.count >= 64 { agentShells.removeAll() }
             if agentShells.insert(pid).inserted {
                 Log.app.notice("""
@@ -287,9 +292,7 @@ final class Engine {
                     — its commands are that agent's work
                     """)
             }
-            return
         }
-        if !jobs.apply(event) { store.apply(event) }
     }
 
     private func hostingAgent(ofShell pid: Int32) -> AgentKind? {

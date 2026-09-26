@@ -104,7 +104,10 @@ brightness / preview changes, wake from sleep, and the deadline timer.
 
 Every journal line, live or replayed, goes through `Engine.ingest`: a job's
 line (`JobBegin`, `JobEnd`, an ack naming a job) to `JobStore.apply`, any
-other to `SessionStore.apply`. A process exit is applied only after the
+other to `SessionStore.apply`. `JobStore.apply` is handed the walk that
+names the agent a pid runs under (`ProcWalk.hostingAgent(in:)`, read once per
+shell while the journal replays) and begins nothing for a shell under an
+agent. A process exit is applied only after the
 tailer has caught up (`JournalTailer.catchUp`): a `mysidepulse run` wrapper
 appends its `JobEnd` and then exits, and the exit's kqueue event can reach the
 main queue first.

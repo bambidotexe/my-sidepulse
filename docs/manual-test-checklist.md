@@ -155,7 +155,7 @@ job's violet shows. Watch the log:
 |---|---|---|
 | [ ] | `ps -o pid,pgid,tpgid,comm -p $$` at the prompt, then the same for that shell from another tab while `sleep 60` runs in it | At the prompt `pgid` and `tpgid` are equal; while `sleep` runs `tpgid` is the `sleep`'s group, in Terminal and in every other terminal in use |
 | [ ] | `exec zsh`, then type nothing for 20 s; the same with `source ~/.zshrc` | The strip never turns violet, and `mysidepulse status` lists no running job |
-| [ ] | Ask Codex (or OpenCode) to run `sleep 30` | The strip shows the agent working and never violet; `mysidepulse status` lists no job, and the log has `job ignored: shell <pid> runs under Codex`. A `sleep 30` typed in Terminal meanwhile still turns violet |
+| [ ] | Ask Codex (or OpenCode) to run `sleep 30` | The strip shows the agent working and never violet; `mysidepulse status` lists no job, and the journal holds no `JobBegin` for that shell (`job ignored: shell <pid> runs under Codex` shows in the log only for a line an older CLI wrote). A `sleep 30` typed in Terminal meanwhile still turns violet |
 | [ ] | `sleep 300`, then close the tab | The violet goes at once |
 | [ ] | `sudo -v`, then `sudo sleep 20`; then `sudo -i` and `exit` | `sudo sleep 20` shows, labelled `sleep` in `mysidepulse status`; `sudo -i` never shows |
 | [ ] | A lost end: `sleep 20; _mysidepulse_job=` (the assignment empties the job the hook would end) | Within about 20 s of the prompt coming back the violet goes, with no green, and the log has `job zsh-<pid> ended without a hook (shell at its prompt)` |
