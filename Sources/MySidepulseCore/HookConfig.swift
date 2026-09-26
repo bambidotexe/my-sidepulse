@@ -270,7 +270,7 @@ public enum HookConfig {
     /// the hook once per forwarded event, one at a time in event order, 2 s
     /// at most each, with one small JSON object on its stdin that holds no
     /// text, input, output, answer or path. A subagent's events name its top
-    /// session as `parent_id`, however deep it runs. It never throws and never
+    /// session as `parent_id`, however deep it runs, its parent deleted or not. It never throws and never
     /// blocks OpenCode. Tested against a real OpenCode 2.0.17 server.
     public static func opencodePlugin(cliPath: String) -> String {
         let command = self.command(cliPath: cliPath, agent: .opencode)
@@ -331,7 +331,8 @@ public enum HookConfig {
         }
 
         // The top session a subagent's session runs under, however deep, or undefined for a top session.
-        // A cycle or a chain past DEPTH stops the walk where it is.
+        // A cycle or a chain past DEPTH stops the walk where it is. A deleted session keeps its link, so a
+        // subagent that outlives its parent still finds the top; LIMIT bounds the map.
         function top(state, sessionID) {
           const visited = new Set([sessionID])
           let current = sessionID
@@ -354,9 +355,6 @@ public enum HookConfig {
           if (parent) out.parent_id = parent
 
           switch (type) {
-            case "session.deleted":
-              if (sessionID) state.parents.delete(sessionID)
-              break
             case "session.inbox.enqueued":
               if (data.item?.type !== "user") return undefined
               out.delivery = text(data.item.delivery) ?? null

@@ -164,6 +164,10 @@ public struct SessionStore {
             applyVerdict(e, sessionId: sid)
             return
         }
+        // A helper's end can only end something: for a session no longer
+        // known (an OpenCode subagent that outlived its deleted top
+        // session) it would invent an idle one.
+        if sessions[sid] == nil, e.agentId != nil, e.event == .subagentStop { return }
         var s = sessions[sid] ?? Session(id: sid, stateSince: now, lastEventAt: now)
         s.lastEventAt = now
         if let agent = e.agent { s.agent = agent }

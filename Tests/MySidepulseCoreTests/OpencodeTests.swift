@@ -61,6 +61,7 @@ final class OpencodeTests: XCTestCase {
         XCTAssertTrue(source.contains("function top(state, sessionID)"))
         XCTAssertTrue(source.contains("out.parent_id = parent"))
         XCTAssertFalse(source.contains("out.parent_id = data.parentID"))
+        XCTAssertFalse(source.contains("parents.delete"), "a deleted session keeps its link to its parent")
     }
 
     func testAFileIsOursByItsMarkerAndIdAndSetUpWhenItIsWhatThisBundleWrites() {
@@ -252,6 +253,38 @@ final class OpencodeTests: XCTestCase {
         XCTAssertEqual(store.sessions["ses_top"]?.state, .done)
     }
 
+    /// The top session deleted before its subagents end: their ends invent
+    /// no session.
+    func testASubagentThatOutlivesItsTopSessionInventsNoSession() {
+        var store = SessionStore()
+        apply(&store, [
+            oc("session.created", 0),
+            oc("session.inbox.enqueued", 0.1),
+            oc("session.created", 1, session: "ses_child", parent: "ses_top"),
+            oc("session.deleted", 2),
+        ])
+        XCTAssertNil(store.sessions["ses_top"])
+        apply(&store, [
+            oc("session.execution.interrupted", 3, session: "ses_child", parent: "ses_top", ["reason": "user"]),
+            oc("session.deleted", 4, session: "ses_child", parent: "ses_top"),
+        ])
+        XCTAssertTrue(store.sessions.isEmpty, "a helper's end creates nothing")
+    }
+
+    /// A standalone server inside OpenCode.app records the app as its host.
+    /// While the app is not a running app with windows, that host is unknown
+    /// and the alert is seen from any front app, the terminal included.
+    func testAHostAppThatIsNotRunningAcknowledgesOnPresence() {
+        var store = SessionStore()
+        var created = oc("session.inbox.enqueued", 0)!
+        created.hostBundleId = "ai.opencode.desktop"
+        store.apply(created)
+        apply(&store, [oc("session.execution.succeeded", 1)])
+        let acked = store.acknowledgeAlerts(hostBundleId: "com.apple.Terminal",
+                                            hostIsFocusable: { $0 == "com.apple.Terminal" })
+        XCTAssertEqual(acked.map(\.sessionId), ["ses_top"])
+    }
+
     /// The question tool's form is a question; its reply is the answer. A
     /// subagent's question holds its top session's turn like a permission,
     /// and the subagent's next event clears it.
@@ -263,6 +296,10 @@ final class OpencodeTests: XCTestCase {
             oc("form.created", 1.01, ["question": true]),
         ])
         XCTAssertEqual(store.sessions["ses_top"]?.state, .waiting(.question))
+        let pushes = store.tick(now: t0.addingTimeInterval(1.01 + K.notifyDebounceSeconds))
+        XCTAssertEqual(pushes.map(\.kind), [.needsYou(.question)])
+        XCTAssertEqual(pushes.map { AlertCopy.title(for: $0.agent) }, ["OpenCode"])
+        XCTAssertEqual(pushes.map { AlertCopy.message(for: $0.kind) }, [AlertCopy.message(for: .needsYou(.question))])
         apply(&store, [oc("form.replied", 20)])
         XCTAssertEqual(store.sessions["ses_top"]?.state, .working)
         apply(&store, [oc("form.created", 21, ["question": false])])

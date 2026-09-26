@@ -129,6 +129,18 @@ final class HookCommandTests: XCTestCase {
         let flagged = try record(.claude)
         XCTAssertEqual(flagged.agent, .claude, "the flag says who fired it")
         XCTAssertNil(flagged.agentPid, "and no Claude process is in the chain")
+
+        let underOpenCode = [
+            proc(700, 650, "node", "/opt/homebrew/bin/node"),
+            proc(650, 1, "opencode", "/Users/u/.opencode/bin/opencode"),
+        ]
+        try? FileManager.default.removeItem(at: url)
+        XCTAssertEqual(HookCommand.run(input: payload, environment: [:], journalURL: url, now: Date(),
+                                       origin: HookCommand.origin(for: underOpenCode, agent: nil, input: payload)), 0)
+        let bareUnderOpenCode = try firstLine(url)
+        XCTAssertEqual(bareUnderOpenCode.agent, .opencode)
+        XCTAssertEqual(bareUnderOpenCode.agentPid, 650)
+        XCTAssertNil(bareUnderOpenCode.tty)
     }
 
     /// OpenCode's payload names its server; it is taken when it is an
@@ -218,12 +230,14 @@ final class HookCommandTests: XCTestCase {
     /// tool: every form, bad input or none, exits 0.
     func testEveryFormExitsZero() {
         let url = tempJournal()
+        let home = url.deletingLastPathComponent().appendingPathComponent("home").path
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         for agent in [nil, AgentKind.claude, .codex, .copilot, .opencode] {
             for event in [nil, "agentStop", "no-such-event"] {
                 for input in ["", "{oops", "[]", #"{"sessionId":"x"}"#] {
                     XCTAssertEqual(HookCommand.run(input: Data(input.utf8), environment: [:], journalURL: url,
-                                                   now: Date(), origin: nil, agent: agent, event: event), 0)
+                                                   now: Date(), origin: nil, agent: agent, event: event,
+                                                   home: home, directoryExists: { _ in false }), 0)
                 }
             }
         }

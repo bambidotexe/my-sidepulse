@@ -24,9 +24,9 @@ and needs you are one colour whoever raised them, because they say that the
 Mac wants the user, not which agent does. When nobody is at the machine, the
 same finished / needs-you alerts go to a phone through ntfy, titled with the
 agent's name. Around that core it also shows terminal jobs, the battery, and a
-few decorative effects. It reads the agents through hooks, Claude Code's and
-Codex's (§4); nothing sets up Copilot's or OpenCode's, so their sessions do not
-reach the strip. It never talks to any agent and sends nothing but the ntfy
+few decorative effects. It reads the agents through their hooks (§4): Claude
+Code's and Codex's hook entries, Copilot's hook file and OpenCode's plugin. It
+never talks to any agent and sends nothing but the ntfy
 pushes off the machine. Everything it shows, and everything it
 pushes, is in English or French, chosen from the system language (§15).
 
@@ -204,8 +204,8 @@ deleted, within a second, with no registration and no trust step. It runs
 `<bundle>/Contents/MacOS/mysidepulse hook --agent opencode` once for each
 OpenCode event it forwards, one at a time in OpenCode's order, 2 s at most
 each, with one small JSON object on the hook's stdin: the event's type, its
-session, the top session a subagent's session runs under (however deep), the
-server's pid, and a few words (a tool's name, a permission's action, the
+session, the top session a subagent's session runs under (however deep, and
+even once a session between them is deleted), the server's pid, and a few words (a tool's name, a permission's action, the
 reply, whether a form is a question, a reason); never a prompt, an answer, a
 tool's input or output, or a path. OpenCode is on this Mac when
 `~/.config/opencode`, `~/.opencode` or `/Applications/OpenCode.app` exists.
@@ -281,7 +281,10 @@ the next `postToolUse` is the answer.
 | `session.deleted` | `SessionEnd` | `SubagentStop` |
 | anything else, or an event of no session | nothing | nothing |
 
-"Nothing" writes no line. OpenCode names no turn. `permission.asked` fires
+"Nothing" writes no line. OpenCode names no turn. A subagent's question
+raises its top session's `waiting(permission)`, not `waiting(question)`: it
+goes the way of a subagent's permission request, so the subagent's next event
+clears it. `permission.asked` fires
 even for a permission granted at once, whose reply comes about 3 ms later:
 the settle keeps that wait off the strip and its push is disarmed with it.
 
@@ -306,7 +309,7 @@ the settle keeps that wait off the strip and its push is disarmed with it.
 | `StopFailure` | `waiting(error)` |
 | `Interrupt` (Codex and OpenCode) | `idle`: the user stopped the turn, dialog or not; the turn delivered nothing, its helpers and background shells are forgotten, and the strip goes dark with no alert |
 | `SubagentStart`, other subagent events | mark that subagent live |
-| `SubagentStop` | that subagent is no longer live |
+| `SubagentStop` | that subagent is no longer live; for a session no longer known (an OpenCode subagent that outlives its deleted top session), nothing, and no session is made for it |
 | `SessionEnd` | the session is forgotten |
 
 Every event of a turn carries the turn's id: Claude Code's `prompt_id`,
@@ -433,7 +436,7 @@ asked which threads it holds (`thread/loaded/list`, never `thread/read`): a
 working hosted session whose thread is missing from the complete list has
 nothing running and is decided by its rollout at once, dark when the rollout
 says nothing, while a partial list or no answer decides nothing; then every
-working session of either agent is checked at once, with no quiet gate,
+working Claude Code or Codex session is checked at once, with no quiet gate,
 before the strip is painted. The paint waits for the daemon's answer, 1 s at
 most.
 
@@ -1271,8 +1274,9 @@ but the reply to an update check and the download a click on Update asked
 for; fetch or install an update by itself (an automatic check only announces a
 release);
 read prompts, tool inputs or tool outputs (the hook drops them before writing);
-change anything in Claude Code or in Codex beyond its own hook entries, or in
-`~/.zshrc` beyond its own block; trust its hooks in Codex; push for terminal
+change anything in Claude Code or in Codex beyond its own hook entries, in
+GitHub Copilot beyond its own hook file, in OpenCode beyond its own plugin, or
+in `~/.zshrc` beyond its own block; trust its hooks in Codex; push for terminal
 jobs; identify which session an alert belongs to on the strip, beyond the
 agent's colour while it works.
 
