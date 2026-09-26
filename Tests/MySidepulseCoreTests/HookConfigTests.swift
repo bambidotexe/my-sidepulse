@@ -141,4 +141,47 @@ final class HookConfigTests: XCTestCase {
         XCTAssertNil(out["hooks"], "must not invent an empty hooks object")
         XCTAssertEqual(out["model"] as? String, "claude-fable-5")
     }
+
+    // MARK: Codex
+
+    let codexCmd = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"
+
+    /// A real hooks.json of Codex's: a description at the root and a
+    /// stranger's hook.
+    var codexFixture: [String: Any] {
+        ["description": "mine",
+         "hooks": ["Stop": [["matcher": "*", "hooks": [["type": "command", "command": "say done"]]]]]]
+    }
+
+    /// Codex reads a missing matcher as match-all and hashes the entry for its
+    /// trust, so its entry carries none; it caps SessionEnd and Interrupt at
+    /// 3 s and warns above that.
+    func testACodexEntryHasNoMatcherAndTheShortTimeoutsCodexCaps() {
+        let out = HookConfig.install(into: [:], command: codexCmd, agent: .codex)
+        for event in HookConfig.codexEvents {
+            let groups = (out["hooks"] as? [String: Any])?[event] as? [[String: Any]] ?? []
+            XCTAssertEqual(groups.count, 1, event)
+            XCTAssertNil(groups[0]["matcher"], event)
+            let item = (groups[0]["hooks"] as? [[String: Any]])?.first
+            XCTAssertEqual(item?["type"] as? String, "command", event)
+            XCTAssertEqual(item?["command"] as? String, codexCmd, event)
+            XCTAssertEqual(item?["timeout"] as? Int, event == "SessionEnd" || event == "Interrupt" ? 3 : 5, event)
+            XCTAssertEqual(HookConfig.timeout(for: event, agent: .codex), item?["timeout"] as? Int, event)
+        }
+        XCTAssertEqual(HookConfig.timeout(for: "SessionEnd", agent: .claude), 5, "Claude Code's stay at 5 s")
+    }
+
+    func testCodexInstallsItsTwelveEventsAfterForeignGroupsAndKeepsTheDescription() {
+        let out = HookConfig.install(into: codexFixture, command: codexCmd, agent: .codex)
+        for event in HookConfig.codexEvents {
+            XCTAssertEqual(HookConfig.installedCommand(in: out, event: event), codexCmd, event)
+        }
+        XCTAssertEqual(commands(out, "Stop"), ["say done", codexCmd],
+                       "ours goes last, so the stranger's trust key keeps its index")
+        XCTAssertEqual(HookConfig.installedGroupIndex(in: out, event: "Stop", command: codexCmd), 1)
+        XCTAssertEqual(HookConfig.installedGroupIndex(in: out, event: "PreToolUse", command: codexCmd), 0)
+        XCTAssertNil(HookConfig.installedGroupIndex(in: out, event: "Notification", command: codexCmd))
+        XCTAssertNil(HookConfig.installedGroupIndex(in: out, event: "Stop", command: cmd), "another command")
+        XCTAssertEqual(out["description"] as? String, "mine")
+    }
 }

@@ -37,8 +37,16 @@ final class CodexPlatformTests: XCTestCase {
         XCTAssertEqual(HookInstaller.codexHooksInstalled(cliPath: cli, hooks: hooks), 12)
 
         let root = try XCTUnwrap(try SettingsFile.load(at: hooks))
-        let stop = try XCTUnwrap((root["hooks"] as? [String: Any])?["Stop"] as? [Any])
+        let stop = try XCTUnwrap((root["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])
         XCTAssertEqual(stop.count, 2, "the other hook stays; the migrated bare entry is replaced, not doubled")
+        // Ours goes after the other, with no matcher: Codex hashes the entry
+        // for its trust, and caps SessionEnd and Interrupt at 3 s.
+        XCTAssertEqual(stop[0]["matcher"] as? String, "*")
+        XCTAssertNil(stop[1]["matcher"])
+        XCTAssertEqual((stop[1]["hooks"] as? [[String: Any]])?.first?["timeout"] as? Int, 5)
+        let interrupt = try XCTUnwrap((root["hooks"] as? [String: Any])?["Interrupt"] as? [[String: Any]])
+        XCTAssertNil(interrupt[0]["matcher"])
+        XCTAssertEqual((interrupt[0]["hooks"] as? [[String: Any]])?.first?["timeout"] as? Int, 3)
         let text = try String(contentsOf: hooks, encoding: .utf8)
         XCTAssertFalse(text.contains("\(cli) hook\""), text)
         XCTAssertTrue(text.contains("Interrupt"))
@@ -200,7 +208,7 @@ final class CodexPlatformTests: XCTestCase {
 
     func testTheCodexLineIsAWordUntilSetUpAndACheckOnceItIs() {
         let command = "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex"
-        let full = HookConfig.install(into: [:], command: command, events: HookConfig.codexEvents)
+        let full = HookConfig.install(into: [:], command: command, agent: .codex)
 
         // Nothing of ours at hooks.json passes with a "not set up" sentence, whether or not Codex itself
         // is on this Mac.
@@ -227,7 +235,7 @@ final class CodexPlatformTests: XCTestCase {
         XCTAssertTrue(codexLine(missing).hasPrefix("[FAIL]") && codexLine(missing).contains("Interrupt"))
 
         let stale = HookConfig.install(into: [:], command: "/gone/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
-                                       events: HookConfig.codexEvents)
+                                       agent: .codex)
         let staleReport = Doctor.run(probes(codexRoot: stale))
         XCTAssertTrue(codexLine(staleReport).hasPrefix("[FAIL]") && codexLine(staleReport).contains("missing binary"))
         XCTAssertEqual(Doctor.run(probes(codexRoot: full)).checks.count, 12,

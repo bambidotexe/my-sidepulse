@@ -81,7 +81,7 @@ final class DoctorTests: XCTestCase {
         claudeNotSetUp.codexHooksRoot = {
             HookConfig.install(into: [:],
                                command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
-                               events: HookConfig.codexEvents)
+                               agent: .codex)
         }
         for language in Language.allCases {
             let saved = Loc.language
@@ -249,7 +249,7 @@ final class DoctorTests: XCTestCase {
         p.codexHooksRoot = {
             HookConfig.install(into: [:],
                                command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
-                               events: HookConfig.codexEvents)
+                               agent: .codex)
         }
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[OK]") && $0.contains("hooks installed") },
@@ -262,7 +262,7 @@ final class DoctorTests: XCTestCase {
         p.codexHooksRoot = {
             HookConfig.install(into: [:],
                                command: "/Applications/MySidepulse.app/Contents/MacOS/mysidepulse hook --agent codex",
-                               events: HookConfig.codexEvents)
+                               agent: .codex)
         }
         let report = Doctor.run(p)
         XCTAssertTrue(report.lines.contains { $0.hasPrefix("[FAIL]") && $0.contains("hooks installed") },

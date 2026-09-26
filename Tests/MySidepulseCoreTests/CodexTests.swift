@@ -478,14 +478,16 @@ final class CodexTests: XCTestCase {
             XCTAssertEqual(HookConfig.binary(ofCommand: command), cli)
         }
         let root = HookConfig.install(into: [:], command: HookConfig.command(cliPath: cli, agent: .codex),
-                                      events: HookConfig.codexEvents)
+                                      agent: .codex)
         XCTAssertEqual(HookConfig.installedCommand(in: root, event: "Interrupt"), "\(cli) hook --agent codex")
         XCTAssertNil(HookConfig.installedCommand(in: root, event: "Notification"), "not a Codex event")
         // Codex's own import copies Claude's bare entries into hooks.json;
         // a set-up replaces them with the entry that names Codex.
-        let migrated = HookConfig.install(into: [:], command: "\(cli) hook", events: ["Stop"])
+        let migrated: [String: Any] = ["hooks": ["Stop": [
+            ["matcher": "*", "hooks": [["type": "command", "command": "\(cli) hook", "timeout": 5]]],
+        ]]]
         let fixed = HookConfig.install(into: migrated, command: "\(cli) hook --agent codex",
-                                       events: HookConfig.codexEvents)
+                                       agent: .codex)
         let stop = (fixed["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]]
         XCTAssertEqual(stop?.count, 1, "one entry of ours, never the migrated one beside it")
         XCTAssertNil(HookConfig.uninstall(from: fixed)["hooks"].flatMap { ($0 as? [String: Any])?["Stop"] })

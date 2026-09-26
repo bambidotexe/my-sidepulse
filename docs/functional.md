@@ -180,7 +180,10 @@ The same command subscribes `<bundle>/Contents/MacOS/mysidepulse hook --agent co
 to the 12 Codex events in `~/.codex/hooks.json`, which holds the same shape
 under the same `hooks` key: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
 `PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop`, `SubagentStart`,
-`SubagentStop`, `PreCompact`, `PostCompact`, `Interrupt`. Codex is on this Mac
+`SubagentStop`, `PreCompact`, `PostCompact`, `Interrupt`. A Codex entry has no
+matcher (Codex reads a missing one as match-all) and a timeout of 5 s, 3 s for
+`SessionEnd` and `Interrupt`, the most Codex allows them; each goes after every
+group already in the event's list. Codex is on this Mac
 when `~/.codex` exists. **Codex runs a hook only once it has been trusted in
 Codex itself**, which MySidepulse cannot do for it; the group's note says so.
 

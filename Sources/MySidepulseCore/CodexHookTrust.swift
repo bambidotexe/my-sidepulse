@@ -74,6 +74,28 @@ public enum CodexHookTrust {
         return out + "\""
     }
 
+    /// The entries for our hooks as they sit in the hooks file's object: one
+    /// per Codex event whose group holds `command`.
+    public static func entries(hooksFile: String, root: [String: Any], command: String) -> [Entry] {
+        HookConfig.codexEvents.compactMap { event in
+            guard let group = HookConfig.installedGroupIndex(in: root, event: event, command: command) else {
+                return nil
+            }
+            return Entry(key: key(hooksFile: hooksFile, event: event, groupIndex: group),
+                         hash: hash(event: event, command: command,
+                                    timeout: HookConfig.timeout(for: event, agent: .codex)))
+        }
+    }
+
+    /// Every hash our hooks can carry: a state table holding one is ours
+    /// whatever its key says, which is how a table left under a key from an
+    /// earlier layout of the hooks file is recognised.
+    public static func hashes(command: String) -> Set<String> {
+        Set(HookConfig.codexEvents.map {
+            hash(event: $0, command: command, timeout: HookConfig.timeout(for: $0, agent: .codex))
+        })
+    }
+
     // MARK: config.toml
 
     /// What one state table says.

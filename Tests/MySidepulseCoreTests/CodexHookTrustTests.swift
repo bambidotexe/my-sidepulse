@@ -55,20 +55,33 @@ final class CodexHookTrustTests: XCTestCase {
         XCTAssertEqual(CodexHookTrust.json("x\n\t\u{01}"), #""x\n\t\u0001""#)
     }
 
+    /// Our entries in a hooks file where a stranger's Stop group comes first.
+    var installed: [String: Any] {
+        HookConfig.install(into: ["hooks": ["Stop": [["hooks": [["type": "command", "command": "say done"]]]]]],
+                           command: cmd, agent: .codex)
+    }
+
+    func testEntriesFollowOurGroupsIndices() {
+        let entries = CodexHookTrust.entries(hooksFile: file, root: installed, command: cmd)
+        XCTAssertEqual(entries.count, 12)
+        XCTAssertEqual(entries.first { $0.key.contains(":stop:") }?.key, "/Users/me/.codex/hooks.json:stop:1:0")
+        XCTAssertEqual(entries.first { $0.key.contains(":pre_tool_use:") }?.key,
+                       "/Users/me/.codex/hooks.json:pre_tool_use:0:0")
+        XCTAssertEqual(entries.first { $0.key.contains(":session_end:") }?.hash,
+                       CodexHookTrust.hash(event: "SessionEnd", command: cmd, timeout: 3))
+        XCTAssertEqual(entries.first { $0.key.contains(":stop:") }?.hash,
+                       CodexHookTrust.hash(event: "Stop", command: cmd, timeout: 5))
+        XCTAssertEqual(CodexHookTrust.hashes(command: cmd).count, 12)
+        XCTAssertEqual(Set(entries.map(\.hash)), CodexHookTrust.hashes(command: cmd))
+        XCTAssertTrue(CodexHookTrust.entries(hooksFile: file, root: [:], command: cmd).isEmpty)
+    }
+
     // MARK: config.toml
 
     /// Our twelve entries in a hooks file where a stranger's Stop group comes
-    /// first: our Stop key ends in `:1:0`, every other in `:0:0`; SessionEnd
-    /// and Interrupt run 3 s, the rest 5 s.
-    var entries: [CodexHookTrust.Entry] {
-        HookConfig.codexEvents.map { event in
-            CodexHookTrust.Entry(
-                key: CodexHookTrust.key(hooksFile: file, event: event, groupIndex: event == "Stop" ? 1 : 0),
-                hash: CodexHookTrust.hash(event: event, command: cmd,
-                                          timeout: event == "SessionEnd" || event == "Interrupt" ? 3 : 5))
-        }
-    }
-    var hashes: Set<String> { Set(entries.map(\.hash)) }
+    /// first: our Stop key ends in `:1:0`, every other in `:0:0`.
+    var entries: [CodexHookTrust.Entry] { CodexHookTrust.entries(hooksFile: file, root: installed, command: cmd) }
+    var hashes: Set<String> { CodexHookTrust.hashes(command: cmd) }
     /// A real config.toml: a comment, a multi-line string holding a
     /// header-looking line, tables, the trust of the stranger's Stop hook
     /// (the first group of that event, so `:stop:0:0`).

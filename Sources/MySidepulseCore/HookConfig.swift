@@ -74,8 +74,33 @@ public enum HookConfig {
         return String(command[..<range.lowerBound])
     }
 
+    /// Seconds the agent gives the hook: 5, but 3 for Codex's `SessionEnd`
+    /// and `Interrupt`, which Codex caps at 3 s, warning at every start about
+    /// a larger value and hashing it as 3 for its trust.
+    public static func timeout(for event: String, agent: AgentKind) -> Int {
+        agent == .codex && (event == "SessionEnd" || event == "Interrupt") ? 3 : 5
+    }
+
+    /// The group written for one event: one command hook, and for Claude
+    /// Code a match-all matcher. `matcher` selects which tools a
+    /// PreToolUse/PostToolUse group fires for; a matcher-less group is
+    /// accepted by Claude Code for the events with nothing to match on, but
+    /// "*" is what its docs prescribe for every event, the shape known to
+    /// work. Codex reads a missing matcher as match-all and hashes the entry
+    /// for its trust (`CodexHookTrust`), so its entry carries none.
+    public static func entry(for event: String, command: String, agent: AgentKind) -> [String: Any] {
+        var group: [String: Any] = [
+            "hooks": [["type": "command", "command": command, "timeout": timeout(for: event, agent: agent)]],
+        ]
+        if agent != .codex { group["matcher"] = "*" }
+        return group
+    }
+
+    /// Our entry for each of the agent's events, appended after every group
+    /// already there: Codex names a hook's trust after its group's index, so
+    /// a stranger's group keeps its index and its trust.
     public static func install(into root: [String: Any], command: String,
-                               events: [String] = events) -> [String: Any] {
+                               agent: AgentKind = .claude) -> [String: Any] {
         var root = root
         // A `hooks` value that is not an object is a file we do not
         // understand. Replacing it would discard whatever the user has
@@ -86,22 +111,13 @@ public enum HookConfig {
             guard value is [Any] else { continue }
             hooks[event] = scrubEventValue(value)
         }
-        for event in events {
+        for event in events(for: agent) {
             // An event whose value is not an array is a shape we do not
             // understand. Leave it exactly as it is rather than clobber it;
             // `doctor` reporting the hook as missing is the honest signal.
             if let existing = hooks[event], !(existing is [Any]) { continue }
             var groups = (hooks[event] as? [Any]) ?? []
-            // `matcher` selects which tools a PreToolUse/PostToolUse group
-            // fires for. A matcher-less group is accepted for the events that
-            // have nothing to match on, but "*" is what the docs prescribe
-            // for every event — the shape known to work. Codex reads "*" as
-            // match-all too.
-            let entry: [String: Any] = [
-                "matcher": "*",
-                "hooks": [["type": "command", "command": command, "timeout": 5]],
-            ]
-            groups.append(entry)
+            groups.append(entry(for: event, command: command, agent: agent))
             hooks[event] = groups
         }
         root["hooks"] = hooks
@@ -137,6 +153,18 @@ public enum HookConfig {
             }
         }
         return nil
+    }
+
+    /// The index, in the event's array, of the group holding `command`:
+    /// Codex names a hook's trust after it.
+    public static func installedGroupIndex(in root: [String: Any], event: String, command: String) -> Int? {
+        guard let hooks = root["hooks"] as? [String: Any], let groups = hooks[event] as? [Any] else { return nil }
+        return groups.firstIndex { element in
+            guard let group = element as? [String: Any] else { return false }
+            return ((group["hooks"] as? [Any]) ?? []).contains {
+                ($0 as? [String: Any])?["command"] as? String == command
+            }
+        }
     }
 
     /// Scrub one event's array element-wise. A hook group we recognise gets

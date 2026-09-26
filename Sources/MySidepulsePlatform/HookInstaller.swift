@@ -124,7 +124,7 @@ public enum HookInstaller {
         do {
             let root = try SettingsFile.load(at: file) ?? [:]
             try SettingsFile.backup(from: file, to: backup)
-            let edited = HookConfig.install(into: root, command: command, events: events)
+            let edited = HookConfig.install(into: root, command: command, agent: agent)
             try SettingsFile.write(edited, to: file)
             // Count what actually landed rather than assuming: HookConfig
             // declines shapes it does not understand (a non-object `hooks`, a
