@@ -58,14 +58,14 @@ side. That decision is what this app is.
 
 | The strip | Means | Until |
 |---|---|---|
-| A **red wave** rolling along it | Claude Code is working | the turn ends |
-| A **green breath**, every 4.5 s | Claude Code has finished | you have seen it, or 20 minutes |
-| An **amber double blink** | Claude Code needs you: a question, a permission, a plan to approve, a turn that failed | you have seen it |
+| A **red wave** rolling along it | an agent is working | the turn ends |
+| A **green breath**, every 4.5 s | an agent has finished | you have seen it, or 20 minutes |
+| An **amber double blink** | an agent needs you: a question, a permission, a plan to approve, a turn that failed | you have seen it |
 | Dark | nothing is going on | |
 
 That is the whole point of the app, and everything else in it is built around never getting those three wrong.
 A turn that ends in prose is *finished*, questions included: "Want me to commit?" is green. Amber is raised only
-by Claude Code's explicit signals, so it always means a dialog is really standing there.
+by an agent's explicit signals, so it always means a dialog is really standing there.
 
 ## It tells the truth about the whole Mac
 
@@ -273,14 +273,14 @@ The [official companion](https://github.com/inteliwear/sidepulse) does far more 
 Codex, Claude, Grok, Cursor and Junie, links an iPhone, runs on Linux, ships a library of animations and a
 virtual strip in the notch. If you use several agents, start there.
 
-MySidepulse is one person's opinion of what the strip should say about **Claude Code and the terminal**. It
-trades that breadth for depth on those two:
+MySidepulse is one person's opinion of what the strip should say about **Claude Code, Codex, GitHub Copilot
+CLI, OpenCode and the terminal**. It trades the official app's wider reach for depth on those:
 
 | | Official app | MySidepulse |
 |---|---|---|
 | Agents | Codex, Claude, Grok, Cursor, Junie | Claude Code, Codex, GitHub Copilot CLI, OpenCode, and any terminal command |
 | Several sessions | one state for the whole machine: the highest-priority one | each session keeps its own state; an alert and running work are shown side by side |
-| Missed hooks | an optional transcript fallback | Claude Code's own record of its sessions and the transcript, always on |
+| Missed hooks | an optional transcript fallback | each agent's own side channel, always on: Claude Code's registry and transcript, Codex's rollout and daemon, Copilot's `events.jsonl`; OpenCode needs none, every turn ends in one terminal event |
 | Seeing an alert | a finish stays lit for 20 minutes | an alert stays until you go to its session, down to the terminal tab, and that also cancels the phone notification |
 | Away from the Mac | its own iPhone app | [ntfy](https://ntfy.sh), only when you are away, with nothing private in it |
 | When idle | a very dim pulse | dark |
