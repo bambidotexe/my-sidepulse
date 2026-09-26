@@ -17,7 +17,7 @@
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-1f6feb">
   <img alt="Hardware: SidePulse Pro and Dot" src="https://img.shields.io/badge/hardware-SidePulse%20Pro%20%C2%B7%20Dot-8250df">
   <img alt="English and French" src="https://img.shields.io/badge/languages-English%20%C2%B7%20Fran%C3%A7ais-333333">
-  <img alt="Unit tests" src="https://img.shields.io/badge/tests-448%20passing-2ea44f">
+  <img alt="Unit tests" src="https://img.shields.io/badge/tests-756%20passing-2ea44f">
 </p>
 
 ## The hardware
@@ -158,7 +158,7 @@ mysidepulse led '#ff6a00'                  # any colour
 mysidepulse led rainbow                    # an effect: rainbow aurora ocean lava ember sparkle
 mysidepulse brightness cycle [--steps N]   # steps even to the eye, off after 100 %, then the first step again
 mysidepulse status [--json]                # mode, strip, battery, every session and command
-mysidepulse doctor                         # nine health checks; the exit code is the number of failures
+mysidepulse doctor                         # twelve health checks; the exit code is the number of failures
 mysidepulse notify [on|off|test|topic new] # phone notifications
 mysidepulse install-hooks | uninstall-hooks
 mysidepulse autostart [on|off]             # open at login, and reopen after a crash
@@ -203,9 +203,9 @@ the icon is hidden. Every change applies as you make it.
 | **Strip** | the live strip and a sentence saying what it shows and why · Auto, Off, a colour or one of six effects · brightness for each strip |
 | **Colours** | the colour of each state and each battery band, with a live preview on screen and on the strip · reset one or all |
 | **Notifications** | the phone switch · the ntfy server · the topic, with its QR code · a test button |
-| **Playground** | nine states and six effects to try on the real strip |
-| **System** | set up or remove the Claude Code hooks and the terminal hook, each with one button · allow notifications · show the welcome wizard again |
-| **Health** | whether MySidepulse works, at a glance, in two tables. Health: the Claude Code hooks, the terminal hook, the notification permission, the strip, the launch agent, and while they apply the phone link, the command and a recent crash, each green, orange or red, then *Check Again*. Information: the last hook event, the Claude sessions, the terminal commands, what the strip shows |
+| **Playground** | thirteen states and six effects to try on the real strip |
+| **System** | set up or remove each agent's hooks (Claude Code, Codex, GitHub Copilot CLI, OpenCode's plugin) and the terminal hook, each with one button, Copilot's and OpenCode's groups shown only while that agent is on the Mac · allow notifications · show the welcome wizard again |
+| **Health** | whether MySidepulse works, at a glance, in two tables. Health: each agent's hooks, the terminal hook, the notification permission, the strip, the launch agent, and while they apply the phone link, the command and a recent crash, each green, orange or red, then *Check Again*. Information: the last hook event, the agent sessions, the terminal commands, what the strip shows |
 | **Tip** | everything is free and stays free · a one-time tip on Ko-fi |
 
 The app speaks **English and French**, following the language your Mac is set to. The command line is always
@@ -227,9 +227,11 @@ From this repository instead:
 make install
 ```
 
-That builds the same signed, notarized bundle, puts it in `/Applications`, launches it, subscribes the hooks
-and prints `mysidepulse doctor`. The hooks go into `~/.claude/settings.json`, which is backed up first; hooks
-that are not MySidepulse's are left alone, and sessions already open pick the new ones up within seconds.
+That builds the same signed, notarized bundle, puts it in `/Applications`, launches it, sets up the hooks or
+plugin of whichever of Claude Code, Codex, GitHub Copilot CLI and OpenCode is on the Mac, and prints
+`mysidepulse doctor`. Claude Code's and Codex's hooks go into their own `settings.json` / `hooks.json`, backed
+up first; entries that are not MySidepulse's are left alone, and sessions already open pick the new ones up
+within seconds.
 `make uninstall` reverses either one; your settings and the journal stay. Settings › General › Uninstall does
 the same from inside the app.
 
@@ -258,7 +260,8 @@ the flat icon without Liquid Glass. The icon's source is `Resources/AppIcon.icon
 
 - **macOS 26 or later**, and a Swift toolchain to build it.
 - **A SidePulse Pro or Dot.** The app runs without one: sessions are followed and your phone is still told.
-- **Claude Code**, for the hooks. **zsh**, if you want terminal commands on the strip.
+- **Claude Code, Codex, GitHub Copilot CLI or OpenCode** — any subset, each followed only while it is on the
+  Mac. **zsh**, if you want terminal commands on the strip.
 - **Two permissions**: removable volumes, because the strip mounts as one (macOS may ask once), and Automation
   for Terminal or iTerm2, asked the first time one of them comes to the front, so that looking at one tab
   clears only that tab's alert. Refuse the second and acknowledgement covers the whole terminal app. No
@@ -275,7 +278,7 @@ trades that breadth for depth on those two:
 
 | | Official app | MySidepulse |
 |---|---|---|
-| Agents | Codex, Claude, Grok, Cursor, Junie | Claude Code, and any terminal command |
+| Agents | Codex, Claude, Grok, Cursor, Junie | Claude Code, Codex, GitHub Copilot CLI, OpenCode, and any terminal command |
 | Several sessions | one state for the whole machine: the highest-priority one | each session keeps its own state; an alert and running work are shown side by side |
 | Missed hooks | an optional transcript fallback | Claude Code's own record of its sessions and the transcript, always on |
 | Seeing an alert | a finish stays lit for 20 minutes | an alert stays until you go to its session, down to the terminal tab, and that also cancels the phone notification |
@@ -287,10 +290,12 @@ trades that breadth for depth on those two:
 
 ## How it works
 
-Claude Code runs `mysidepulse hook` on fifteen of its events. The hook drops everything private (prompts, tool
-inputs, tool outputs), appends one short line to a journal and exits; it never blocks a turn and never fails
-one. The app follows the journal, folds it into one state machine per session, lets an arbiter pick a single
-display state from the sessions, the jobs, the battery and the mode, and writes that state to the strip.
+Claude Code runs `mysidepulse hook` on fifteen of its events and Codex `mysidepulse hook --agent codex` on
+twelve; GitHub Copilot CLI's own hook file and OpenCode's own plugin run the same binary for their events. Each
+hook drops everything private (prompts, tool inputs, tool outputs), appends one short line to a journal and
+exits; it never blocks a turn and never fails one. The app follows the journal, folds it into one state machine
+per session, lets an arbiter pick a single display state from the sessions, the jobs, the battery and the mode,
+and writes that state to the strip.
 
 The strip is a closed device with no USB or serial channel: it mounts as a small volume, and the whole
 protocol is a few lines of text written to a file called `LEDS.LED`. Every rule that can be decided from
@@ -317,7 +322,7 @@ MySidepulse is free and carries no ads. If it saves you trouble, you can leave a
 ## Notes
 
 - Personal build: English and French, no licensing.
-- `swift test` runs 501 tests across the two library targets (367 + 134); the app target's verification is the
+- `swift test` runs 756 tests across the two library targets (565 + 191); the app target's verification is the
   strip itself, `mysidepulse doctor` and the journal replay.
 - Every colour is a true colour, the same hex on the strip and on screen; a strip's brightness is what dims it.
   The defaults are the owner's, and the Colours page changes them.

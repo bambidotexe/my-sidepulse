@@ -11,9 +11,10 @@ things are visible at a glance: an agent is **working** (a rolling wave in the
 agent's colour: red for Claude Code, blue for Codex, another blue for GitHub
 Copilot, another red for OpenCode; one colour per pass when several work and
 the passes fit the strip, one per LED when they do not), an agent has **finished** (a green breath), an
-agent **needs you** (an amber double blink). The agents with hooks are
-**Claude Code and Codex**; Copilot and OpenCode have their colours and their
-place in the roll, and nothing sets up their hooks. Finished and needs you are one colour for
+agent **needs you** (an amber double blink). All four agents — Claude Code,
+Codex, GitHub Copilot CLI and OpenCode — are followed through their own hooks
+or plugin, each set up on its own by `install-hooks`, `make install` or the
+System page. Finished and needs you are one colour for
 every agent, because they say the Mac wants the user, not which agent does. When
 nobody is at the machine the same finished / needs-you alerts go to a phone
 through **ntfy**, titled with the agent's name. Around that core it shows
@@ -22,18 +23,23 @@ the power cord moves, a red breath at ≤ 15 % on battery, and a few decorative
 effects.
 
 How it knows: Claude Code runs `mysidepulse hook` on 15 hook events and Codex
-runs `mysidepulse hook --agent codex` on 12; the hook appends one trimmed line
-to a journal, saying which agent; the app follows the journal, folds it into a
-per-session state machine, picks one display state, and writes a small **text
-program** into `LEDS.LED` on the strip's mounted volume. The strip is a closed
-device: no firmware here, no USB or serial channel, no read-back — files on a
-volume are the whole protocol. Read-only side channels cover what the hooks
-miss: for Claude Code, its own process registry and the transcript tail; for
-Codex, its managed daemon's control socket (`thread/read`: does the thread
-still run?) for the TUI's sessions, and the session's rollout, whose turn
-markers say whether a quiet turn runs, finished or was aborted (the pid a
-Codex session records is a shared app-server, Codex's daemon or the desktop
-app's, which proves nothing about the session).
+runs `mysidepulse hook --agent codex` on 12; GitHub Copilot CLI's own hook file
+runs `mysidepulse hook --agent copilot --event <name>` on 7 events, and
+OpenCode's own plugin runs `mysidepulse hook --agent opencode` on every event
+it forwards. Each hook appends one trimmed line to a journal, saying which
+agent; the app follows the journal, folds it into a per-session state machine,
+picks one display state, and writes a small **text program** into `LEDS.LED`
+on the strip's mounted volume. The strip is a closed device: no firmware here,
+no USB or serial channel, no read-back — files on a volume are the whole
+protocol. Read-only side channels cover what the hooks miss: for Claude Code,
+its own process registry and the transcript tail; for Codex, its managed
+daemon's control socket (`thread/read`: does the thread still run?) for the
+TUI's sessions, and the session's rollout, whose turn markers say whether a
+quiet turn runs, finished or was aborted (the pid a Codex session records is a
+shared app-server, Codex's daemon or the desktop app's, which proves nothing
+about the session); for Copilot, its own `events.jsonl`, checked the same way
+for a quiet turn and for an open wait cancelled with Ctrl+C. OpenCode needs no
+such check: every busy period ends in one terminal event.
 
 Two names, never to be confused: **SidePulse is the hardware** (its volumes are
 named `SidePulseDot…` / `SidePulsePro…`, which is how the LED count is read);
@@ -179,14 +185,14 @@ are `docs/functional.md`.
 | To change… | Edit | Then document in |
 |---|---|---|
 | what a hook event means; a state or a transition | `Core/SessionStore.swift` (`apply`, `set`, `applyStopVerdict`), `Core/Event.swift` — pinned by `SessionStoreTests`, `GoldenReplayTests`, `CodexTests` | §4 |
-| an agent: which there are, its colour, how its sessions are told apart, what its events mean | `Core/Agent.swift` (`AgentKind`, `Agents`), `Core/LedPalette.swift` (`rollColors`), `SessionStore.apply` (`Interrupt`, `request_user_input`), `Platform/ProcWalk.swift` (`agent(of:)`, `classify(_:agent:)`), `Platform/HookCommand.swift`, `CLI/CLIMain.swift` (`hook --agent`) — `CodexTests`, `CodexPlatformTests` | §1, §3, §4, `pitfalls.md` *Detecting Codex* |
+| an agent: which there are, its colour, how its sessions are told apart, what its events mean | `Core/Agent.swift` (`AgentKind`: Claude, Codex, Copilot, OpenCode; `Agents`), `Core/LedPalette.swift` (`rollColors`), `SessionStore.apply` (`Interrupt`, `request_user_input`), `Platform/ProcWalk.swift` (`agent(of:)`, `classify(_:agent:)`, `isCopilotPath`, `isOpencodePath`), `Platform/HookCommand.swift`, `CLI/CLIMain.swift` (`hook --agent`) — `CodexTests`, `CodexPlatformTests`, `CopilotTests`, `OpencodeTests` | §1, §3, §4, `pitfalls.md` *Detecting Codex*, *Detecting Copilot*, *Detecting OpenCode* |
 | holds, expiry, the settle, any session timer | `SessionStore.tick` and `nextDeadline` (every timer needs both), `Core/Constants.swift` — `TimerTests`, `SettleTests` | §4, §3 *Settle*, §13 |
-| the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`, `checkCodexTurns`, `daemonAnswered`, the launch check in `start` / `finishLaunch`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`, `CodexRollout.swift`, `CodexDaemonClient.swift` (`CodexDaemonClientTests`, a fake daemon), `ProcWalk.isCodexDaemon` / `isManagedCodexDaemon`; `Core/CodexRolloutTail.swift` (the rollout's verdict and decision, which paths are trusted — `CodexRolloutTailTests`), `Core/WebSocketFrame.swift` + `Core/CodexThreadRecord.swift` (the daemon's framing, messages and answers — `WebSocketFrameTests`, `CodexThreadRecordTests`); `SessionStore.abandonCandidates` / `codexCandidates` / `finishTurn` / `abandonTurn` / `rescueStamp` / `applyVerdict` / `noteBusy` / `dialogAnswered`; the journaled verdicts: `TurnVerdict` (`Core/Event.swift`), `Engine.persist(_:sessionId:at:)` writing the `MySidepulseVerdict` line | §4 *When hooks say nothing*, *Expiry*, `pitfalls.md` |
-| which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `command(cliPath:agent:)`), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests`, `CodexPlatformTests` | §4 *Source*, §10, §11 |
+| the rescues when hooks say nothing | `App/Engine.swift` `checkAbandonedTurns`, `checkCodexTurns`, `checkCopilotTurns`, `daemonAnswered`, the launch check in `start` / `finishLaunch`; `Platform/ClaudeProcessRegistry.swift`, `TranscriptTail.swift`, `CodexRollout.swift`, `CodexDaemonClient.swift` (`CodexDaemonClientTests`, a fake daemon), `ProcWalk.isCodexDaemon` / `isManagedCodexDaemon`, `Platform/CopilotTranscript.swift`, `Platform/FileTail.swift` (shared by `CodexRollout.read`); `Core/CodexRolloutTail.swift` (the rollout's verdict and decision, which paths are trusted — `CodexRolloutTailTests`), `Core/WebSocketFrame.swift` + `Core/CodexThreadRecord.swift` (the daemon's framing, messages and answers — `WebSocketFrameTests`, `CodexThreadRecordTests`), `Core/CopilotTranscriptTail.swift` (a Copilot turn's or open wait's verdict against `events.jsonl` — `CopilotTranscriptTailTests`); `SessionStore.abandonCandidates` / `codexCandidates` / `copilotCandidates` / `copilotWaitCandidates` / `finishTurn` / `abandonTurn` / `abandonWait` / `failTurn` / `rescueStamp` / `applyVerdict` / `noteBusy` / `dialogAnswered`; the journaled verdicts: `TurnVerdict` (`Core/Event.swift`, including `turn-failed`), `Engine.persist(_:sessionId:at:)` writing the `MySidepulseVerdict` line | §4 *When hooks say nothing*, *Expiry*, `pitfalls.md` |
+| which events are subscribed for each agent, the hook command, setting the hooks up and removing them | `Core/HookConfig.swift` (`events`, `codexEvents`, `copilotEvents`, `command(cliPath:agent:event:)`, the OpenCode plugin source and its `opencodePluginId`), `Platform/HookInstaller.swift` (shared by the CLI and the settings window; `installAllHooks` is `install-hooks`; `OpenCodePluginState`), `Platform/SettingsFile.swift`, `Platform/Paths.swift` (`codexHooks`, `copilotHooks`, `opencodePlugin`); the rows are in `App/SettingsSystemPage.swift` — `HookConfigTests`, `HookInstallerTests`, `CodexPlatformTests`, `OpencodePluginRunTests` | §4 *Source*, §10, §11 |
 | what the hook records | `Core/Trim.swift`, `Core/Event.swift`, `Platform/HookCommand.swift`, `ProcWalk.swift` | `architecture.md` *The hook path*, *Persistence* |
 | the precedence ladder, the split display, which agents a state names | `Core/Arbiter.swift` — `ArbiterTests`, `CodexTests` | §3 |
 | carrying an animation across a rewrite: the tail, its cut rules, the roll under a zone, when the loop is handed over | `Core/LedContinuation.swift` (the reader, the cut rules, `tail`, `transition`), `LedProgram.rollHandover` (which changes carry the roll), `Engine.paint` / `carryOn` / `handOver` — `ContinuationTests`, `TransitionTests` (exact text, and a sweep over every phase) | §3 *Carrying an animation on*, `device.md` *Carrying an animation on*, `pitfalls.md` |
-| what a state looks like: program text, colours, zone widths, effects, the shared roll's passes | `Core/LedProgram.swift` (`rolling(colors:)`, `splitProgram`, `rollRecolour`), `LedEffects.swift`, `Constants.swift` — `ProgramTests`, `CodexTests` (exact text). The settings preview mirrors the timings and draws the palette's own hexes: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
+| what a state looks like: program text, colours, zone widths, effects, the shared roll's passes | `Core/LedProgram.swift` (`rolling(colors:)`, `rollPasses` — one pass per colour wherever it fits, else one pass by LED —, `splitProgram`, `zoneRollColors`, `rollRecolour`), `LedEffects.swift`, `Constants.swift` — `ProgramTests`, `CodexTests` (exact text). The settings preview mirrors the timings and draws the palette's own hexes: `App/StripPreviewView.swift`, `SettingsSupport.swift` | `device.md`, §3 |
 | which colours can be changed, their defaults, the Colours page | `Core/LedPalette.swift` (the slots, `standard` from `K`, the overrides rule, what each slot plays — `PaletteTests`), `Core/Constants.swift` (the defaults), `App/Engine.swift` (`palette`, `setColor`), `App/AppConfig.swift` (`colors`), `App/SettingsColorsPage.swift`, `Core/StringsColorsPage.swift` | §3 *Colours*, §10, `device.md`, `architecture.md` *Persistence* |
 | acknowledgement | `SessionStore.acknowledgeAlerts`, `JobStore.acknowledge`, `Engine.acknowledge`, `App/AttentionMonitor.swift`, `Platform/TerminalTabProber.swift`, `ProcWalk.tabTTY` | §5 |
 | **when** a push fires | `SessionStore.set` (arming) and `tick` (debounce, deferral, late-drop), `Core/Presence.swift` — `NotifyTests` | §6 |
@@ -230,8 +236,8 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
 
 - `swift build` — all four code targets.
 - `swift test` — two bundles, and **one summary line each: read both.**
-  `MySidepulseCoreTests` (508, one opt-in skip) runs in about thirty seconds;
-  `MySidepulsePlatformTests` (165) takes about 30 s, because it spawns real
+  `MySidepulseCoreTests` (565, one opt-in skip) runs in about thirty seconds;
+  `MySidepulsePlatformTests` (191) takes about 30 s, because it spawns real
   subprocesses, FIFOs and sockets. `swift test --filter <SuiteName>` runs one
   suite.
 - `MYSIDEPULSE_REPLAY_JOURNAL="$HOME/Library/Application Support/MySidepulse/journal.jsonl" swift test --filter RealJournalReplayTests`
@@ -278,7 +284,7 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
   (`{"tag_name": "9.9.9", "assets": [{"name": "….dmg", "browser_download_url":
   "file:///…", "size": …, "digest": "sha256:…"}]}`), which is how the whole
   update is walked offline (`docs/manual-test-checklist.md` §3).
-- `/Applications/MySidepulse.app/Contents/MacOS/mysidepulse doctor` — ten
+- `/Applications/MySidepulse.app/Contents/MacOS/mysidepulse doctor` — twelve
   checks, exit code = failures. `… status [--json]` — mode, display, strips,
   sessions with their agent, jobs, notifications with the topic masked.
 - `/usr/bin/log show --predicate 'subsystem == "io.mysidepulse.app"' --last 1h`
@@ -286,14 +292,17 @@ make release     # skill: macos-publish-release. The same, plus tag, push, GitHu
   arrival, stalls, rescues and sent pushes are logged at `notice`, the lowest
   level macOS persists.
 - The journal is `~/Library/Application Support/MySidepulse/journal.jsonl` —
-  one JSON line per hook event, from either agent (`agent`), the evidence
-  every derived constant is calibrated from. It holds working directories and
-  message tails: read it locally, never paste it. **Never read or print
-  `config.json`** in that directory: it holds the ntfy topic.
+  one JSON line per hook event, from any of the four agents (`agent`), the
+  evidence every derived constant is calibrated from. It holds working
+  directories and message tails: read it locally, never paste it. **Never read
+  or print `config.json`** in that directory: it holds the ntfy topic.
 - Codex runs a hook only once it has been trusted in Codex. After an
   `install-hooks` (every `make install` runs one) the entries in
   `~/.codex/hooks.json` are new to Codex again, and nothing reaches the
-  journal from Codex until the owner has trusted them there.
+  journal from Codex until the owner has trusted them there. Copilot and
+  OpenCode need no such trust step: `install-hooks` (and `make install`) sets
+  up Copilot's hook file and OpenCode's plugin the moment it runs, on any Mac
+  where that agent is present, and each takes effect at once.
 
 ## Architecture
 
@@ -311,7 +320,10 @@ Full version in `docs/architecture.md`.
   (the journal line and its 4096-byte cap) · `CodexRolloutTail` (what a
   Codex rollout's tail says about a quiet turn, and which rollout paths are
   trusted) · `WebSocketFrame` + `CodexThreadRecord` (the framing, the
-  four messages and the answers of Codex's daemon) · `TurnVerdict` (the outcome of a
+  four messages and the answers of Codex's daemon) · `CopilotSessionState`
+  (Copilot's session-state root, a subagent filter, the transcript path) ·
+  `CopilotTranscriptTail` (what a Copilot session's `events.jsonl` says about a
+  quiet turn or an open wait cancelled with Ctrl+C) · `TurnVerdict` (the outcome of a
   rescue, journaled so a relaunch applies it again) · `Arbiter` (mode, power, sessions,
   jobs → one `DisplayState`) · `LedProgram` + `LedEffects` (display state →
   program text) · `LedPalette` (the eleven colours the owner can change, which
@@ -322,8 +334,9 @@ Full version in `docs/architecture.md`.
   shows) · `Constants` (`K`: every default colour and
   every timing, with its evidence)
   · `Alert` (`AlertCopy`, the push text) · `Presence` · `JobStore` ·
-  `BatteryRules` · `EjectGuard` · `HookConfig` (edits to `settings.json`) ·
-  `ShellInit` (the zsh snippet, and the text of its block in `~/.zshrc`) ·
+  `BatteryRules` · `EjectGuard` · `HookConfig` (edits to Claude Code's and
+  Codex's `settings.json`, Copilot's whole hook file, OpenCode's plugin
+  source) · `ShellInit` (the zsh snippet, and the text of its block in `~/.zshrc`) ·
   `ShellJobLiveness` (whether a running job's shell still runs a command) ·
   `UpdateCheck` (release versions, and what GitHub's reply means) +
   `UpdateSchedule` + `UpdatePanel` + `UpdateSession` + `StagedUpdateCheck` +
@@ -337,16 +350,19 @@ Full version in `docs/architecture.md`.
   French side by side, one table per surface).
 - **`Sources/MySidepulsePlatform`** — headless, testable I/O. `HookCommand` +
   `JournalWriter` (the hook path) · `JournalTailer` (kqueue, follows rotation) ·
-  `ProcWalk` (sysctl: the nearest agent process, Claude's or Codex's, its host
+  `ProcWalk` (sysctl: the nearest of the four agents' processes, its host
   app, its terminal tab) ·
   `ProcessWatcher` (kqueue exits) · `ClaudeProcessRegistry` + `TranscriptTail`
-  (Claude's side channels) · `CodexRollout` + `CodexDaemonClient` (Codex's: the rollout's tail, and its daemon's `thread/read` and `thread/loaded/list`, 1 s per call) · `TerminalTabProber` (osascript, Terminal and
+  (Claude's side channels) · `CodexRollout` + `CodexDaemonClient` (Codex's: the rollout's tail, and its daemon's `thread/read` and `thread/loaded/list`, 1 s per call) ·
+  `CopilotTranscript` (Copilot's `events.jsonl`, read through `FileTail`, the
+  non-blocking tail reader it shares with `CodexRollout`) · `TerminalTabProber` (osascript, Terminal and
   iTerm2) · **`LedWriter`** (the only code that writes `LEDS.LED`: one io queue,
   dedupe, 2 s watchdog) · `LedDevice` (identity = `st_dev`, `st_ino`) ·
   `Keepalive` · `Notifier` + `ClaudeSessions` (the only ntfy client) ·
   `Control` + `ControlServer` + `ControlClient` (Unix socket, JSON lines) ·
   `Doctor` · `CrashReports` (the Health page's crash line) · `Paths` · `SettingsFile` · `HookInstaller` (sets up and removes
-  the hooks of both agents and the zsh block, for the CLI and the settings
+  Claude Code's and Codex's hook entries, Copilot's hook file, OpenCode's
+  plugin and the zsh block, for the CLI and the settings
   window alike) · `UpdateChecker` +
   `UpdateDownload` (the only code that talks to GitHub) · `UpdateStager` +
   `CodeSignature` (the disk image, the copy, its signature) · `UpdateInstaller`
@@ -470,7 +486,7 @@ most:
 
 ## Status
 
-`swift build` is clean and `swift test` is green (508 + 165, one opt-in skip) at
+`swift build` is clean and `swift test` is green (565 + 191, one opt-in skip) at
 this commit. The live journal replays.
 
 Checked on the strip by the owner: the brightness key over the roll carries the
@@ -502,6 +518,12 @@ Known limitations, in plain words — the authority is *Open issues* in
   rollout marker: a TUI session goes dark when the daemon says its thread is
   idle, and any other rolls until 2 h after the rollout's last line. Whether Codex
   fires `PreToolUse` for `request_user_input` is unobserved.
+- A quiet Copilot turn is read from its `events.jsonl` within about 35 s, on
+  the same rule as Codex's rollout; a Copilot open wait cancelled with Ctrl+C
+  goes dark the same way. Approving a Copilot permission fires no hook, and
+  `permission.completed` is not read as the answer, so an approved wait stays
+  amber until the next event or the 2 h backstop. Nothing here has run against
+  a live Copilot.
 - The shared roll (one colour per pass on the whole strip wherever the passes
   fit: two agents on the Pro, any number on the Dot; one pass, one colour per
   LED, for three or four on the Pro; one per LED under a zone, LED *i* keeping
@@ -509,9 +531,12 @@ Known limitations, in plain words — the authority is *Open issues* in
   handover are pinned by exact text and the phase sweeps, and have not been
   seen on the strip, nor have Copilot's `#0e5cff` and OpenCode's `#ff0043`.
   Judge them there before trusting them.
-- Copilot and OpenCode have their colours, their Colours rows, their
-  Playground cards and their push titles and links, and nothing sets up their
-  hooks, so no Copilot or OpenCode session reaches the strip.
+- Copilot's hook file and OpenCode's plugin are set up by `install-hooks`,
+  `make install` and the System page's own buttons, on any Mac where that
+  agent is present, exactly as Claude Code's and Codex's hooks are. Neither
+  has been walked with a real Copilot or OpenCode session: the System page's
+  two new groups, the Health page's `Copilot hooks` and `OpenCode plugin`
+  lines and the doctor's two new checks are proven only by their tests.
 - Jobs are not journaled: a restart forgets them.
 - One write queue serves every strip: a card whose write never returns freezes
   all of them until the app restarts.

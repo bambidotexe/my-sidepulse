@@ -1453,7 +1453,7 @@ window shows them, and the phone push bodies (§6).
 | Stays as it is | Because |
 |---|---|
 | Every word `mysidepulse` prints in a terminal (§11) | The CLI is English by rule, not by omission. The same code produces the doctor's details for both, and the language is read where the sentence is built, so the window is French while the terminal stays English. |
-| The doctor's nine check names (`app`, `hooks installed`, `device`, …) | Identifiers the CLI prints and the Health page matches on, not prose. |
+| The doctor's twelve check names (`app`, `hooks installed`, `device`, …) | Identifiers the CLI prints and the Health page matches on, not prose. |
 | The push `Title` header (`Claude Code`, `Codex`, `GitHub Copilot` or `OpenCode`) and the five tags | Wire values. A translated tag loses the notification's icon on the phone. |
 | The block in `~/.zshrc` and the shell snippet | Shell code, read by zsh. |
 | `MySidepulse`, `SidePulse`, `Claude Code`, `Claude`, `Codex`, `GitHub Copilot`, `Copilot`, `OpenCode`, `ntfy`, `LED`, `LEDs`, `Terminal`, `iTerm2`, `Finder`, `zsh`, `Dock`, `Spotlight` | Product names. |
