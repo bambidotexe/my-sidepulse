@@ -328,7 +328,9 @@ walk recognises says, whichever agent it is, and Claude is the fallback.
 and prompts never reach the journal.
 
 Each agent's payload has its own trim in Core. Claude Code's and Codex's name
-their event (`Trim.journalEvent`). Copilot's camelCase payloads do not, so
+their event (`Trim.journalEvent`), and only the agent's own events pass
+(`HookConfig.events(for:)`, in Claude Code's spelling or Codex's snake case):
+any other name, the app's own line names included, is a `ParseError` line. Copilot's camelCase payloads do not, so
 the entry passes `--event` (`Trim.copilotEvent`); an event outside the seven
 subscribed is a `ParseError` that keeps its name and none of the body. The
 hook then drops a Copilot line whose session has no folder under Copilot's

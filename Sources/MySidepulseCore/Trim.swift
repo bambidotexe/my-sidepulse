@@ -6,20 +6,32 @@ public enum Trim {
     /// hostile or malformed payload from inflating the journal line.
     static let metadataMaxChars = 200
 
-    /// Reduce a raw Claude Code hook payload to a journal line. Bodies are
-    /// dropped here so the journal stays small and appends stay atomic.
-    /// All copied string fields are clamped at ingestion; the encoded line
-    /// is then shrunk iteratively and finally guaranteed to fit via terminal fallback.
-    public static func journalEvent(fromHookPayload data: Data, loggedAt: Date) -> JournalEvent {
-        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+    /// Reduce a raw Claude Code or Codex hook payload to a journal line.
+    /// Bodies are dropped here so the journal stays small and appends stay
+    /// atomic. The hook says which agent sent it (`agent`), never the
+    /// payload, and only that agent's own events pass
+    /// (`HookConfig.events(for:)`: Claude Code's 15, Codex's 12), in either
+    /// spelling (`eventName`): any other name, the app's own line names
+    /// included, is a `ParseError` that keeps the payload's first bytes and
+    /// none of its fields, so a payload cannot forge another agent's
+    /// `Interrupt` or a verdict. Copilot's and OpenCode's payloads have
+    /// their own trims (`copilotEvent`, `opencodeEvent`), and here are a
+    /// `ParseError` too. All copied string fields are clamped at ingestion;
+    /// the encoded line is then shrunk iteratively and finally guaranteed to
+    /// fit via terminal fallback.
+    public static func journalEvent(fromHookPayload data: Data, agent: AgentKind, loggedAt: Date) -> JournalEvent {
+        guard agent == .claude || agent == .codex,
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let name = obj["hook_event_name"] as? String,
-              let event = eventName(name), event != .parseError
+              let event = eventName(name), HookConfig.events(for: agent).contains(event.rawValue)
         else {
             var e = JournalEvent(loggedAt: loggedAt, event: .parseError)
+            e.agent = agent
             e.rawPrefix = String(decoding: data.prefix(300), as: UTF8.self)
             return e
         }
         var e = JournalEvent(loggedAt: loggedAt, event: event)
+        e.agent = agent
         e.sessionId = clamp(obj["session_id"])
         e.promptId = clamp(obj["prompt_id"])
         e.turnId = clamp(obj["turn_id"]) ?? e.promptId
@@ -176,7 +188,8 @@ public enum Trim {
 
     /// The event names are Claude Code's spellings, which Codex shares. Codex
     /// spells the same names in snake case in its own configuration, so that
-    /// spelling is taken too, in case a payload ever carries it.
+    /// spelling is taken too, in case a payload ever carries it. Whether the
+    /// name is one of the agent's own is `journalEvent`'s to say.
     static func eventName(_ raw: String) -> HookEventName? {
         if let event = HookEventName(rawValue: raw) { return event }
         let pascal = raw.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()

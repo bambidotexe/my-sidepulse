@@ -253,7 +253,9 @@ when `hooks.json` cannot be parsed or `config.toml` cannot be read.
 Each event becomes one trimmed line in the journal, enriched with the agent
 (`claude`, `codex`, `copilot` or `opencode`; a line without it is Claude's),
 the agent's process id, the hosting app's bundle id, and the terminal tab's
-tty. The app follows the journal. Every session id seen gets its own state,
+tty. Only the agent's own events count: a Claude Code or Codex payload naming
+an event outside that agent's list above is written as a `ParseError` line,
+which changes nothing. The app follows the journal. Every session id seen gets its own state,
 and keeps the agent of its lines.
 
 Copilot's and OpenCode's events carry their own names, and each is written

@@ -446,9 +446,9 @@ final class CodexTests: XCTestCase {
 
     func testTheHookTakesCodexsEventNamesInEitherSpelling() {
         let t0 = Date(timeIntervalSince1970: 1_787_652_000)
-        func event(_ name: String) -> HookEventName {
+        func event(_ name: String, _ agent: AgentKind = .codex) -> HookEventName {
             let data = try! JSONSerialization.data(withJSONObject: ["hook_event_name": name, "session_id": "s1"])
-            return Trim.journalEvent(fromHookPayload: data, loggedAt: t0).event
+            return Trim.journalEvent(fromHookPayload: data, agent: agent, loggedAt: t0).event
         }
         XCTAssertEqual(event("Interrupt"), .interrupt)
         XCTAssertEqual(event("interrupt"), .interrupt)
@@ -456,6 +456,9 @@ final class CodexTests: XCTestCase {
         XCTAssertEqual(event("user_prompt_submit"), .userPromptSubmit)
         XCTAssertEqual(event("NoSuchEvent"), .parseError)
         XCTAssertEqual(event("parse_error"), .parseError, "the app's own name is not an event")
+        XCTAssertEqual(event("post_tool_use_failure"), .parseError, "a spelling of an event Codex does not have")
+        XCTAssertEqual(event("interrupt", .claude), .parseError, "a spelling of an event Claude Code does not have")
+        XCTAssertEqual(event("post_tool_use_failure", .claude), .postToolUseFailure)
     }
 
     // MARK: the hook files

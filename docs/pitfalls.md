@@ -572,6 +572,12 @@ This is every app's trap: `docs/shared/pitfalls.md`, **B3**.
 ### The hook runs inside every Claude Code turn
 - **Rule.** It must never block and never exit non-zero, in any agent's turn (Copilot denies a tool whose `preToolUse` hook fails). It drains stdin to EOF even past its 8 MB cap (or Claude Code's write blocks), spawns nothing, and swallows every error. Journal lines are capped at 4096 bytes so concurrent `O_APPEND` writes cannot interleave.
 
+### A hook payload is untrusted input
+- **Symptom (potential).** A Claude Code session ended by an `Interrupt`, an event Claude Code does not have; a Codex line carrying a `Notification` Codex never sends; a line under one of the app's own names (`MySidepulseVerdict`, `MySidepulseAck`) that no check wrote.
+- **Why.** `hook_event_name` is the payload's to say, and the trim used to take any name the journal knows, whichever agent's hook it ran for.
+- **Instead.** The hook says which agent speaks, and `Trim.journalEvent(fromHookPayload:agent:loggedAt:)` passes only that agent's own events (`HookConfig.events(for:)`: Claude Code's 15, Codex's 12), in Claude Code's spelling or the snake-case one Codex's configuration uses. Any other name is a `ParseError` line that keeps the payload's first bytes and none of its fields. Copilot's and OpenCode's trims map only their own events onto the journal's names.
+- **Rule.** A payload cannot forge another agent's `Interrupt` or a verdict. Which events count is the hook's to say, never the payload's.
+
 ### `argv[0]` has no directory when the CLI is found on `PATH`
 - **Symptom.** `install-hooks` writes a hook command that resolves nowhere.
 - **Instead.** `_NSGetExecutablePath`, symlinks resolved. After writing, `install-hooks` counts the events that actually carry the command and reports "N of 15", exiting 1 if a shape it refuses to rewrite kept one out.

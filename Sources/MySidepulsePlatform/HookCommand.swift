@@ -51,6 +51,7 @@ public enum HookCommand {
         // Spec §1: 8 MB cap. A payload past it parses as garbage and becomes
         // a ParseError line, which is the honest record of "too big to trust".
         let payload = input.prefix(K.hookStdinMaxBytes)
+        let speaker = agent ?? origin?.agent ?? .claude
         var event: JournalEvent
         switch agent {
         case .copilot:
@@ -63,9 +64,9 @@ public enum HookCommand {
             guard let mapped = Trim.opencodeEvent(fromHookPayload: payload, loggedAt: now) else { return 0 }
             event = mapped
         case .claude, .codex, nil:
-            event = Trim.journalEvent(fromHookPayload: payload, loggedAt: now)
+            event = Trim.journalEvent(fromHookPayload: payload, agent: speaker, loggedAt: now)
         }
-        event.agent = agent ?? origin?.agent ?? .claude
+        event.agent = speaker
         if let origin {
             event.agentPid = origin.agentPid
             event.hostAppPid = origin.hostAppPid
