@@ -195,8 +195,9 @@ or question); or `thread/loaded/list` `{}`, answered `{data: [<thread id>…],
 nextCursor}`, the threads held in memory (all of them in one page when no
 `limit` is given; `nextCursor` is `null` then). The daemon holds the TUI's
 threads only: a `codex exec` thread runs in its own process and a desktop-app
-thread in the app's own `codex app-server` (no `--managed-daemon` argument,
-which `ProcWalk.isManagedCodexDaemon` reads), so what the daemon says of
+thread in the app's own `codex app-server` (no `--managed-daemon` argument
+and not under `/app-server-daemon/`: `ProcWalk.isManagedCodexDaemon` takes a
+process with either mark as the daemon), so what the daemon says of
 either proves nothing. Captured by a read-only probe against Codex 0.157;
 `CodexDaemonClient`, `CodexThreadRecord` and `WebSocketFrame` hold it.
 

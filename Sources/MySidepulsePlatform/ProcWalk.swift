@@ -212,11 +212,17 @@ public enum ProcWalk {
     /// Codex's managed daemon alone, the app-server behind
     /// `~/.codex/app-server-control/app-server-control.sock` and the only one
     /// whose threads that socket answers for: the ChatGPT app's `codex
-    /// app-server` runs its threads itself. Told apart by `--managed-daemon`,
-    /// or by the daemon's install folder when the arguments cannot be read.
+    /// app-server` runs its threads itself. Told apart by the daemon's
+    /// install folder or by `--managed-daemon`, either one.
     public static func isManagedCodexDaemon(_ info: ProcInfo) -> Bool {
-        if let args = arguments(for: info.pid) { return args.dropFirst().contains("--managed-daemon") }
-        return info.path?.contains("/app-server-daemon/") ?? false
+        isManagedCodexDaemon(path: info.path, arguments: arguments(for: info.pid))
+    }
+
+    /// The same rule on what was read of the process: its path, and its
+    /// arguments (nil when they cannot be read; the first is the program).
+    public static func isManagedCodexDaemon(path: String?, arguments: [String]?) -> Bool {
+        if let path, path.contains("/app-server-daemon/") { return true }
+        return arguments?.dropFirst().contains("--managed-daemon") ?? false
     }
 
     /// True for a path that belongs to a Claude Code install. Both real shapes

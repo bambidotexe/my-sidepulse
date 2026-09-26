@@ -276,6 +276,37 @@ final class ProcWalkTests: XCTestCase {
         XCTAssertFalse(ProcWalk.isManagedCodexDaemon(gone("/Applications/ChatGPT.app/Contents/Resources/codex")))
     }
 
+    /// The managed daemon is its install folder OR its `--managed-daemon`
+    /// argument: a live process run from under `/app-server-daemon/` is the
+    /// daemon even when its arguments can be read and carry no flag.
+    func testTheManagedDaemonIsItsFolderOrItsFlag() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("procwalk-\(UUID().uuidString)/app-server-daemon/bin")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent().deletingLastPathComponent()) }
+        let binary = folder.appendingPathComponent("codex")
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/sleep"), to: binary)
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = ["30"]
+        try process.run()
+        addTeardownBlock { process.terminate() }
+        let info = try XCTUnwrap(ProcWalk.info(for: process.processIdentifier))
+        XCTAssertEqual(ProcWalk.arguments(for: process.processIdentifier)?.contains("--managed-daemon"), false)
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(info), "its folder, with arguments that name no flag")
+
+        let daemon = "/Users/u/.codex/packages/app-server-daemon/releases/0.157.0-aarch64-apple-darwin/bin/codex"
+        let standalone = "/Users/u/.codex/packages/standalone/releases/0.157.0-aarch64-apple-darwin/bin/codex"
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(path: daemon, arguments: ["codex", "app-server"]))
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(path: daemon, arguments: nil))
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(path: standalone, arguments: ["codex", "app-server", "--managed-daemon"]))
+        XCTAssertTrue(ProcWalk.isManagedCodexDaemon(path: nil, arguments: ["codex", "--managed-daemon"]))
+        XCTAssertFalse(ProcWalk.isManagedCodexDaemon(path: standalone, arguments: ["codex", "app-server"]))
+        XCTAssertFalse(ProcWalk.isManagedCodexDaemon(path: standalone, arguments: nil))
+        XCTAssertFalse(ProcWalk.isManagedCodexDaemon(path: nil, arguments: ["--managed-daemon"]),
+                       "argv[0] is the program, never a flag")
+    }
+
     /// A job's shell exec'd into its program is no longer a shell: its
     /// `p_comm` is the program's. A login shell's starts with a dash.
     func testShellNamesAreRecognisedWithALoginDash() {
