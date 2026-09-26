@@ -142,6 +142,26 @@ final class TrimTests: XCTestCase {
         let line = try Trim.cappedLine(e)
         XCTAssertLessThanOrEqual(line.count, K.journalLineMaxBytes, "cap must hold against huge session_id")
         XCTAssertNotNil(JournalCodec.decodeLine(line), "capped line must stay valid JSON")
+
+        // Past the shrink passes the line is reduced to what says whose it
+        // is: the session, the turn (whether it belongs to a closed one) and
+        // the job.
+        var huge = JournalEvent(loggedAt: t0, event: .postToolUse)
+        huge.sessionId = "s1"; huge.turnId = "turn-7"; huge.jobId = "zsh-900"
+        huge.agentType = String(repeating: "x", count: 8000)
+        let minimalLine = try Trim.cappedLine(huge)
+        XCTAssertLessThanOrEqual(minimalLine.count, K.journalLineMaxBytes)
+        let minimal = try XCTUnwrap(JournalCodec.decodeLine(minimalLine))
+        XCTAssertEqual(minimal.event, .postToolUse); XCTAssertEqual(minimal.loggedAt, t0)
+        XCTAssertEqual(minimal.sessionId, "s1"); XCTAssertEqual(minimal.turnId, "turn-7"); XCTAssertEqual(minimal.jobId, "zsh-900")
+        XCTAssertNil(minimal.agentType)
+
+        // A job line's own field is cut before anything else is lost.
+        var begin = JournalEvent(loggedAt: t0, event: .jobBegin)
+        begin.jobId = "zsh-900"; begin.jobPid = 900; begin.jobLabel = String(repeating: "l", count: 8000)
+        let jobLine = try XCTUnwrap(JournalCodec.decodeLine(try Trim.cappedLine(begin)))
+        XCTAssertEqual(jobLine.jobLabel?.count, K.jobLabelMaxChars)
+        XCTAssertEqual(jobLine.jobId, "zsh-900"); XCTAssertEqual(jobLine.jobPid, 900)
     }
 
     func testCapHoldsForDirectlyConstructedEvent() throws {

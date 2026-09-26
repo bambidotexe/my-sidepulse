@@ -227,8 +227,12 @@ public enum Trim {
 
     /// Encode with guaranteed cap via fixed shrink passes and terminal fallback.
     /// Pass 1: Full encoding. Pass 2: Trim message tail if present.
-    /// Pass 3: Drastic cuts (tail, prefix, task count, task item length, cwd).
-    /// Terminal: If still over cap, a minimal line with only event and timestamp.
+    /// Pass 3: Drastic cuts (tail, prefix, task count, task item length, cwd,
+    /// a job's label).
+    /// Terminal: If still over cap, a minimal line with the event, its stamp
+    /// and what says whose it is: the session, the turn (whether the line
+    /// belongs to a closed one) and the job; with only the event and the
+    /// stamp as the last resort.
     /// The cap is unconditional; a line that does not fit atomicity is never returned.
     public static func cappedLine(_ event: JournalEvent) throws -> Data {
         var e = event
@@ -248,6 +252,7 @@ public enum Trim {
                 arr.prefix(4).map { String($0.prefix(40)) }
             }
             if let cwd = e.cwd, cwd.utf8.count > 200 { e.cwd = String(cwd.prefix(200)) }
+            e.jobLabel = e.jobLabel.map { String($0.prefix(K.jobLabelMaxChars)) }
             data = try JournalCodec.encodeLine(e)
         }
         if data.count > K.journalLineMaxBytes {
@@ -256,6 +261,8 @@ public enum Trim {
             // atomicity of concurrent O_APPEND writes.
             var minimal = JournalEvent(loggedAt: event.loggedAt, event: event.event)
             minimal.sessionId = event.sessionId.map { String($0.prefix(64)) }
+            minimal.turnId = event.turnId.map { String($0.prefix(metadataMaxChars)) }
+            minimal.jobId = event.jobId.map { String($0.prefix(64)) }
             data = try JournalCodec.encodeLine(minimal)
             if data.count > K.journalLineMaxBytes {
                 data = try JournalCodec.encodeLine(

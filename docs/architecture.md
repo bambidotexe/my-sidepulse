@@ -371,7 +371,11 @@ closed); a line written before the field reads as one without a turn.
 Every identifier a line copies is clamped at 200 characters and a transcript
 path at `K.pathMaxChars` (1024), since a cut path names no file. Lines stay
 under 4096 bytes through three shrink passes (`Trim.cappedLine`), so
-concurrent hook processes appending with `O_APPEND` cannot interleave.
+concurrent hook processes appending with `O_APPEND` cannot interleave. A line
+still over the cap after them is reduced to its event, its stamp, and what
+says whose it is: `session_id`, `turn_id` (whether it belongs to a closed
+turn) and `job_id`. A job's line never gets there: every field of it is
+bounded (`JobLine`), its label cut first.
 
 ## Build and signing
 
